@@ -1,0 +1,19 @@
+{
+  "name": "marblesnamegrabber",
+  "version": "0.1.0",
+  "description": "Scrapes Marbles on Stream Username",
+  "main": "MarblesUserName_Server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node ./MarblesUserName_Server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "./"
+  },
+  "author": "MiloticMaster",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "sharp": "^0.32.4"
+  }
+}

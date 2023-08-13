@@ -7,7 +7,7 @@ class MarbleNameGrabber {
 
     nameRect = {
         x: 957/1920,
-        y: 154/1080,
+        y: 152/1080,
         w: (1507-957)/1920,
         h: (1080-154)/1080
     }
@@ -15,12 +15,12 @@ class MarbleNameGrabber {
     LINE_HEIGHT = 1
     LINE_OFFSET = 0.01
 
-    BLACK   = 0x000000
-    WHITE   = 0xFFFFFF
-    STREAMER_RED     = 0xFF0000
-    SUB_BLUE    = 0x0000FF
-    MOD_GREEN   = 0x00FF00
-    VIP_PINK    = 0xFF00FF
+    BLACK           = 0x000000
+    WHITE           = 0xFFFFFF
+    STREAMER_RED    = 0xFF0000
+    SUB_BLUE        = 0x0000FF
+    MOD_GREEN       = 0x00FF00
+    VIP_PINK        = 0xFF00FF
 
     USERNAME_COLORS = [
         this.STREAMER_RED,
@@ -29,7 +29,8 @@ class MarbleNameGrabber {
         this.VIP_PINK
     ]
 
-    DEBUG_CANVAS = '500px'
+    DEBUG_CANVAS_HEIGHT = '500px'
+    DEBUG_CANVAS_WIDTH = '700px'
 
     constructor(debug=true) {
         // Get references, etc
@@ -44,33 +45,49 @@ class MarbleNameGrabber {
         this.onCtx = null
 
         this.video = null
-        // if (!this.retrieveVideo()) return
+        this.debugPicture = null
 
         if (this.debug) {
             this.onCanvas = document.createElement('canvas')
             this.onCanvas.addEventListener('mousemove', this.showDebugLines.bind(this))
             this.onCtx = this.onCanvas.getContext('bitmaprenderer')
             document.body.appendChild(this.onCanvas)
-            this.onCanvas.style.height = this.DEBUG_CANVAS
+            this.onCanvas.style.height = this.DEBUG_CANVAS_HEIGHT
             this.onCanvas.style.width = "300px" //this.DEBUG_CANVAS
+
         }
+
+        // TODO: Check for debug-picture flag, otherwise get video
 
         // start proper setup
         this.retrieveVideo()
     }
 
     retrieveVideo () {
+        // check if debug-img is there, capture it if is
+
+        let debugPic = document.querySelector('img#debugMarblesPic')
+        const CANVAS_WIDTH = this.nameRect.w * this.debugPicture.width;
+        const CANVAS_HEIGHT = this.nameRect.h * this.debugPicture.height;
+
+        if (this.debug && debugPic) {
+            this.debugPicture = debugPic
+            this.offCanvas.width = CANVAS_WIDTH;
+            this.offCanvas.height = CANVAS_HEIGHT;
+            this.onCanvas.width = CANVAS_WIDTH;
+            this.onCanvas.height = CANVAS_HEIGHT;
+            return true
+        }
+
         // Get video reference
         let videos = document.querySelectorAll('video')
         if (videos.length <= 1) {
             this.video = videos[0]
-            // this.offCanvas.width = this.video.videoWidth;
-            // this.offCanvas.height = this.video.videoHeight;
-            this.offCanvas.width = this.nameRect.w * this.video.videoWidth;
-            this.offCanvas.height = this.nameRect.h * this.video.videoHeight;
+            this.offCanvas.width = CANVAS_WIDTH;
+            this.offCanvas.height = CANVAS_HEIGHT;
             if (this.debug) {
-                this.onCanvas.width = this.nameRect.w * this.video.videoWidth;
-                this.onCanvas.height = this.nameRect.h * this.video.videoHeight;
+                this.onCanvas.width = CANVAS_WIDTH;
+                this.onCanvas.height = CANVAS_HEIGHT;
             }
             return true
         } else { // could not start, error
@@ -81,15 +98,21 @@ class MarbleNameGrabber {
 
     copyFrame () {
         // Copy frame to canvas
-        if (!this.video) {
+        let imgCapture = null
+        if (this.debugPicture) {
+            imgCapture = this.debugPicture
+        } else if (this.video) {
+            imgCapture = this.video
+        } else if (!this.video) {
             console.warning("Video does not exist.")
             return 
         }
         
         // truncate to just namelist
-        let nameListRect = this.expand(this.nameRect)
+        // let nameListRect = this.expand(this.nameRect)
+        let nameListRect = this.getBounds(this.nameRect)
         // NOTE: Wrap towards the nameRect
-        this.offCtx.drawImage(this.video, ...nameListRect, 0, 0, nameListRect[2], nameListRect[3]) // draw to canvas
+        this.offCtx.drawImage(imgCapture, ...nameListRect, 0, 0, nameListRect[2], nameListRect[3]) // draw to canvas
         this.imgData = this.offCtx.getImageData(0,0,this.offCanvas.width, this.offCanvas.height) // ignore settings
 
         this.moveToDebugCanvas()
@@ -98,6 +121,26 @@ class MarbleNameGrabber {
     moveToDebugCanvas () {
         if (!this.debug) return
         this.onCtx.transferFromImageBitmap(this.offCanvas.transferToImageBitmap())
+    }
+
+    getBounds (rect) {
+        // Choose between items
+        let tmpRect = [-1, -1, -1, -1]
+        let bounds = {w:null, h:null}
+        if (this.debugPicture) {
+            bounds.w = this.debugPicture.width
+            bounds.h = this.debugPicture.height
+        } else if (this.video) {
+            bounds.w = this.video.videoWidth
+            bounds.h = this.video.videoHeight
+        } else {    throw Error("No capture available") }
+
+        return [
+            rect.x * bounds.w,
+            rect.y * bounds.h,
+            rect.w * bounds.w,
+            rect.h * bounds.h,
+        ]
     }
 
     expand (rect) {
@@ -109,13 +152,33 @@ class MarbleNameGrabber {
         ]
     }
 
+    toPixel (x_coord, y_coord) {
+        // Get the pixel_offset to a location
+        let pixel_offset = (y_coord * this.offCtx.width + x_coord) * 4;
+        return pixel_offset
+    }
+
+    toCoord (pixel_offset) {
+        // Map to coordinate
+        let y_coord = parseInt(pixel_offset/4 * 1 / this.offCtx.width) 
+        let x_coord = parseInt((pixel_offset/4) % this.offCtx.width)
+        return {x: x_coord, y: y_coord}
+    }
+
     /*
     Lines are also removed without smooth animation, meaning that the lines do
     accurately sit on the line boundaries
     */
 
-    findLeftWall () {
+    isolateUserNames () {
         /*
+        Logic, using the offset and box size.
+        Look from right->left. Multiple passes
+            1. Move right to left with the dot check, mark for flood-fill
+            2. When reaching 4 vertical lines without userColor, exit
+            3. Flood-fill to black respecting intensity, copy to new imgData
+
+
         Initution: Simply move from right->left looking for a big color gap
             Ignore anything that matches BLACK or user colors
         */
@@ -145,24 +208,7 @@ class MarbleNameGrabber {
         }
     }
 
-    cleanNameList () {
-        // Take imageData, determine left walls and clean pixels
-
-        if (!this.imgData) return
-        
-        for (let pxd = 0; pxd < this.imgData.length; pxd += 4) {
-
-            let hexColor =  this.imgData.data[i + 0] << 255**2 +
-                            this.imgData.data[i + 1] << 255**1 +
-                            this.imgData.data[i + 2]
-            
-            if (this.USERNAME_COLORS.contains(hexColor)) {
-                continue
-            }
-            
-        }
-    }
-
+    // Deprecated, used for colourspace checking
     showDebugLines (mouseEvent) {
         // Run debug lines based on mouse position
 
@@ -279,6 +325,9 @@ class MarbleNameGrabber {
 
 // Testing on https://www.twitch.tv/videos/1895894790?t=06h41m23s
 //
+
+// TODO: Changing to a single image makes testing much faster
+// Will make a test page probably containing just the 
 
 // Active testing
 let m = new MarbleNameGrabber(true)
