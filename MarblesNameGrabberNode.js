@@ -99,14 +99,14 @@ class MarbleNameGrabberNode {
 
         let px_off = this.toPixelOffset(x,y)
 
-        const rgba = this.buffer.readUInt32BE(px_off)
+        const rgba = this.buffer.readUInt32LE(px_off)
         const int8mask = 0xFF
 
         return [
             (rgba & int8mask),
-            (rgba >> 8**1) & int8mask,
-            (rgba >> 8**2) & int8mask,
-            (rgba >> 8**3) & int8mask,
+            (rgba >> 8*1) & int8mask,
+            (rgba >> 8*2) & int8mask,
+            (rgba >> 8*3) & int8mask,
         ]
     }
 
@@ -172,7 +172,7 @@ class MarbleNameGrabberNode {
     BLACK           = 0x000000
     WHITE           = 0xFFFFFF
     STREAMER_RED    = 0xFF0000
-    SUB_BLUE        = 0x7d94f0
+    SUB_BLUE        = 0x7b96dc
     MOD_GREEN       = 0x00FF00
     VIP_PINK        = 0xFF00FF
 
@@ -191,7 +191,7 @@ class MarbleNameGrabberNode {
         (173 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (179 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
     ]
-    USERNAME_LEFT_PADDING_PCT = 10 / MEASURE_RECT.w // Left padding in pixels @ 1920
+    USERNAME_LEFT_PADDING_PCT = 5 / MEASURE_RECT.w // Left padding in pixels @ 1920
 
     async isolateUserNames () {
         // First, ensure buffer exists
@@ -223,7 +223,11 @@ class MarbleNameGrabberNode {
         //     CHECK_LINE_OFF.push(parseInt(check_offset * this.imageSize.h))
 
         const USERNAME_COLOR_ARR = Array.from(this.USERNAME_COLORS, color => this.toRGBA(color))
-        const COLOR_DIFF = 25; // max
+        const COLOR_DIFF = 60; // max
+
+        // this.setPixel(0,0, this.toRGBA(this.STREAMER_RED))
+        // let rgba_test = this.getPixel(0,0)
+
 
         // Begin iterating through the buffer
         while ( y_start < this.bufferSize.h ) {
@@ -238,7 +242,7 @@ class MarbleNameGrabberNode {
                     // const check_px_off = parseInt(check_offset * MEASURE_RECT.h)
                     let px_rgba = this.getPixel(x_start, y_start+check_px_off)
                     
-                    // this.setPixel(x_start, y_start+check_px_off, this.toRGBA(this.STREAMER_RED))
+                    this.setPixel(x_start, y_start+check_px_off, this.toRGBA(this.SUB_BLUE))
                     // console.debug(`REDMEAN to blue: ${this.redmean(this.toRGBA(this.SUB_BLUE), px_rgba)}`)
 
                     // if (this.USERNAME_COLORS.has(px_rgba)) { // right now checking only exact match
@@ -255,6 +259,9 @@ class MarbleNameGrabberNode {
                                 this.toRGBA(this.STREAMER_RED))
                         }
                         // TODO: Skip ahead if match?
+                    } else {
+                        // console.debug(`Failed redmean ${this.redmean(USERNAME_COLOR_ARR[0], px_rgba)}`)
+                        // console.debug(`px_color ${px_rgba}`)
                     }
                 }
                 
@@ -267,7 +274,7 @@ class MarbleNameGrabberNode {
                 }
                 x_start -= 1
             }   // End RIGHT-LEFT search
-            console.debug(`Ended search at ${x_start} P:${validFloodFillPos.size} C:${cacheColorMatch.size}`)
+            console.debug(`Ended search at ${(this.bufferSize.w-1) - x_start} P:${validFloodFillPos.size} C:${cacheColorMatch.size}`)
 
             y_start += USERNAME_BOX_HEIGHT;
         }
