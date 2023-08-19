@@ -5,8 +5,10 @@ Removes canvas elements and uses sharp instead
 */
 
 // NOTE: Should I switch to ESM here?
-const sharp = require("sharp")
-const { Buffer } = require('node:buffer');
+import sharp from 'sharp'
+import Buffer from 'node:buffer'
+// const sharp = require("sharp")
+// const { Buffer } = require('node:buffer');
 
 const MEASURE_RECT = { x: 0, y:0, w: 1920, h: 1080} // All values were measured against 1080p video
 const NAME_RECT = {
@@ -124,7 +126,7 @@ for (let color in colorSampling) {
     userColors[color] = calcMinColorDistance(colorSampling[color])
 }
 
-class MarbleNameGrabberNode {
+export class MarbleNameGrabberNode {
 
     nameRect = {
         x: 957/1920,
@@ -503,5 +505,3 @@ class MarbleNameGrabberNode {
     }
 
 }
-
-module.exports = MarbleNameGrabberNode

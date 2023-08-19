@@ -2,12 +2,12 @@
 
 // const express = require('express')
 // const path = require('node:path'); 
-// const MarbleNameGrabberNode = require("./MarblesNameGrabberNode")
-// import {MarbleNameGrabberNode} from "./MarblesNameGrabberNode"
 import express from 'express'
 import path from 'node:path'
 
-import {UsernameTracker, Heap} from './UsernameTrackerClass.mjs'
+// const MarbleNameGrabberNode = require("./MarblesNameGrabberNode")
+import {MarbleNameGrabberNode} from "./MarblesNameGrabberNode.mjs"
+import {UsernameTracker, Heap, LimitedList} from './UsernameTrackerClass.mjs'
 
 // const { createWorker } = require('tesseract.js');
 // const { setInterval } = require('node:timers');
@@ -39,8 +39,14 @@ const usernameList = new UsernameTracker();
 {
 
     console.log("Running special debug")
-    let h = new Heap()
-    h.push(1)
+    let limitList = new LimitedList(5)
+    let n = []
+    for (let i=0; i<100; i++) {
+        let p = parseInt(Math.random()*100)
+        limitList.push(p)
+        n.push(p)
+    }
+    n.sort( (a,b) => a-b )
     let un = new UsernameTracker()
 }
 
