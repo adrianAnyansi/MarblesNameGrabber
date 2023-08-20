@@ -13,9 +13,10 @@ class Username {
 }
 
 export class LimitedList {
-    constructor (limit=Infinity, values=null) {
+    constructor (limit=Infinity, values=null, sortMethod=this.defaultASCSort) {
         this.list = []
         this.maxLength = limit
+        this.sortMethod = sortMethod ?? this.defaultASCSort
 
         if (values) {
             for (let value in values)
@@ -30,17 +31,32 @@ export class LimitedList {
             this.list.pop()
     }
 
+    defaultASCSort (val1, val2) {
+        return val1 < val2
+    }
+
     sort() {
         // insertion sort which should work well for small-sorted arrays
         for (let i=1; i<this.list.length; i++) {
             const swapVal = this.list[i]
             let j=i;
-            for (; j>0 && this.list[j-1] > swapVal; j--) {
+            for (; j>0 && this.sortMethod(swapVal, this.list[j-1]); j--) {
                 this.list[j] = this.list[j-1]
-                // this._swapIndex(j, j-1)
             }
             this.list[j] = swapVal
         }
+    }
+
+    peek() {
+        return this.list[0]
+    }
+
+    sneak() {
+        return this.list.at(-1)
+    }
+
+    isFull() {
+        return this.list.length == this.maxLength
     }
 }
 
@@ -298,6 +314,7 @@ const DEFINED_ADJC_SETS = [
     ['i', 'l', '|', 'f', 'L', '1'],     // long char set
     ['a', 'e', 's', 'o', 'g'],          // a set
     ['e', 'c', 'u', 'w'],            // e & curved lt set
+    ['o', 'c'],
     ['a', '8', 'B'],    // 8 set
     ['s', 'z'],                 // zigzag lt
     ['R', 'A'],             // Big lt with circle
@@ -331,10 +348,18 @@ export class UsernameTracker {
         this.list = [] // ordered list
     }
 
+    *[Symbol.iterator] () {
+        yield this.list
+    }
+
+    get length () {
+        return this.list.length
+    }
+
     add (username, confidence) {
         let user = this.hash.get(username)
-        if (user != undefined) {
-            user = new Username(username, 0)
+        if (user == undefined) {
+            user = new Username(username, confidence)
             user.index = this.list.push(user)
             this.hash.set(username, user)
         } 
@@ -351,28 +376,50 @@ export class UsernameTracker {
         this.list.pop(user.index)
     }
 
-    find (username) {
-        // Attempt to find the 5 closest usernames to this text
-        
+    clear () {
+        this.hash.clear()
+        this.list.length = 0
     }
 
-    calcLevenDistance (newUser, oldUser) {
-        // Return the distance between the two usernames
-        const flatArray = new Uint8Array((newUser.length+1) * (oldUser.length+1))
-        let getOffset = (x,y) => y*(newUser.length+1) + x
+    PERFORMANCE_MARK_FIND = "find_username"
+    find (searchUsername) {
+        // Attempt to find the 5 closest usernames to this text
+        const sort = (a,b) => a[0] < b[0]
+        const usernameRanking = new LimitedList(5, null, sort)
+        let currentMax = null
+        performance.mark(this.PERFORMANCE_MARK_FIND)
 
-        for (let x=0; x < newUser.length+1; x++) {
+        for (const userObj of this.list) {
+            const testUsername = userObj.name
+            let dist = this.calcLevenDistance(searchUsername, testUsername)
+            const userRankObj = [dist, userObj]
+
+            if (usernameRanking.isFull()) currentMax = usernameRanking.sneak()[0]
+            if (currentMax == null || dist < currentMax) usernameRanking.push(userRankObj)
+        }
+
+        console.debug(`Find username ranking took ${performance.measure('username_mark', this.PERFORMANCE_MARK_FIND).duration.toFixed(2)}ms`)
+        return usernameRanking.list
+    }
+
+    calcLevenDistance (newUsername, oldUsername) {
+        // Return the distance between the two usernames
+        const flatArray = new Uint8Array((newUsername.length+1) * (oldUsername.length+1))
+        let getOffset = (x,y) => y*(newUsername.length+1) + x
+
+        for (let x=0; x < newUsername.length+1; x++) {
             flatArray[getOffset(x,0)] = x
         }
-        for (let y=1; y < oldUser.length+1; y++) {
+        for (let y=1; y < oldUsername.length+1; y++) {
             flatArray[getOffset(0,y)] = y
         }
 
         // start DP iteration
         // NOTES: If I want to penalize insertion/deletion, increase cost for left/up movement
-        for (let x=1; x<newUser.length+1; x++) {
-            for (let y=1; y<oldUser.length+1; y++) {
-                const penalty = this.compareLetters(newUser[x], oldUser[y])
+        for (let x=1; x<newUsername.length+1; x++) {
+            for (let y=1; y<oldUsername.length+1; y++) {
+                const penalty = this.compareLetters(newUsername[x-1], oldUsername[y-1])
+                // const penalty = newUsername[x-1] == oldUsername[y-1] ? 0 : 1
                 const trip = Math.min(
                                 flatArray[getOffset(x-1, y)], 
                                 flatArray[getOffset(x-1, y-1)], 
@@ -382,6 +429,8 @@ export class UsernameTracker {
             }
         }
 
+        return flatArray[getOffset(newUsername.length, oldUsername.length)]
+
     }
 
     compareLetters(ltA, ltB) {
@@ -389,8 +438,8 @@ export class UsernameTracker {
         if (ltA == ltB) return 0
         if (ltA.toLowerCase() == ltB.toLowerCase()) return 1
         
-        if ( adjcLetterMap.has(ltA) ) {
-            const adjcSet = adjcLetterMap.get(ltA)
+        if ( ADJC_LETTER_MAP.has(ltA) ) {
+            const adjcSet = ADJC_LETTER_MAP.get(ltA)
             if (adjcSet.has(ltB)) return 1
         }
         return 2

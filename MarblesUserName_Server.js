@@ -19,7 +19,8 @@ const PORT = 4000;
 const HOST = 'localhost'
 
 
-const debug = false;
+const debug = true;
+const debugTesseract = false;
 const SERVER_STATE_ENUM = {
     STOPPED: 'STOPPED',
     RUNNING: 'RUNNING',
@@ -29,8 +30,11 @@ let serverState = SERVER_STATE_ENUM.STOPPED
 let parserInterval = null
 
 let filename = null;
-let tesseractWorker = null;
-let tesseractPromise = null;
+// let tesseractWorker = null;
+// let tesseractPromise = null;
+let OCRScheduler = null
+let numOCRWorkers = 0
+
 const READ_IMG_TIMEOUT = 1000 * 0.7;
 
 const usernameList = new UsernameTracker();
@@ -39,22 +43,34 @@ const usernameList = new UsernameTracker();
 {
 
     console.log("Running special debug")
-    let limitList = new LimitedList(5)
-    let n = []
-    for (let i=0; i<100; i++) {
-        let p = parseInt(Math.random()*100)
-        limitList.push(p)
-        n.push(p)
-    }
-    n.sort( (a,b) => a-b )
-    let un = new UsernameTracker()
+    
+    // let user1 = 'hello'
+    // let user2 = 'kelm'
+
+    // let dist = usernameList.calcLevenDistance(user1, user2)
+
+    // console.debug(`Result is ${dist}`)
 }
 
 
 // Declaring general functions
-function setupWorkerPool () {
-    // TODO: Setup scheduler and multiple OCR workers
-    generateWorker()
+async function setupWorkerPool (workers=1) {
+    // Setup scheduler and multiple OCR workers
+
+    if (OCRScheduler == null)
+        OCRScheduler = createScheduler()
+
+    let promList = []
+    while (numOCRWorkers < workers) {
+        promList.push(addOCRWorker(numOCRWorkers++))
+    }
+    return promList
+}
+
+async function shutdownWorkerPool () {
+    // Terminate workers in scheduler
+    return OCRScheduler.terminate()
+    // TODO: Change this maybe?
 }
 
 function parseImgFile() {
@@ -63,57 +79,54 @@ function parseImgFile() {
     
     let mng = new MarbleNameGrabberNode(filename, true)
 
-    console.debug("Starting off image read")
+    console.debug("Parsing LIVE image read")
 
     mng.buildBuffer()
     .catch( err => {
         console.warn("Buffer was not created successfully, skipping")
         throw err
-    }).then( () => {
-        return mng.isolateUserNames()
-    }).then( buffer => {
-        return recognizeText(buffer)
-    }).then( data => {
+    }).then( () =>  mng.isolateUserNames()
+    ).then( buffer =>  scheduleTextRecogn(buffer)
+    ).then( ({data, info}) => {
         // add to nameBuffer
         for (const line of data.lines) {
             let username = line.text.trim()
             if (username == '' || username.length <= 2) continue
 
-            let userConf = usernameList.get(username) ?? -Infinity
-
-            usernameList.set(username, Math.max(userConf, line.confidence))
-            usernameListDebug.push(username)
+            usernameList.add(username, line.confidence)
         }
-        console.debug(`UserList is now: ${usernameList.size}`)
+        console.debug(`UserList is now: ${usernameList.length}`)
     }).catch ( err => {
-        console.warn("Error occurred, execution exited")
+        console.warn(`Error occurred ${err}, execution exited`)
+        // Since this is continous, this info is discarded
     })
 }
 
-function debugRun () {
+async function debugRun () {
     console.log(`Running debug!`)
     filename = "testing/test.png"
     console.log(`Working directory: ${path.resolve()}`)
     
-    generateWorker()    // init worker
+    await setupWorkerPool(1)
+    // generateWorker()    // init worker
 
     let mng = new MarbleNameGrabberNode(filename, true)
-    mng.buildBuffer()
-    // mng.isolateUserNames()
-
-    // dirtyFilename = "testing/name_bin.png"
-    // recognizeText(dirtyFilename).then( () => {
-    //     console.debug("Terminating worker")
-    //     return terminateWorker()
-    // }).then( () => {
-    //     console.debug("Completed Job")
-    // })
-    return mng.isolateUserNames().then( buffer => 
-        recognizeText(buffer)
+    return mng.buildBuffer()
+    .catch( err => {
+        console.warn("Buffer was not created successfully, skipping")
+        throw err
+    })
+    .then( () => mng.isolateUserNames()
     )
-    // return recognizeText(dirtyFilename)
+    .then( 
+        buffer => scheduleTextRecogn(buffer)
+    ).catch(
+        err => {
+            console.error(`An unknown error occurred ${err}`)
+            throw err
+        }
+    )
 }
-
 
 // Tesseract.js
 async function generateWorker() {
@@ -149,6 +162,35 @@ async function generateWorker() {
     return tesseractPromise
 }
 
+async function addOCRWorker (worker_num) {
+    console.debug(`Creating Tesseract worker ${worker_num}`)
+
+    const options = {}
+    if (debugTesseract) {
+        options["logger"] = msg => console.debug(msg)
+        options["errorHandler"]  = msg => console.error(msg)
+    }
+
+    let tesseractWorker = await createWorker(options)
+    await tesseractWorker.loadLanguage('eng')
+    await tesseractWorker.initialize('eng');
+    await tesseractWorker.setParameters({
+        tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPKRSTUVWXYZ_0123456789', // only search a-z, _, 0-9
+        preserve_interword_spaces: '0', // discard spaces between words
+        tessedit_pageseg_mode: '6',      // read as vertical block of uniform text
+    })
+
+    console.debug(`Tesseract Worker ${worker_num} is built & init`)
+    OCRScheduler.addWorker(tesseractWorker)
+    return tesseractWorker
+
+}
+
+async function scheduleTextRecogn (imageLike) {
+    // Create OCR job on scheduler
+    return OCRScheduler.addJob('recognize', imageLike)
+}
+
 async function recognizeText(imageLike) {
     if (tesseractPromise) {
         // console.debug("Waiting for tesseract worker")
@@ -170,15 +212,22 @@ async function terminateWorker() {
 
 // Server part
 
+
+server.use(express.json()) // for parsing application/json
+server.use(express.urlencoded({ extended: true })) // for parsing application/x-www-form-urlencoded
+
 server.get('/alive', (req, res) => {
     res.send('5alive');
 })
+
+// Admin functions
 
 server.all('/start', (req, res) => {
     if (parserInterval == null) {
         console.log("Starting up image parser")
         usernameList.clear()
-        generateWorker()
+        // generateWorker()
+        setupWorkerPool(4)
         parserInterval = setInterval(parseImgFile, READ_IMG_TIMEOUT)
         serverState = SERVER_STATE_ENUM.RUNNING
     }
@@ -189,7 +238,9 @@ server.all('/start', (req, res) => {
 server.all('/stop', (req, res) => {
     if (parserInterval) {
         console.log("Stopping image parser")
+        // TODO: Stop workers without killing the scheduler
         serverState = SERVER_STATE_ENUM.STOPPED
+
         clearInterval(parserInterval)
         parserInterval = null
     }
@@ -197,30 +248,54 @@ server.all('/stop', (req, res) => {
     res.send({state: serverState, text:"Stopped"})
 })
 
+server.get('/find/:userId', (req, res) => {
+    // See if a user is in the system
+    let reqUsername = req.params.userId
+    console.debug(`Finding user ${reqUsername}`)
+    return res.json(usernameList.find(reqUsername))
+})
+
+server.all('/add', (req, res) => {
+    let jsonList = req.body
+    console.debug(`Body is ${jsonList.toString()}`)
+    console.debug(`Adding ${jsonList["userList"].length} users`)
+    for (let user in jsonList["userList"])
+        usernameList.add(user, 101)
+    return res.status(200).send('Added')
+})
+
+// User functions
+
 server.get('/list', (req, res) => {
     res.send({
-        len: usernameList.size,
-        userList: JSON.stringify([...usernameList])
+        len: usernameList.length,
+        userList: [usernameList.list]
     })
 })
+
 
 server.get('/debug', (req, res) => {
-    debugRun().then( data => {
+    debugRun().then( ({data, info}) => {
         let retList = []
         for (let line of data.lines) {
-            let text = line.text.trim()
-            if (text != '' && text.length > 2) {
-                retList.push(text)
+            let username = line.text.trim()
+            if (username != '' && username.length > 2) {
+                retList.push(username)
+                usernameList.add(username, line.confidence)
             }
         }
-        res.send({list:retList, debug:true})
+        res.send({list: retList, debug:true})
+        console.debug("Sent debug response")
+    }).catch( err => {
+        res.status(400).send(`An unknown error occurred. ${err}`)
     })
 })
-
 
 server.listen(PORT, () => {
     console.log(`Server running at ${HOST}:${PORT}`)
 })
+
+
 
 // Debug code in here
 

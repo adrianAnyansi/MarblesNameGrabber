@@ -6,7 +6,7 @@ Removes canvas elements and uses sharp instead
 
 // NOTE: Should I switch to ESM here?
 import sharp from 'sharp'
-import Buffer from 'node:buffer'
+import { Buffer } from 'node:buffer'
 // const sharp = require("sharp")
 // const { Buffer } = require('node:buffer');
 
