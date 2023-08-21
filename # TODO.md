@@ -1,5 +1,14 @@
 # TODO.md
 
+So things work, however text recogn is still slightly inaccurate.
+I have some ideas to improve it
+
+1. Manually paint sampling points to improve recogn
+2. Put anti-sampling points to remove false positives
+3. Scale non-matching colours by proximity to the base color
+4. Do anti-flood fill if a flood fill goes above the vertical boundaries, and increase the left padding (cause of numbers)
+5. Mess with scaling and blurring while running automated tests
+
 I always forget to do this and then I figure out how much easier life is
 when you have a plan that you don't have to rewrite every 2 minutess
 

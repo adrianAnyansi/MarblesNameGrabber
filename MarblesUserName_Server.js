@@ -18,9 +18,11 @@ const server = express()
 const PORT = 4000;
 const HOST = 'localhost'
 
-
+// debug variables
 const debug = true;
 const debugTesseract = false;
+
+// server state
 const SERVER_STATE_ENUM = {
     STOPPED: 'STOPPED',
     RUNNING: 'RUNNING',
@@ -29,13 +31,16 @@ const SERVER_STATE_ENUM = {
 let serverState = SERVER_STATE_ENUM.STOPPED
 let parserInterval = null
 
-let filename = null;
+
+const TEST_FILENAME = "testing/test.png"
+
 // let tesseractWorker = null;
 // let tesseractPromise = null;
 let OCRScheduler = null
 let numOCRWorkers = 0
 
 const READ_IMG_TIMEOUT = 1000 * 0.7;
+let lastReadTs = null
 
 const usernameList = new UsernameTracker();
 
@@ -64,7 +69,9 @@ async function setupWorkerPool (workers=1) {
     while (numOCRWorkers < workers) {
         promList.push(addOCRWorker(numOCRWorkers++))
     }
-    return promList
+    
+    if (promList.length == 0) return Promise.resolve(true) // TODO: Worker list of something
+    return Promise.any(promList)
 }
 
 async function shutdownWorkerPool () {
@@ -75,9 +82,9 @@ async function shutdownWorkerPool () {
 
 function parseImgFile() {
     // console.log("We're doing it LIVE!")
-    filename = "live.png"
+    let filename = "live.png"
     
-    let mng = new MarbleNameGrabberNode(filename, true)
+    let mng = new MarbleNameGrabberNode(filename, false)
 
     console.debug("Parsing LIVE image read")
 
@@ -102,13 +109,13 @@ function parseImgFile() {
     })
 }
 
-async function debugRun () {
-    console.log(`Running debug!`)
-    filename = "testing/test.png"
+
+
+async function debugRun (filename) {
+    console.log(`Running debug! ${filename}`)
     console.log(`Working directory: ${path.resolve()}`)
     
     await setupWorkerPool(1)
-    // generateWorker()    // init worker
 
     let mng = new MarbleNameGrabberNode(filename, true)
     return mng.buildBuffer()
@@ -122,7 +129,7 @@ async function debugRun () {
         buffer => scheduleTextRecogn(buffer)
     ).catch(
         err => {
-            console.error(`An unknown error occurred ${err}`)
+            console.error(`Debug: An unknown error occurred ${err}`)
             throw err
         }
     )
@@ -274,8 +281,13 @@ server.get('/list', (req, res) => {
 })
 
 
-server.get('/debug', (req, res) => {
-    debugRun().then( ({data, info}) => {
+server.get(['/debug'], 
+(req, res) => {
+
+    let filename = req.query?.filename
+    if (!filename) filename = TEST_FILENAME
+
+    debugRun(filename).then( ({data, info}) => {
         let retList = []
         for (let line of data.lines) {
             let username = line.text.trim()
@@ -311,7 +323,8 @@ server.listen(PORT, () => {
 /* streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best
   streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best --stdout | ffmpeg -re -f mpegts -i pipe:0 -f image2 -pix_fmt rgba -vf fps=fps=1/2 -y -update 1 live.png
   
-  
+  streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best --stdout | ffmpeg -re -f mpegts -i pipe:0 -f image2 -pix_fmt rgba -vf fps=fps=1/2 -frame_pts true %d.png
+
   Explaining ffmpeg mysteries
     streamlink       = (program for natively downloading streams)
     <twitch-vod url> = se

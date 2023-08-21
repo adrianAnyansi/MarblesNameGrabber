@@ -18,8 +18,12 @@ const NAME_RECT = {
     h: (1080-154)/1080
 }
 
+function hashArr(arr) {
+    return `${arr?.[0]},${arr?.[1]},${arr?.[2]}`
+}
+
 function toHex(rgba) {
-    return rgba[0] << 8*2 + rgba[1] << 8*1 + rgba[2]
+    return (rgba[0] << 8*2) + (rgba[1] << 8*1) + rgba[2]
 }
 
 function toRGBA (hexColor, alpha=0xFF) {
@@ -134,6 +138,8 @@ export class MarbleNameGrabberNode {
         w: (1504-957)/1920, // NOTE: Could increase padding here
         h: (1070-152)/1080
     }
+    
+    DEBUG_NAME_RAW_FILE    = 'testing/name_crop.png'
     DEBUG_NAME_RECOGN_FILE = 'testing/name_match.png'
     DEBUG_NAME_BIN_FILE     = 'testing/name_bin.png'
 
@@ -151,13 +157,6 @@ export class MarbleNameGrabberNode {
         // debug will write intermediate to file for debugging
         this.debug = debug
 
-        // calculating color distances
-        // let testRgba = calcMinColorDistance(colorSampling.TEST)
-        // const rngn = MarbleNameGrabberNode
-        // console.debug(`Got ${testRgba}, MAX ${Math.max(...colorSampling.TEST.map( c => redmean(testRgba, toRGBA(c)))) }`)
-        // this.SUB_BLUE = calcMinColorDistance(colorSampling.SUB_BLUE)
-        // let blueDist = calcMinColorDistance(colorSampling.SUB_BLUE)
-        // console.debug(`User colors is ${JSON.stringify(userColors)}`)
     }
 
     async buildBuffer () {
@@ -282,27 +281,25 @@ export class MarbleNameGrabberNode {
         // (181 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (182 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
     ]
-    USERNAME_LEFT_PADDING_PCT = 4 / MEASURE_RECT.w // Left padding in pixels @ 1920
+    USERNAME_LEFT_PADDING_PCT = 10 / MEASURE_RECT.w // Left padding in pixels @ 1920
     USERNAME_RIGHT_MIN_PCT = 40 / MEASURE_RECT.w // Approx 3 alphanum chars @ 1920
 
     async isolateUserNames () {
         // First, ensure buffer exists
-        if (!this.buffer) {
-            // this.buffer = await this.bufferPromise  // ensure this is valid
-            if (this.bufferPromise) {
-                console.debug("Waiting for buffer promise")
-                await this.bufferPromise
-            } else {
-                console.debug("Building buffer")
-                await this.buildBuffer()
-            }
-            console.debug(`Finished waiting for buffer ${this.bufferSize}`)
-        }
+
+        // TODO: Rewrite this to be better
+        if (this.bufferPromise)
+            await this.bufferPromise
+        else
+            await this.buildBuffer()
+
+        if (this.debug) await this.bufferToFile(this.DEBUG_NAME_RAW_FILE, this.buffer, false)
 
         // Start to iterate through the buffer
 
-        const validFloodFillPos = new Array();  // Track flood fill positions
-        const cacheColorMatch = new Set() // Track colors that previously matched*
+        // const validFloodFillPos = new Array();  // Track flood fill positions
+        // const cacheColorMatch = new Set() // Track colors that previously matched*
+        const cacheColorMatch = new Map(Object.values(userColors).map(color => [color, new Map()]))
 
         let y_start = 0;
         
@@ -348,47 +345,43 @@ export class MarbleNameGrabberNode {
 
                 // check pixel on each y_band
                 for (const check_px_off of CHECK_LINE_OFF) {
-                    if (failedMatchVertLines == Infinity) break
+                    
+                    if (failedMatchVertLines == Infinity) break // break-flag due to anti-line
 
                     let px_rgba = this.getPixel(x_start, y_start+check_px_off)
-                    
-                    // this.setPixel(x_start, y_start+check_px_off, toRGBA(SUB_BLUE))
-                    // NOTE: This messes with flood-fill if its behind
-                    // if (this.debug) this.setPixel(x_start, y_start+check_px_off, toRGBA(VIP_PINK)) 
 
                     if (px_rgba[3] < 0xFF) { // previously visited
-                        if (px_rgba[3] < MATCH_ALPHA) continue // visited but no match
-                        failedMatchVertLines = 0
-                        foundMatch = true
+                        if (px_rgba[3] == MATCH_ALPHA) {
+                            failedMatchVertLines = 0
+                            foundMatch = true
+                        }
+                        continue
                     }
-                    const colorRange = USERNAME_COLOR_RANGE_ARR.find( ([color, range])  => redmean(color, px_rgba) < range )
+                    
+                    const cacheCheck  = Array.from(cacheColorMatch.entries()).find(([color, map]) => map.get(hashArr(px_rgba)))
+                    // const colorRange = inCache ? inCache[0] : 
+                    //     USERNAME_COLOR_RANGE_ARR.find( ([color, range])  => redmean(color, px_rgba) < range )
+                    let colorRange = cacheCheck?.[0] ?? USERNAME_COLOR_RANGE_ARR.find( ([color, range])  => redmean(color, px_rgba) < range )
+                    // const colorCacheMap = cacheCheck?.[1] ?? null
 
-                    if ( cacheColorMatch.has(px_rgba) || 
-                        // USERNAME_COLOR_RANGE_ARR.some( ([color, range])  => redmean(color, px_rgba) < range) 
-                        colorRange != undefined
-                    ) {
+                    // TODO: Cache check is bad AND late
+                    if ( colorRange != undefined) {
+
                         failedMatchVertLines = 0
                         foundMatch = true
                         
-                        // if (px_rgba[3] != 0xFF) continue
+                        // do flood-fill
+                        cacheColorMatch.get(colorRange).set(hashArr(px_rgba), redmean(colorRange[0], px_rgba))
                         depthInit += 1
-                        floodFillUse += this.floodFillSearch(x_start, y_start+check_px_off, colorRange, cacheColorMatch)
-                        // validFloodFillPos.push({x: x_start, y: y_start+check_px_off})
-                        // cacheColorMatch.add(px_rgba.toString())
-
-                        // if (this.debug) { // set match px
-                        //     this.setPixel(x_start, y_start+check_px_off, 
-                        //         toRGBA(STREAMER_RED))
-                        // }
-                        // TODO: Skip ahead if match?
+                        floodFillUse += this.floodFillSearch(x_start, y_start+check_px_off, 
+                                                colorRange, cacheColorMatch.get(colorRange))
                     }
                 }
                 
-                // If no match on all check lines
-
                 
-                if (x_start > this.bufferSize.w - USERNAME_RIGHT_MIN) foundMatch = true // continue if not past 3 characters
+                if (x_start > (this.bufferSize.w - USERNAME_RIGHT_MIN)) foundMatch = true // continue if not past 3 characters
 
+                // If no match on all check lines
                 if (!foundMatch)  failedMatchVertLines += 1
 
                 if (failedMatchVertLines > USERNAME_LEFT_PADDING) {
@@ -396,7 +389,7 @@ export class MarbleNameGrabberNode {
                 }
                 x_start -= 1
             }   // End RIGHT-LEFT search
-            // console.debug(`Ended search at ${(this.bufferSize.w-1) - x_start} P:${validFloodFillPos.length} C:${cacheColorMatch.size}`)
+
             // console.debug(`Ended search at ${(this.bufferSize.w-1) - x_start} M:${depthInit} Flood-fill:${floodFillUse}`)
 
             y_start += USERNAME_BOX_HEIGHT;
@@ -404,36 +397,24 @@ export class MarbleNameGrabberNode {
 
         // finish up by copying to new buffer
         if (this.debug) {
-            this.writeBufferToFile(this.DEBUG_NAME_RECOGN_FILE, this.buffer)
-            this.writeBufferToFile(this.DEBUG_NAME_BIN_FILE, this.binBuffer)
+            this.bufferToFile(this.DEBUG_NAME_RECOGN_FILE, this.buffer, false)
+            this.bufferToFile(this.DEBUG_NAME_BIN_FILE, this.binBuffer, true)
         }
 
-        return sharp(this.binBuffer, {
-            raw: {
-                width: this.bufferSize.w,
-                height: this.bufferSize.h,
-                channels: this.bufferSize.channels
-              }
-            })
-            .resize({width:1000})
-            // .blur()
-            .withMetadata({density: 300 })
-            .png().toBuffer()
+        return this.bufferToPNG(this.binBuffer, true).toBuffer()
     }
 
     // search out diagonally 
         // TODO: Change to iterative breadth
-    floodFillSearch (x, y, colorKey, colorCache, expand) {
+    floodFillSearch (x, y, colorKey, colorCache, expand=2) {
 
         let breathIterCount = 0
         const offsetCoord = [[0,1], [1,1], [1,0], [1,-1], [0,-1], [-1,-1], [-1,0], [-1,1]]
         // const offsetCoord = [[0,1], [0,-1], [-1,-1], [-1,0], [-1,1]] // there is 100% unchecked expansion towards the right
         const [matchColor, matchRange] = colorKey
-        const floodFillQueue = []
+        const floodFillQueue = [] // [x,y,exp]
 
-        // const colorBoost = 255 - parseInt(matchColor.reduce( (p,c) => p+c) / 3)
-
-        floodFillQueue.push( ...offsetCoord.map( ([tx,ty]) => [x+tx, y+ty]))
+        floodFillQueue.push( ...offsetCoord.map( ([tx,ty]) => [x+tx, y+ty, expand]))
 
         // We know x,y matches, set alpha and overwrite main
         let fst_px_rgba = this.getPixel(x,y)
@@ -447,34 +428,48 @@ export class MarbleNameGrabberNode {
             const coord = floodFillQueue.pop(0)
             const [cx, cy] = coord
             if (cx < 0 || cx >= this.bufferSize.w || cy < 0 || cy >= this.bufferSize.h) continue
-            let px_rgba = this.getPixel(...coord)
+            
+            let px_rgba = this.getPixel(cx, cy)
             if (px_rgba[3] != 0xFF) continue    // already visited
 
             breathIterCount += 1
-            // if (cx < 0 || cx >= this.bufferSize.width-1) 
-            //     console.warn('cx was WRONG')
 
-            const matchUserColor = colorCache.has(px_rgba) || redmean(matchColor, px_rgba) < matchRange;
-            if (matchUserColor) colorCache.add(px_rgba)
+            // let redMeanValue = null
+            let redMeanValue = redmean(matchColor, px_rgba)
+            // const arrHashValue = hashArr(px_rgba)
+            // if (colorCache.has(arrHashValue)) {
+            //     // console.debug('Cache Hit!')
+            //     redMeanValue = colorCache.get(arrHashValue)
+            // } else {
+            //     redMeanValue = redmean(matchColor, px_rgba)
+            //     colorCache.set(arrHashValue, redMeanValue)
+            // }
 
-            // let avgCh = parseInt((px_rgba[0] + px_rgba[1] + px_rgba[2])/3)
-            // avgCh = Math.max((avgCh - colorBoost), 0)
-            // let bw_rgba = [avgCh, avgCh, avgCh, px_rgba[3]] 
+            const matchUserColor = redMeanValue < matchRange;
+            // if (matchUserColor) colorCache.set(px_rgba, redMeanValue)
+
+            const redmeanToMatch = redMeanValue - matchRange
+            const chOffset = Math.max(0, redmeanToMatch/3)
+            let avgCh = parseInt( 0xFF - (0xFF - chOffset) )
+            const bw_rgba = [avgCh, avgCh, avgCh, 0xFF]
             
+            // px_rgba = matchUserColor ? toRGBA(bw_rgba, MATCH_ALPHA) : toRGBA(bw_rgba, NO_MATCH_ALPHA)
+            px_rgba = bw_rgba
+
+            this.setBinPixel(cx, cy, px_rgba) // set in binBuffer
             
-            // px_rgba = toRGBA(BLACK)
-            px_rgba = matchUserColor ? toRGBA(BLACK, MATCH_ALPHA) : toRGBA(DARKGRAY, NO_MATCH_ALPHA)
-            // px_rgba[3] = matchUserColor ? MATCH_ALPHA : 0xFA   // reduce alpha for non-match
+            px_rgba[3] = matchUserColor ? MATCH_ALPHA : NO_MATCH_ALPHA
+            if (this.debug) {
+                px_rgba = toRGBA(MAHOGANY, px_rgba[3]) // brown* for flood-fill // TODO: Blend pixel instead?
+            }
+            this.setPixel(cx, cy, px_rgba)
 
-            this.setBinPixel(...coord, px_rgba) // set in binBuffer
-            if (this.debug) px_rgba = toRGBA(MAHOGANY, px_rgba[3]) // red for flood-fill
-            this.setPixel(...coord, px_rgba)
-
-            if ( matchUserColor ) {
+            if ( coord[2] > 0 || matchUserColor ) {
                 // queue adjacent squares
                 for (let offCoord of offsetCoord) {
-                    let [tx, ty] = [offCoord[0]+coord[0], offCoord[1]+coord[1]]
-                    floodFillQueue.push([tx, ty])
+                    const [tx, ty] = [offCoord[0]+coord[0], offCoord[1]+coord[1]]
+                    const expand = matchUserColor ? coord[2] : coord[2] - 1
+                    floodFillQueue.push([tx, ty, expand])
                 }
             }
         }
@@ -483,25 +478,22 @@ export class MarbleNameGrabberNode {
 
     }
 
-
-    writeBufferToFile(filename=null, buffer=this.buffer) {
-        // debug, write current buffer to file
-        if (buffer) {
-            sharp(buffer, {
-                raw: {  width: this.bufferSize.w, 
-                        height: this.bufferSize.h, 
-                        channels: this.bufferSize.channels, 
-                        premultiplied: this.bufferSize.premultiplied}
-            })
-            .resize({width:1000})
-            // .blur()
-            .withMetadata({density: 300})
-            // TODO: resize & blur increased recognition
-            .png().toFile(filename)
-            // console.debug(`Wrote the buffer to debug file`)
-        } else {
-            console.debug(`Buffer does not exist currently`)
+    bufferToPNG(buffer=this.buffer, scaleForOCR=true) {
+        // let retPromise = null
+        let bufferPromise = sharp(buffer, {
+            raw: {  width: this.bufferSize.w, 
+                    height: this.bufferSize.h, 
+                    channels: this.bufferSize.channels, 
+                    premultiplied: this.bufferSize.premultiplied}
+        })
+        if (scaleForOCR) {
+            bufferPromise = bufferPromise.resize({width:1000}).withMetadata({density: 300})
         }
+        return bufferPromise.png()
+    }
+
+    bufferToFile(filename, buffer=this.buffer, scaleForOCR=true) {
+        return this.bufferToPNG(buffer, scaleForOCR).toFile(filename)
     }
 
 }
