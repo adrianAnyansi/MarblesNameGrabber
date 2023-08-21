@@ -4,11 +4,8 @@ Removes canvas elements and uses sharp instead
 
 */
 
-// NOTE: Should I switch to ESM here?
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
-// const sharp = require("sharp")
-// const { Buffer } = require('node:buffer');
 
 const MEASURE_RECT = { x: 0, y:0, w: 1920, h: 1080} // All values were measured against 1080p video
 const NAME_RECT = {
@@ -28,10 +25,10 @@ function toHex(rgba) {
 
 function toRGBA (hexColor, alpha=0xFF) {
     const mask = 0xFF
-    return [(hexColor >> 8*2) & mask,
+    return new Uint8Array([(hexColor >> 8*2) & mask,
             (hexColor >> 8*1) & mask, 
             hexColor & mask,
-            alpha]
+            alpha])
 }
 
 // https://stackoverflow.com/questions/4754506/color-similarity-distance-in-rgba-color-space
@@ -101,7 +98,7 @@ function calcMinColorDistance (colorList) {
 
 const colorSampling = {
     SUB_BLUE: [0x7b96dc, 0x6c97f5, 0x7495fa, 0x7495fa, 0x8789ec, 0x7294ec, 0x7298e6, 0x799aff, 0x7b95f7, 0x7897fa,
-                  0x846ed9, 0x577ac9, 0x809ae7, 0x8e95d4],
+                0x846ed9, 0x577ac9, 0x809ae7, 0x8e95d4, toHex([87, 164, 255]), toHex([158, 180, 251]), toHex([111, 128, 209])],
     UNSUB_WHITE: [0xfffefb, 0xc9c2c0, 0xc3bdba, 0xfef8f5, 0xfcf6f3, 0xd0c9c7, 0xcfc8c5, 0xece5e2, 0xd1cbc8, 0xbdbdb9, 
                     0xFFFEFF, 0xFFFFFF, 0xE5E5E7, 0xFFFFFD, 0xFFFAF7]
     // TEST:       [0x000000, 0x101010, 0x040404]
@@ -123,12 +120,17 @@ const VIP_PINK        = 0xFF00FF
 
 const MATCH_ALPHA = 0xFE
 const NO_MATCH_ALPHA = 0xFD
+const ANTI_MATCH_ALPHA = 0xFC
 
 
 const userColors = {}
 for (let color in colorSampling) {
     userColors[color] = calcMinColorDistance(colorSampling[color])
 }
+
+const cacheColorMatch = new Map(Object.values(userColors).map(color => [color, new Map()]))
+
+// CLASS
 
 export class MarbleNameGrabberNode {
 
@@ -299,7 +301,6 @@ export class MarbleNameGrabberNode {
 
         // const validFloodFillPos = new Array();  // Track flood fill positions
         // const cacheColorMatch = new Set() // Track colors that previously matched*
-        const cacheColorMatch = new Map(Object.values(userColors).map(color => [color, new Map()]))
 
         let y_start = 0;
         
@@ -358,11 +359,21 @@ export class MarbleNameGrabberNode {
                         continue
                     }
                     
-                    const cacheCheck  = Array.from(cacheColorMatch.entries()).find(([color, map]) => map.get(hashArr(px_rgba)))
+                    // const cacheCheck  = Array.from(cacheColorMatch.entries()).find(([color, map]) => map.get(hashArr(px_rgba)))
                     // const colorRange = inCache ? inCache[0] : 
                     //     USERNAME_COLOR_RANGE_ARR.find( ([color, range])  => redmean(color, px_rgba) < range )
-                    let colorRange = cacheCheck?.[0] ?? USERNAME_COLOR_RANGE_ARR.find( ([color, range])  => redmean(color, px_rgba) < range )
+                    // let colorRange = cacheCheck?.[0] ?? USERNAME_COLOR_RANGE_ARR.find( ([color, range])  => redmean(color, px_rgba) < range )
                     // const colorCacheMap = cacheCheck?.[1] ?? null
+
+                    const colorRange = USERNAME_COLOR_RANGE_ARR.find( (colorRange)  => {
+                        let [color, range] = colorRange
+                        const cacheMap = cacheColorMatch.get(colorRange)
+                        if (!cacheMap.has(hashArr(px_rgba)) )
+                            cacheMap.set(hashArr(px_rgba), redmean(color, px_rgba))
+                        
+                        let cacheRedMean = cacheMap.get(hashArr(px_rgba))
+                        return cacheRedMean < range 
+                    })
 
                     // TODO: Cache check is bad AND late
                     if ( colorRange != undefined) {
@@ -373,8 +384,11 @@ export class MarbleNameGrabberNode {
                         // do flood-fill
                         cacheColorMatch.get(colorRange).set(hashArr(px_rgba), redmean(colorRange[0], px_rgba))
                         depthInit += 1
+                        
+                        const anti_y_lines = new Set(ANTI_LINE_OFF.map(y_line => y_line + y_start))
                         floodFillUse += this.floodFillSearch(x_start, y_start+check_px_off, 
-                                                colorRange, cacheColorMatch.get(colorRange))
+                                                colorRange, cacheColorMatch.get(colorRange),
+                                                anti_y_lines, 2)
                     }
                 }
                 
@@ -405,8 +419,7 @@ export class MarbleNameGrabberNode {
     }
 
     // search out diagonally 
-        // TODO: Change to iterative breadth
-    floodFillSearch (x, y, colorKey, colorCache, expand=2) {
+    floodFillSearch (x, y, colorKey, colorCache, yBoundSet, expand=2) {
 
         let breathIterCount = 0
         const offsetCoord = [[0,1], [1,1], [1,0], [1,-1], [0,-1], [-1,-1], [-1,0], [-1,1]]
@@ -434,23 +447,28 @@ export class MarbleNameGrabberNode {
 
             breathIterCount += 1
 
-            // let redMeanValue = null
-            let redMeanValue = redmean(matchColor, px_rgba)
-            // const arrHashValue = hashArr(px_rgba)
-            // if (colorCache.has(arrHashValue)) {
-            //     // console.debug('Cache Hit!')
-            //     redMeanValue = colorCache.get(arrHashValue)
-            // } else {
-            //     redMeanValue = redmean(matchColor, px_rgba)
-            //     colorCache.set(arrHashValue, redMeanValue)
-            // }
+            let redMeanValue = null
+            // let redMeanValue = redmean(matchColor, px_rgba)
+            const arrHashValue = hashArr(px_rgba)
+            if (colorCache.has(arrHashValue)) {
+                // console.debug('Cache Hit!')
+                redMeanValue = colorCache.get(arrHashValue)
+            } else {
+                redMeanValue = redmean(matchColor, px_rgba)
+                colorCache.set(arrHashValue, redMeanValue)
+            }
 
-            const matchUserColor = redMeanValue < matchRange;
-            // if (matchUserColor) colorCache.set(px_rgba, redMeanValue)
+            const matchPxUNColorBool = redMeanValue < matchRange;
 
-            const redmeanToMatch = redMeanValue - matchRange
-            const chOffset = Math.max(0, redmeanToMatch/3)
-            let avgCh = parseInt( 0xFF - (0xFF - chOffset) )
+            if (matchPxUNColorBool && yBoundSet.has(cy)) {
+                // out-of-bounds, reverse flood-fill
+                console.debug("Reverse flood-fill triggered")
+                this.antiFloodFillSearch(cx, cy)
+                return 0
+            }
+
+            const chOffset = Math.max(0, (redMeanValue - matchRange)/3)
+            const avgCh = parseInt( 0xFF - ((0xFF - chOffset)**2) / 0xFF ) // log fall-off
             const bw_rgba = [avgCh, avgCh, avgCh, 0xFF]
             
             // px_rgba = matchUserColor ? toRGBA(bw_rgba, MATCH_ALPHA) : toRGBA(bw_rgba, NO_MATCH_ALPHA)
@@ -458,20 +476,58 @@ export class MarbleNameGrabberNode {
 
             this.setBinPixel(cx, cy, px_rgba) // set in binBuffer
             
-            px_rgba[3] = matchUserColor ? MATCH_ALPHA : NO_MATCH_ALPHA
+            px_rgba[3] = matchPxUNColorBool ? MATCH_ALPHA : NO_MATCH_ALPHA
             if (this.debug) {
                 px_rgba = toRGBA(MAHOGANY, px_rgba[3]) // brown* for flood-fill // TODO: Blend pixel instead?
             }
             this.setPixel(cx, cy, px_rgba)
 
-            if ( coord[2] > 0 || matchUserColor ) {
+            if ( coord[2] > 0 || matchPxUNColorBool ) {
                 // queue adjacent squares
-                for (let offCoord of offsetCoord) {
-                    const [tx, ty] = [offCoord[0]+coord[0], offCoord[1]+coord[1]]
-                    const expand = matchUserColor ? coord[2] : coord[2] - 1
-                    floodFillQueue.push([tx, ty, expand])
-                }
+                const expand = matchPxUNColorBool ? coord[2] : coord[2] - 1
+                floodFillQueue.push( ...offsetCoord.map( ([tx,ty]) => [cx+tx, cy+ty, expand]))
             }
+        }
+
+        return breathIterCount
+
+    }
+
+    // flood fill but only visited
+    antiFloodFillSearch (x, y) {
+
+        let breathIterCount = 0
+        const offsetCoord = [[0,1], [1,1], [1,0], [1,-1], [0,-1], [-1,-1], [-1,0], [-1,1]]
+        // const [matchColor, matchRange] = colorKey
+        const floodFillQueue = [] // [x,y,exp]
+
+        floodFillQueue.push( ...offsetCoord.map( ([tx,ty]) => [x+tx, y+ty, -1]))
+
+        // We know x,y matches, set alpha and overwrite main
+        let fst_px_rgba = this.getPixel(x,y)
+        if (this.debug) fst_px_rgba = toRGBA(ORANGE)
+        fst_px_rgba[3] = ANTI_MATCH_ALPHA
+        
+        this.setBinPixel(x,y, toRGBA(WHITE))
+        this.setPixel(x,y, fst_px_rgba)
+
+        while (floodFillQueue.length > 0) {
+            const coord = floodFillQueue.pop(0)
+            const [cx, cy, expand] = coord
+            if (cx < 0 || cx >= this.bufferSize.w || cy < 0 || cy >= this.bufferSize.h) continue
+            
+            let px_rgba = this.getPixel(cx, cy)
+            if (px_rgba[3] <= ANTI_MATCH_ALPHA || px_rgba[3] == 0xFF) continue    // already visited by anti-fill
+
+            breathIterCount += 1
+
+            px_rgba[3] = ANTI_MATCH_ALPHA
+            this.setBinPixel(cx, cy, toRGBA(WHITE)) // set in binBuffer
+            px_rgba = toRGBA(YELLOW, px_rgba[3])
+            this.setPixel(cx, cy, px_rgba)
+
+            floodFillQueue.push( ...offsetCoord.map( ([tx,ty]) => [cx+tx, cy+ty, -1]))
+
         }
 
         return breathIterCount
@@ -487,7 +543,9 @@ export class MarbleNameGrabberNode {
                     premultiplied: this.bufferSize.premultiplied}
         })
         if (scaleForOCR) {
-            bufferPromise = bufferPromise.resize({width:1000}).withMetadata({density: 300})
+            bufferPromise = bufferPromise.resize({width:1000})
+                                        .blur(1)
+                                        .withMetadata({density: 300})
         }
         return bufferPromise.png()
     }

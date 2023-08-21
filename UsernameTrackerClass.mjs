@@ -382,16 +382,17 @@ export class UsernameTracker {
     }
 
     PERFORMANCE_MARK_FIND = "find_username"
+    USER_RANK_LIST = 10
     find (searchUsername) {
         // Attempt to find the 5 closest usernames to this text
         const sort = (a,b) => a[0] < b[0]
-        const usernameRanking = new LimitedList(5, null, sort)
+        const usernameRanking = new LimitedList(this.USER_RANK_LIST, null, sort)
         let currentMax = null
         performance.mark(this.PERFORMANCE_MARK_FIND)
 
         for (const userObj of this.list) {
             const testUsername = userObj.name
-            let dist = this.calcLevenDistance(searchUsername, testUsername)
+            let dist = this.calcMatchDistance(searchUsername, testUsername)
             const userRankObj = [dist, userObj]
 
             if (usernameRanking.isFull()) currentMax = usernameRanking.sneak()[0]
@@ -431,6 +432,38 @@ export class UsernameTracker {
 
         return flatArray[getOffset(newUsername.length, oldUsername.length)]
 
+    }
+
+
+    calcMatchDistance (matchUsername, checkUsername) {
+        // fuzzy match
+        let score = 0
+        let lastMatchIdx = null
+        // let matchBin = 0
+
+        let ltMap = new Map()
+        for (let lt_idx in checkUsername) {
+            let lt = checkUsername[lt_idx]
+            
+            if (!ltMap.has(lt)) ltMap.set(lt, [])
+            ltMap.get(lt).push(parseInt(lt_idx))
+        }
+
+        for (let lt of matchUsername) {
+            if (ltMap.has(lt)) {
+                score += -1
+                let lt_pos = ltMap.get(lt).shift()
+                if (lastMatchIdx) {
+                    score += Math.abs(lastMatchIdx + 1 - lt_pos)
+                }
+                lastMatchIdx = lt_pos
+                if (ltMap.length == 0) ltMap.delete(lt)
+            } else {
+                score += 2
+            }
+        }
+
+        return score
     }
 
     compareLetters(ltA, ltB) {

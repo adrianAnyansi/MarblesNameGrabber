@@ -1,16 +1,14 @@
 // Node Server that manages, saves and processes images for MarblesNameGrabber
 
-// const express = require('express')
-// const path = require('node:path'); 
 import express from 'express'
 import path from 'node:path'
+import fs from 'node:fs'
 
-// const MarbleNameGrabberNode = require("./MarblesNameGrabberNode")
+import { spawn } from 'node:child_process'
+
 import {MarbleNameGrabberNode} from "./MarblesNameGrabberNode.mjs"
 import {UsernameTracker, Heap, LimitedList} from './UsernameTrackerClass.mjs'
 
-// const { createWorker } = require('tesseract.js');
-// const { setInterval } = require('node:timers');
 import { createWorker, createScheduler } from 'tesseract.js'
 import { setInterval } from 'node:timers'
 
@@ -31,31 +29,39 @@ const SERVER_STATE_ENUM = {
 let serverState = SERVER_STATE_ENUM.STOPPED
 let parserInterval = null
 
+const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s'
+const LIVE_URL = '"https://www.twitch.tv/barbarousking"'
+const streamlinkCmd = ['streamlink', '"https://www.twitch.tv/videos/1895894790?t=06h39m40s"', 'best', '--stdout'] 
+const ffmpegCmd = ['ffmpeg', '-re', '-f mpegts', '-i pipe:0', '-f image2', '-pix_fmt rgba', '-vf fps=fps=1/2', '-y', '-update 1', 'live.png']
+
+let streamlinkProcess = null
+let ffmpegProcess = null
 
 const TEST_FILENAME = "testing/test.png"
+const LIVE_FILENAME = "live.png"
 
-// let tesseractWorker = null;
-// let tesseractPromise = null;
+
+// Tesseract variables
 let OCRScheduler = null
 let numOCRWorkers = 0
 
-const READ_IMG_TIMEOUT = 1000 * 0.7;
+const READ_IMG_TIMEOUT = 1000 * 0.25;
 let lastReadTs = null
 
 const usernameList = new UsernameTracker();
 
 // Debug code
-{
+// {
 
-    console.log("Running special debug")
+//     console.log("Running special debug")
     
-    // let user1 = 'hello'
-    // let user2 = 'kelm'
+//     // let user1 = 'hello'
+//     // let user2 = 'kelm'
 
-    // let dist = usernameList.calcLevenDistance(user1, user2)
+//     // let dist = usernameList.calcLevenDistance(user1, user2)
 
-    // console.debug(`Result is ${dist}`)
-}
+//     // console.debug(`Result is ${dist}`)
+// }
 
 
 // Declaring general functions
@@ -77,23 +83,62 @@ async function setupWorkerPool (workers=1) {
 async function shutdownWorkerPool () {
     // Terminate workers in scheduler
     return OCRScheduler.terminate()
-    // TODO: Change this maybe?
+    // TODO: Change this to just terminate some workers?
+}
+
+
+// Server processing functions
+function startStreamMonitor(streamURL=null) {
+    // Start process for stream url
+
+    if (streamlinkProcess) return
+
+    streamURL ??= DEBUG_URL
+    streamlinkProcess = spawn(streamlinkCmd[0], [streamURL, 'best'], {
+
+    })
+    streamlinkProcess.stdout.on('data', (data) => {
+        console.log(data.toString())
+    })
+}
+
+function startFFMpegProcess() {
+    // start process for ffmpeg
+
+    if (ffmpegProcess) return
+
+    ffmpegProcess = spawn(ffmpegCmd[0], ffmpegCmd.slice(1))
+    
 }
 
 function parseImgFile() {
     // console.log("We're doing it LIVE!")
-    let filename = "live.png"
+    let filename = LIVE_FILENAME
+    let fileUpdateTs = fs.statSync(path.resolve(filename)).mtime.getTime()
+
+    // TODO: Wait until workerpool is ready
+
+    if (lastReadTs && lastReadTs == fileUpdateTs) {
+        console.debug(`Already queued file with dt ${new Date(fileUpdateTs)}`)
+        return
+    }
+        
+    lastReadTs = fileUpdateTs
+    const options = {
+        "id": `file_dt_${lastReadTs}`,
+        "jobId": `file_dt_${lastReadTs}`,
+    }
     
     let mng = new MarbleNameGrabberNode(filename, false)
 
     console.debug("Parsing LIVE image read")
 
-    mng.buildBuffer()
+    return mng.buildBuffer()
     .catch( err => {
         console.warn("Buffer was not created successfully, skipping")
         throw err
     }).then( () =>  mng.isolateUserNames()
-    ).then( buffer =>  scheduleTextRecogn(buffer)
+    ).then( buffer =>  scheduleTextRecogn(buffer, options)
     ).then( ({data, info}) => {
         // add to nameBuffer
         for (const line of data.lines) {
@@ -108,8 +153,6 @@ function parseImgFile() {
         // Since this is continous, this info is discarded
     })
 }
-
-
 
 async function debugRun (filename) {
     console.log(`Running debug! ${filename}`)
@@ -136,39 +179,6 @@ async function debugRun (filename) {
 }
 
 // Tesseract.js
-async function generateWorker() {
-    if (tesseractWorker != null) {
-        return Promise.resolve(tesseractWorker)
-    }
-
-    console.debug("Creating Tesseract worker")
-    const options = {}
-    if (debug) {
-        options["logger"] = msg => console.debug(msg)
-    }
-
-    
-    tesseractPromise = createWorker(options)
-        .then( worker => {
-            tesseractWorker = worker
-            return tesseractWorker.loadLanguage('eng');
-        }).then( result => {
-            return tesseractWorker.initialize('eng');
-        }).then( result => {
-            return tesseractWorker.setParameters({
-                tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPKRSTUVWXYZ_0123456789', // only search a-z, _, 0-9
-                preserve_interword_spaces: '0', // discard spaces between words
-                tessedit_pageseg_mode: '6',      // read as vertical block of uniform text
-
-            })
-        }).then( result => {
-            console.debug("Tesseract worker is built & init")
-            return Promise.resolve(tesseractWorker)
-        })
-    
-    return tesseractPromise
-}
-
 async function addOCRWorker (worker_num) {
     console.debug(`Creating Tesseract worker ${worker_num}`)
 
@@ -193,32 +203,13 @@ async function addOCRWorker (worker_num) {
 
 }
 
-async function scheduleTextRecogn (imageLike) {
+async function scheduleTextRecogn (imageLike, options) {
     // Create OCR job on scheduler
-    return OCRScheduler.addJob('recognize', imageLike)
+    return OCRScheduler.addJob('recognize', imageLike, options)
 }
 
-async function recognizeText(imageLike) {
-    if (tesseractPromise) {
-        // console.debug("Waiting for tesseract worker")
-        await tesseractPromise
-        // console.debug("Got worker")
-    }
-    // Promise.all([tesseractPromise])
-    let {data} = await tesseractWorker.recognize(imageLike)
-
-    // let lines = data.lines.map( line => line.text)
-    // console.debug(`Recognized data: ${lines.join('')}`)
-    return Promise.resolve(data)
-}
-
-async function terminateWorker() {
-    await tesseractWorker.terminate()
-}
-
-
+// ---------------------------------------------------------------
 // Server part
-
 
 server.use(express.json()) // for parsing application/json
 server.use(express.urlencoded({ extended: true })) // for parsing application/x-www-form-urlencoded
@@ -303,6 +294,13 @@ server.get(['/debug'],
     })
 })
 
+server.get('/monitor', (req, res) => {
+
+    console.debug('Starting up streamlink')
+    startStreamMonitor()
+    res.status(200).send('started streamlink')
+})
+
 server.listen(PORT, () => {
     console.log(`Server running at ${HOST}:${PORT}`)
 })
@@ -323,7 +321,7 @@ server.listen(PORT, () => {
 /* streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best
   streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best --stdout | ffmpeg -re -f mpegts -i pipe:0 -f image2 -pix_fmt rgba -vf fps=fps=1/2 -y -update 1 live.png
   
-  streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best --stdout | ffmpeg -re -f mpegts -i pipe:0 -f image2 -pix_fmt rgba -vf fps=fps=1/2 -frame_pts true %d.png
+  streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best --stdout | ffmpeg -re -f mpegts -i pipe:0 -copyts -f image2 -pix_fmt rgba -vf fps=fps=1/2 -frame_pts true %d.png
 
   Explaining ffmpeg mysteries
     streamlink       = (program for natively downloading streams)
