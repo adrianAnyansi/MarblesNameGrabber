@@ -392,7 +392,7 @@ export class UsernameTracker {
 
         for (const userObj of this.list) {
             const testUsername = userObj.name
-            let dist = this.calcMatchDistance(searchUsername, testUsername)
+            let dist = this.calcLevenDistance(searchUsername, testUsername)
             const userRankObj = [dist, userObj]
 
             if (usernameRanking.isFull()) currentMax = usernameRanking.sneak()[0]

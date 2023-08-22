@@ -145,10 +145,15 @@ export class MarbleNameGrabberNode {
     DEBUG_NAME_RECOGN_FILE = 'testing/name_match.png'
     DEBUG_NAME_BIN_FILE     = 'testing/name_bin.png'
 
-    constructor(filename=null, debug=false) {
+    constructor(imageLike=null, debug=false, imgOptions={}) {
         // Get references, etc
 
-        this.filename = filename // image being read
+        this.imageLike = imageLike // image being read
+        // this.imageOptions = {raw: {  width: this.bufferSize.w, 
+        //     height: this.bufferSize.h, 
+        //     channels: this.bufferSize.channels, 
+        //     premultiplied: this.bufferSize.premultiplied
+        // }}
         this.imageSize = null   // {w,h} for rect of original image
 
         this.buffer = null      // buffer of raw pixel data
@@ -164,7 +169,7 @@ export class MarbleNameGrabberNode {
     async buildBuffer () {
         // Build sharp object and extract buffer as UInt8Array
         
-        let sharpImg = sharp(this.filename)
+        let sharpImg = sharp(this.imageLike)
         this.buffer = null // delete previous buffer
         this.bufferSize = null
         this.imageSize = null
@@ -462,7 +467,7 @@ export class MarbleNameGrabberNode {
 
             if (matchPxUNColorBool && yBoundSet.has(cy)) {
                 // out-of-bounds, reverse flood-fill
-                console.debug("Reverse flood-fill triggered")
+                // console.debug("Reverse flood-fill triggered")
                 this.antiFloodFillSearch(cx, cy)
                 return 0
             }

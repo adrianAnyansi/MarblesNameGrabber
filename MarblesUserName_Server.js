@@ -6,6 +6,7 @@ import fs from 'node:fs'
 
 import { spawn } from 'node:child_process'
 
+
 import {MarbleNameGrabberNode} from "./MarblesNameGrabberNode.mjs"
 import {UsernameTracker, Heap, LimitedList} from './UsernameTrackerClass.mjs'
 
@@ -19,6 +20,7 @@ const HOST = 'localhost'
 // debug variables
 const debug = true;
 const debugTesseract = false;
+const debugProcess = false
 
 // server state
 const SERVER_STATE_ENUM = {
@@ -27,19 +29,28 @@ const SERVER_STATE_ENUM = {
     READING: 'READING'
 }
 let serverState = SERVER_STATE_ENUM.STOPPED
+const serverStatus = {
+    imgs_downloaded: 0,
+    imgs_read: 0
+}
 let parserInterval = null
 
-const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s'
+const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s' // "https://www.twitch.tv/videos/1895894790?t=06h39m40s"
 const LIVE_URL = '"https://www.twitch.tv/barbarousking"'
-const streamlinkCmd = ['streamlink', '"https://www.twitch.tv/videos/1895894790?t=06h39m40s"', 'best', '--stdout'] 
-const ffmpegCmd = ['ffmpeg', '-re', '-f mpegts', '-i pipe:0', '-f image2', '-pix_fmt rgba', '-vf fps=fps=1/2', '-y', '-update 1', 'live.png']
+const streamlinkCmd = ['streamlink', `${DEBUG_URL}`, 'best', '--stdout'] 
+// const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2', '-pix_fmt','rgba', '-vf','fps=fps=1/2', '-y', '-update','1', 'live.png']
+// const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2', '-pix_fmt','rgba', '-vf','fps=fps=1/2', 'pipe:1']
+let ffmpegFPS = '2'
+const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=fps=${ffmpegFPS}`, 'pipe:1']
+
+let pngChunkBufferArr = []
+const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
 
 let streamlinkProcess = null
 let ffmpegProcess = null
 
 const TEST_FILENAME = "testing/test.png"
 const LIVE_FILENAME = "live.png"
-
 
 // Tesseract variables
 let OCRScheduler = null
@@ -94,60 +105,137 @@ function startStreamMonitor(streamURL=null) {
     if (streamlinkProcess) return
 
     streamURL ??= DEBUG_URL
-    streamlinkProcess = spawn(streamlinkCmd[0], [streamURL, 'best'], {
+    streamlinkCmd[1] = streamURL
 
+
+    console.debug(`Starting monitor in directory: ${process.cwd()}`)
+
+    streamlinkProcess = spawn(streamlinkCmd[0], streamlinkCmd.slice(1), {
+        stdio: ['inherit', 'pipe', 'pipe']
     })
-    streamlinkProcess.stdout.on('data', (data) => {
-        console.log(data.toString())
+    ffmpegProcess = spawn(ffmpegCmd[0], ffmpegCmd.slice(1), {
+        stdio: ['pipe', 'pipe', 'pipe']
     })
-}
 
-function startFFMpegProcess() {
-    // start process for ffmpeg
+    streamlinkProcess.stdout.pipe(ffmpegProcess.stdin) // pipe to ffmpeg
 
-    if (ffmpegProcess) return
-
-    ffmpegProcess = spawn(ffmpegCmd[0], ffmpegCmd.slice(1))
     
+    // Print start/running depending on ffmpeg output
+    if (debugProcess) {
+        streamlinkProcess.stderr.on('data', (data) => {
+            console.log(data.toString())
+        })
+    } else {
+        let outputBuffer = false
+        streamlinkProcess.stderr.on('data', (data) => {
+            const stringOut = data.toString()
+            if (!outputBuffer & stringOut.includes('Opening stream')) {
+                outputBuffer = true
+                console.debug('Streamlink is downloading stream-')
+            }
+        })
+    }
+
+    if (debugProcess) {
+        ffmpegProcess.stderr.on('data', (data) => {
+            console.log(data.toString())
+        })
+    } else {
+        let outputBuffer = false
+        ffmpegProcess.stderr.on('data', (data) => {
+            const stringOut = data.toString()
+            if (!outputBuffer & stringOut.includes('frame=')) {
+                outputBuffer = true
+                console.debug('FFMpeg is outputting images to buffer-')
+            }
+        })
+    }
+
+    ffmpegProcess.stdout.on('data', (partialPngBuffer) => {
+        // NOTE: Data is a buffer with partial image data
+
+        let lastIdx = 0
+        let lead_idx = 0
+
+        while (lead_idx+4 <  partialPngBuffer.length) {
+            if (partialPngBuffer.readUInt32BE(lead_idx) == PNG_MAGIC_NUMBER) {
+                // if (lead_idx % 4 != 0) console.error(`offset did not end at 0`)
+                // console.debug(`Offset started at ${lead_idx} and ${lead_idx%4}`)
+
+                if (lead_idx != lastIdx)
+                    pngChunkBufferArr.push(partialPngBuffer.slice(lastIdx, lead_idx))
+
+                if (pngChunkBufferArr.length > 0) {
+                    // Buffer is complete, do effort
+                    const pngBuffer = Buffer.concat(pngChunkBufferArr)
+                    pngChunkBufferArr.length = 0 // clear array
+                    // console.log(`Got PNG Buffer size:${pngBuffer.length}`)
+                    // TODO: Debug flag
+                    // fs.writeFileSync('process-stdout.png', pngBuffer, 
+                    //     err => console.error(`You failed a thing ${err}`))
+                    parseImgFile(pngBuffer)
+                }
+
+                lastIdx = lead_idx
+            }
+            lead_idx += 4
+        }
+
+        // copy remainder into here
+        pngChunkBufferArr.push(partialPngBuffer.subarray(lastIdx)) // push shallow-copy of buffer here
+
+    })
+
+    streamlinkProcess.on('close', () => console.debug('Streamlink process has closed.'))
+    ffmpegProcess.on('close', () => console.debug('FFMpeg process has closed.'))
+
+
+    console.debug("Started up streamlink->ffmpeg buffer")
 }
 
-function parseImgFile() {
+async function parseImgFile(imageLike) {
     // console.log("We're doing it LIVE!")
-    let filename = LIVE_FILENAME
-    let fileUpdateTs = fs.statSync(path.resolve(filename)).mtime.getTime()
+    // let filename = LIVE_FILENAME
+    // let fileUpdateTs = fs.statSync(path.resolve(filename)).mtime.getTime()
 
-    // TODO: Wait until workerpool is ready
+    // // TODO: Wait until workerpool is ready
+    
 
-    if (lastReadTs && lastReadTs == fileUpdateTs) {
-        console.debug(`Already queued file with dt ${new Date(fileUpdateTs)}`)
-        return
-    }
+    // if (lastReadTs && lastReadTs == fileUpdateTs) {
+    //     console.debug(`Already queued file with dt ${new Date(fileUpdateTs)}`)
+    //     return
+    // }
         
-    lastReadTs = fileUpdateTs
+    // lastReadTs = fileUpdateTs
+    serverStatus.imgsParsed += 1
+
+    let currTs = (new Date()).getTime()
+    
     const options = {
-        "id": `file_dt_${lastReadTs}`,
-        "jobId": `file_dt_${lastReadTs}`,
+        "id": `file_dt_${currTs}`,
+        "jobId": `file_dt_${currTs}`,
     }
     
-    let mng = new MarbleNameGrabberNode(filename, false)
+    let mng = new MarbleNameGrabberNode(imageLike, false)
 
-    console.debug("Parsing LIVE image read")
+    console.debug(`Queuing LIVE image read ${OCRScheduler.getQueueLen()}`)
 
     return mng.buildBuffer()
     .catch( err => {
         console.warn("Buffer was not created successfully, skipping")
         throw err
     }).then( () =>  mng.isolateUserNames()
-    ).then( buffer =>  scheduleTextRecogn(buffer, options)
+    ).then( buffer =>  scheduleTextRecogn(buffer)
     ).then( ({data, info}) => {
         // add to nameBuffer
+        serverStatus.imgs_read += 1
         for (const line of data.lines) {
             let username = line.text.trim()
             if (username == '' || username.length <= 2) continue
 
             usernameList.add(username, line.confidence)
         }
-        console.debug(`UserList is now: ${usernameList.length}`)
+        console.debug(`UserList is now: ${usernameList.length}, last added: ${usernameList.list.at(-1).name}`)
     }).catch ( err => {
         console.warn(`Error occurred ${err}, execution exited`)
         // Since this is continous, this info is discarded
@@ -205,6 +293,8 @@ async function addOCRWorker (worker_num) {
 
 async function scheduleTextRecogn (imageLike, options) {
     // Create OCR job on scheduler
+    if (!OCRScheduler) 
+        throw Error('OCRScheduler is not init')
     return OCRScheduler.addJob('recognize', imageLike, options)
 }
 
@@ -221,36 +311,41 @@ server.get('/alive', (req, res) => {
 // Admin functions
 
 server.all('/start', (req, res) => {
-    if (parserInterval == null) {
-        console.log("Starting up image parser")
+    if (streamlinkProcess == null) {
+        console.log("Starting up image parser...")
+        
         usernameList.clear()
-        // generateWorker()
         setupWorkerPool(4)
-        parserInterval = setInterval(parseImgFile, READ_IMG_TIMEOUT)
+        startStreamMonitor()
+        // parserInterval = setInterval(parseImgFile, READ_IMG_TIMEOUT)
         serverState = SERVER_STATE_ENUM.RUNNING
+        
+        res.send({state: serverState, text:"Running"})
+    } else {
+        res.send({state: serverState, text:"Already Running"})
     }
 
-    res.send({state: serverState, text:"Running"})
 })
 
 server.all('/stop', (req, res) => {
-    if (parserInterval) {
+    // if (parserInterval) {
+    if (streamlinkProcess) {
         console.log("Stopping image parser")
         // TODO: Stop workers without killing the scheduler
         serverState = SERVER_STATE_ENUM.STOPPED
+
+        streamlinkProcess.kill()
+        ffmpegProcess.kill()
+        // console.log("Killed streamlink processes")
+
+        streamlinkProcess = null
+        ffmpegProcess = null
 
         clearInterval(parserInterval)
         parserInterval = null
     }
 
     res.send({state: serverState, text:"Stopped"})
-})
-
-server.get('/find/:userId', (req, res) => {
-    // See if a user is in the system
-    let reqUsername = req.params.userId
-    console.debug(`Finding user ${reqUsername}`)
-    return res.json(usernameList.find(reqUsername))
 })
 
 server.all('/add', (req, res) => {
@@ -262,7 +357,23 @@ server.all('/add', (req, res) => {
     return res.status(200).send('Added')
 })
 
+server.all('/status', (req, res) => {
+    res.send({
+        'status': serverState,
+        'textqueue': OCRScheduler.getQueueLen(),
+        'imgsParsed': imgs,
+    })
+})
+
 // User functions
+server.get('/find/:userId', (req, res) => {
+    // See if a user is in the system
+    let reqUsername = req.params.userId
+    console.debug(`Finding user ${reqUsername}`)
+    return res.json(usernameList.find(reqUsername))
+})
+
+
 
 server.get('/list', (req, res) => {
     res.send({
@@ -323,6 +434,8 @@ server.listen(PORT, () => {
   
   streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best --stdout | ffmpeg -re -f mpegts -i pipe:0 -copyts -f image2 -pix_fmt rgba -vf fps=fps=1/2 -frame_pts true %d.png
 
+  ffmpeg -re '-f','mpegts', '-i','pipe:0', '-f','image2', '-pix_fmt','rgba', '-vf','fps=fps=1/2', 'pipe:1'
+
   Explaining ffmpeg mysteries
     streamlink       = (program for natively downloading streams)
     <twitch-vod url> = se
@@ -340,4 +453,11 @@ server.listen(PORT, () => {
     -y          = do not confirm overwriting the output file
     -update     = continue to overwrite the output file/screenshot
     <screenshot.png> = output filename
+
+    streamlink "https://twitch.tv/barbarousking" "best" --stdout | ffmpeg -re -f mpegts -i pipe:0 -f image2pipe -pix_fmt rgba -c:v png -vf fps=fps=1/2 pipe:1
+
+    Explaining more commands
+    -f image2pipe = if you pipe image2, its gets mad and crashes
+    -c:v png    = video output is png
+    pipe:1      = output to stdout
 */
