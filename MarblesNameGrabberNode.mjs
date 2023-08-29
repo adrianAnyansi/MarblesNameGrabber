@@ -98,9 +98,15 @@ function calcMinColorDistance (colorList) {
 
 const colorSampling = {
     SUB_BLUE: [0x7b96dc, 0x6c97f5, 0x7495fa, 0x7495fa, 0x8789ec, 0x7294ec, 0x7298e6, 0x799aff, 0x7b95f7, 0x7897fa,
-                0x846ed9, 0x577ac9, 0x809ae7, 0x8e95d4, toHex([87, 164, 255]), toHex([158, 180, 251]), toHex([111, 128, 209])],
-    UNSUB_WHITE: [0xfffefb, 0xc9c2c0, 0xc3bdba, 0xfef8f5, 0xfcf6f3, 0xd0c9c7, 0xcfc8c5, 0xece5e2, 0xd1cbc8, 0xbdbdb9, 
-                    0xFFFEFF, 0xFFFFFF, 0xE5E5E7, 0xFFFFFD, 0xFFFAF7]
+                0x846ed9, 0x577ac9, 0x809ae7, 0x8e95d4, toHex([87, 164, 255]), toHex([158, 180, 251]), toHex([111, 128, 209]),
+                toHex([139, 145, 242]), toHex([136, 123, 185]), 
+                // 0xA2ACCC, 0x818CDE, 0x7C95E4, 0x5696FB, 0x619AF6
+            ],
+    UNSUB_WHITE: [0xfffefb, 0xfef8f5, 0xfcf6f3, 0xd0c9c7, 0xcfc8c5, 0xece5e2, 0xd1cbc8, 0xbdbdb9,  0xc9c2c0, 0xc3bdba,
+                    0xFFFEFF, 0xFFFFFF, 0xE5E5E7, 0xFFFFFD, 0xFFFAF7,
+                toHex([216, 216, 216]), 
+            ],
+    VIP_PINK: [0xE824B8, 0x9D126D, 0xDD20C2, 0xEC22C4]
     // TEST:       [0x000000, 0x101010, 0x040404]
 }
 
@@ -127,6 +133,7 @@ const userColors = {}
 for (let color in colorSampling) {
     userColors[color] = calcMinColorDistance(colorSampling[color])
 }
+// userColors[SUB_BLUE][1] += 20
 
 const cacheColorMatch = new Map(Object.values(userColors).map(color => [color, new Map()]))
 
@@ -156,6 +163,7 @@ export class MarbleNameGrabberNode {
         // }}
         this.imageSize = null   // {w,h} for rect of original image
 
+        this.orig_buffer = null // buffer used for debugging
         this.buffer = null      // buffer of raw pixel data
         this.binBuffer = null   // binarized buffer of black text on a white background
         this.bufferPromise = null   // promise that is resolved when buffer has been set
@@ -168,6 +176,8 @@ export class MarbleNameGrabberNode {
 
     async buildBuffer () {
         // Build sharp object and extract buffer as UInt8Array
+
+        if (this.bufferPromise) return this.bufferPromise
         
         let sharpImg = sharp(this.imageLike)
         this.buffer = null // delete previous buffer
@@ -188,6 +198,7 @@ export class MarbleNameGrabberNode {
                 if (data) {
                     this.bufferSize = {w: info.width, h:info.height, channels: info.channels, premultiplied: info.premultiplied, size: info.size }
                     this.buffer = data
+                    if (!this.debug) this.orig_buffer = this.buffer
                     this.binBuffer = Buffer.alloc(info.size, new Uint8Array(toRGBA(WHITE)))
                 }
                 return Promise.resolve(data)
@@ -275,37 +286,38 @@ export class MarbleNameGrabberNode {
         (160 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (161 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (162 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
+        (163 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (166 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (170 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (173 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (176 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (177 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
+        (178 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (179 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
     ]
     ANTI_LINES_PCT = [
         (154 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (156 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        // (181 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (182 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
+        (184 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
+        // (184 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
     ]
     USERNAME_LEFT_PADDING_PCT = 10 / MEASURE_RECT.w // Left padding in pixels @ 1920
     USERNAME_RIGHT_MIN_PCT = 40 / MEASURE_RECT.w // Approx 3 alphanum chars @ 1920
 
     async isolateUserNames () {
         // First, ensure buffer exists
+        await this.buildBuffer()
 
-        // TODO: Rewrite this to be better
-        if (this.bufferPromise)
-            await this.bufferPromise
-        else
-            await this.buildBuffer()
+        if (this.debug) {
+            if (!this.orig_buffer)
+                this.orig_buffer = Buffer.alloc(this.buffer.length)
+            this.buffer.copy(this.orig_buffer)
+            this.bufferToFile(this.DEBUG_NAME_RAW_FILE, this.orig_buffer, false)
+            
+            // await this.bufferToFile(this.DEBUG_NAME_RAW_FILE, this.buffer, false)
+        }
 
-        if (this.debug) await this.bufferToFile(this.DEBUG_NAME_RAW_FILE, this.buffer, false)
-
-        // Start to iterate through the buffer
-
-        // const validFloodFillPos = new Array();  // Track flood fill positions
-        // const cacheColorMatch = new Set() // Track colors that previously matched*
+        // Setup variables for buffer iteration
 
         let y_start = 0;
         
@@ -329,9 +341,10 @@ export class MarbleNameGrabberNode {
         let floodFillUse = 0
 
         // Begin iterating through the buffer
-        while ( y_start < this.bufferSize.h ) {
+        while ( y_start < this.bufferSize.h ) {     // Per vertical line
             let x_start = this.bufferSize.w-1;
             let failedMatchVertLines = 0;
+            let firstColorRangeMatch = null
 
             while (x_start >= 0) {   // RIGHT->LEFT search
                 let foundMatch = false;
@@ -341,10 +354,11 @@ export class MarbleNameGrabberNode {
                     let px_rgba = this.getPixel(x_start, y_start+check_px_off)
                     if (this.debug) this.setPixel(x_start, y_start+check_px_off, toRGBA(YELLOW))
 
+                    if (px_rgba[3] < 0xFF) continue // this has been visited, and due to anti-flood-fill I can ignore this
                     if ( USERNAME_COLOR_RANGE_ARR.some( ([color, range])  => redmean(color, px_rgba) < range) ) {
                         // do not continue iterating
                         failedMatchVertLines = Infinity
-                        if (this.debug) this.setPixel(x_start, y_start+check_px_off, toRGBA(RED))
+                        if (this.debug) this.setPixel(x_start, y_start+check_px_off, toRGBA(ORANGE))
                         break
                     }
                 }
@@ -380,11 +394,17 @@ export class MarbleNameGrabberNode {
                         return cacheRedMean < range 
                     })
 
-                    // TODO: Cache check is bad AND late
                     if ( colorRange != undefined) {
+
+                        if (x_start > (this.bufferSize.w - USERNAME_RIGHT_MIN) && firstColorRangeMatch && colorRange != firstColorRangeMatch) {  // color switched while iterating the line
+                            // console.warn(`Color match redone at ${y_start+check_px_off}`)
+                            if (this.debug) this.setPixel(x_start, y_start+check_px_off, toRGBA(MOD_GREEN))
+                            continue
+                        }
 
                         failedMatchVertLines = 0
                         foundMatch = true
+                        firstColorRangeMatch = colorRange
                         
                         // do flood-fill
                         cacheColorMatch.get(colorRange).set(hashArr(px_rgba), redmean(colorRange[0], px_rgba))
@@ -394,7 +414,8 @@ export class MarbleNameGrabberNode {
                         floodFillUse += this.floodFillSearch(x_start, y_start+check_px_off, 
                                                 colorRange, cacheColorMatch.get(colorRange),
                                                 anti_y_lines, 2)
-                    }
+                    } else if (this.debug) 
+                        this.setPixel(x_start, y_start+check_px_off, toRGBA(VIP_PINK))
                 }
                 
                 
@@ -473,17 +494,19 @@ export class MarbleNameGrabberNode {
             }
 
             const chOffset = Math.max(0, (redMeanValue - matchRange)/3)
-            const avgCh = parseInt( 0xFF - ((0xFF - chOffset)**2) / 0xFF ) // log fall-off
+            const EXP_FALLOFF = 3
+            const avgCh = parseInt( 0xFF - ((0xFF - chOffset)**EXP_FALLOFF) / 0xFF**(EXP_FALLOFF-1) ) // log fall-off
             const bw_rgba = [avgCh, avgCh, avgCh, 0xFF]
             
             // px_rgba = matchUserColor ? toRGBA(bw_rgba, MATCH_ALPHA) : toRGBA(bw_rgba, NO_MATCH_ALPHA)
-            px_rgba = bw_rgba
+            // px_rgba = bw_rgba
 
-            this.setBinPixel(cx, cy, px_rgba) // set in binBuffer
+            this.setBinPixel(cx, cy, bw_rgba) // set in binBuffer
             
             px_rgba[3] = matchPxUNColorBool ? MATCH_ALPHA : NO_MATCH_ALPHA
             if (this.debug) {
                 px_rgba = toRGBA(MAHOGANY, px_rgba[3]) // brown* for flood-fill // TODO: Blend pixel instead?
+                // px_rgba = toRGBA(PX)
             }
             this.setPixel(cx, cy, px_rgba)
 
@@ -539,7 +562,7 @@ export class MarbleNameGrabberNode {
 
     }
 
-    bufferToPNG(buffer=this.buffer, scaleForOCR=true) {
+    bufferToPNG(buffer=this.buffer, scaleForOCR=true, toPNG=true) {
         // let retPromise = null
         let bufferPromise = sharp(buffer, {
             raw: {  width: this.bufferSize.w, 
@@ -548,11 +571,15 @@ export class MarbleNameGrabberNode {
                     premultiplied: this.bufferSize.premultiplied}
         })
         if (scaleForOCR) {
-            bufferPromise = bufferPromise.resize({width:1000})
+            bufferPromise = bufferPromise.resize({width:1000, kernel:'mitchell'})
                                         .blur(1)
                                         .withMetadata({density: 300})
         }
-        return bufferPromise.png()
+        
+        if (toPNG)
+            return bufferPromise.png()
+        else
+            return bufferPromise
     }
 
     bufferToFile(filename, buffer=this.buffer, scaleForOCR=true) {

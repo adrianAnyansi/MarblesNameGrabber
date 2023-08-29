@@ -3,12 +3,12 @@
 import express from 'express'
 import path from 'node:path'
 import fs from 'node:fs'
-
+import sharp from 'sharp'
 import { spawn } from 'node:child_process'
 
 
 import {MarbleNameGrabberNode} from "./MarblesNameGrabberNode.mjs"
-import {UsernameTracker, Heap, LimitedList} from './UsernameTrackerClass.mjs'
+import {UsernameTracker} from './UsernameTrackerClass.mjs'
 
 import { createWorker, createScheduler } from 'tesseract.js'
 import { setInterval } from 'node:timers'
@@ -31,13 +31,15 @@ const SERVER_STATE_ENUM = {
 let serverState = SERVER_STATE_ENUM.STOPPED
 const serverStatus = {
     imgs_downloaded: 0,
-    imgs_read: 0
+    imgs_read: 0,
+    started_stream_ts: null,
 }
 let parserInterval = null
 
 const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s' // "https://www.twitch.tv/videos/1895894790?t=06h39m40s"
 const LIVE_URL = '"https://www.twitch.tv/barbarousking"'
-const streamlinkCmd = ['streamlink', `${DEBUG_URL}`, 'best', '--stdout'] 
+let globalStreamURL = DEBUG_URL
+const streamlinkCmd = ['streamlink', globalStreamURL, 'best', '--stdout'] 
 // const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2', '-pix_fmt','rgba', '-vf','fps=fps=1/2', '-y', '-update','1', 'live.png']
 // const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2', '-pix_fmt','rgba', '-vf','fps=fps=1/2', 'pipe:1']
 let ffmpegFPS = '2'
@@ -102,13 +104,14 @@ async function shutdownWorkerPool () {
 function startStreamMonitor(streamURL=null) {
     // Start process for stream url
 
-    if (streamlinkProcess) return
+    if (streamlinkProcess) return // TODO: Write error
 
-    streamURL ??= DEBUG_URL
-    streamlinkCmd[1] = streamURL
+    globalStreamURL ??= streamURL
+    // streamlinkCmd[1] = streamURL
 
 
     console.debug(`Starting monitor in directory: ${process.cwd()}`)
+    console.debug(`Watching stream url: ${streamlinkCmd[1]}`)
 
     streamlinkProcess = spawn(streamlinkCmd[0], streamlinkCmd.slice(1), {
         stdio: ['inherit', 'pipe', 'pipe']
@@ -207,7 +210,7 @@ async function parseImgFile(imageLike) {
     // }
         
     // lastReadTs = fileUpdateTs
-    serverStatus.imgsParsed += 1
+    serverStatus.imgs_downloaded += 1
 
     let currTs = (new Date()).getTime()
     
@@ -229,13 +232,8 @@ async function parseImgFile(imageLike) {
     ).then( ({data, info}) => {
         // add to nameBuffer
         serverStatus.imgs_read += 1
-        for (const line of data.lines) {
-            let username = line.text.trim()
-            if (username == '' || username.length <= 2) continue
-
-            usernameList.add(username, line.confidence)
-        }
-        console.debug(`UserList is now: ${usernameList.length}, last added: ${usernameList.list.at(-1).name}`)
+        let retList = usernameList.addAll(data, mng.bufferToPNG(mng.buffer, true, false))
+        console.debug(`UserList is now: ${usernameList.length}, last added: ${retList.at(-1)}`)
     }).catch ( err => {
         console.warn(`Error occurred ${err}, execution exited`)
         // Since this is continous, this info is discarded
@@ -258,6 +256,10 @@ async function debugRun (filename) {
     )
     .then( 
         buffer => scheduleTextRecogn(buffer)
+    ).then(
+        tsData => {
+            return {mng: mng, data: tsData.data}
+        }
     ).catch(
         err => {
             console.error(`Debug: An unknown error occurred ${err}`)
@@ -280,9 +282,10 @@ async function addOCRWorker (worker_num) {
     await tesseractWorker.loadLanguage('eng')
     await tesseractWorker.initialize('eng');
     await tesseractWorker.setParameters({
-        tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPKRSTUVWXYZ_0123456789', // only search a-z, _, 0-9
+        tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQKRSTUVWXYZ_0123456789', // only search a-z, _, 0-9
         preserve_interword_spaces: '0', // discard spaces between words
         tessedit_pageseg_mode: '6',      // read as vertical block of uniform text
+        // tessedit_pageseg_mode: '11',      // read individual characters (this is more likely to drop lines)
     })
 
     console.debug(`Tesseract Worker ${worker_num} is built & init`)
@@ -317,6 +320,7 @@ server.all('/start', (req, res) => {
         usernameList.clear()
         setupWorkerPool(4)
         startStreamMonitor()
+        serverStatus.started_stream_ts = new Date()
         // parserInterval = setInterval(parseImgFile, READ_IMG_TIMEOUT)
         serverState = SERVER_STATE_ENUM.RUNNING
         
@@ -348,6 +352,16 @@ server.all('/stop', (req, res) => {
     res.send({state: serverState, text:"Stopped"})
 })
 
+server.all('/clear/:pwd', (req, res) => {
+    // force clear without resetting the server
+    if (req.params.pwd == 'force') {
+        usernameList.clear()
+        res.send('Cleared userlist')
+    } else {
+        res.status(401).send('Not allowed.')
+    }
+})
+
 server.all('/add', (req, res) => {
     let jsonList = req.body
     console.debug(`Body is ${jsonList.toString()}`)
@@ -357,13 +371,25 @@ server.all('/add', (req, res) => {
     return res.status(200).send('Added')
 })
 
+
+function humanReadableTimeDiff (milliseconds) {
+    let seconds = parseInt(milliseconds / 1000)
+    let minutes = parseInt(seconds / 60)
+    seconds %= 60
+
+    return `${minutes}m ${seconds}s`
+}
+
 server.all('/status', (req, res) => {
     res.send({
         'status': serverState,
-        'textqueue': OCRScheduler.getQueueLen(),
-        'imgsParsed': imgs,
+        'job_queue': OCRScheduler.getQueueLen(),
+        'img_stats': serverStatus,
+        'streaming': humanReadableTimeDiff(Date.now() - serverStatus.started_stream_ts),
+        'userList_length': usernameList.hash.size
     })
 })
+
 
 // User functions
 server.get('/find/:userId', (req, res) => {
@@ -373,12 +399,26 @@ server.get('/find/:userId', (req, res) => {
     return res.json(usernameList.find(reqUsername))
 })
 
+server.get(['/img/:userId'], (req, res) => {
+    const reqUsername = req.params.userId
+    console.debug(`Returning user image ${reqUsername}`)
+    const userImage = usernameList.getImage(reqUsername)
+    if (userImage) {
+        res.contentType('jpeg')
+        res.send(userImage)
+    } else {
+        res.sendStatus(404)
+    }
+})
 
 
 server.get('/list', (req, res) => {
+
+    // let iter = [...usernameList]
+    
     res.send({
         len: usernameList.length,
-        userList: [usernameList.list]
+        userList: [...usernameList.hash.entries()].map(  ([username, userObj]) => [username, userObj.confidence])
     })
 })
 
@@ -389,27 +429,13 @@ server.get(['/debug'],
     let filename = req.query?.filename
     if (!filename) filename = TEST_FILENAME
 
-    debugRun(filename).then( ({data, info}) => {
-        let retList = []
-        for (let line of data.lines) {
-            let username = line.text.trim()
-            if (username != '' && username.length > 2) {
-                retList.push(username)
-                usernameList.add(username, line.confidence)
-            }
-        }
+    debugRun(filename).then( ({mng, data}) => {
+        let retList = usernameList.addAll(data, mng.bufferToPNG(mng.orig_buffer, true, false))
         res.send({list: retList, debug:true})
         console.debug("Sent debug response")
     }).catch( err => {
         res.status(400).send(`An unknown error occurred. ${err}`)
     })
-})
-
-server.get('/monitor', (req, res) => {
-
-    console.debug('Starting up streamlink')
-    startStreamMonitor()
-    res.status(200).send('started streamlink')
 })
 
 server.listen(PORT, () => {

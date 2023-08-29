@@ -1,5 +1,10 @@
 # TODO.md
 
+timestamp when the names are recognized
+
+---
+
+
 So things work, however text recogn is still slightly inaccurate.
 I have some ideas to improve it
 
