@@ -1,6 +1,7 @@
 /*
 This is a class that scrapes video frames in order to read marbles namelists
 
+This is the previous in-browser version that's no longer being used
 */
 
 class MarbleNameGrabber {

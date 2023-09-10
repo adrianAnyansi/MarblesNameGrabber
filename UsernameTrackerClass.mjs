@@ -11,13 +11,20 @@ class Username {
         this.name = name
         this.confidence = confidence
         // this.index = index
+        
         this.timestamp = timestamp
+        this.verifyAmount = 0
+        this.fullImgIdxList = [] // list of idxes that are this user
 
-        // this.image = null
-
-        // this.nextAlias = null
-        // this.prevAlias = null
         this.aliases = [] // list of usernames that are similar
+    }
+}
+
+class UserImage {
+    constructor (imageIdx, buffer, userObj) {
+        this.imageIdx = imageIdx
+        this.imgBuffer = buffer
+        this.userObj = userObj
     }
 }
 
@@ -55,12 +62,19 @@ for (let arr of DEFINED_ADJC_SETS) {
 
 console.debug(`[UsernameTracker] Generated ${ADJC_LETTER_MAP.size} adjacent entries!`)
 
+
+
 export class UsernameTracker {
 
     constructor () {
-        this.hash = new Map()
-        // this.list = [] // ordered list
-        this.imgHash = new Map()
+        this.hash = new Map()       // hash of names
+        this.imgHash = new Map()    // hash of jpgs
+
+        this.pageIdx = 0           // Currently injested images
+        this.unqImageID = 0         // Unique id
+        this.unverifiedImgs = []    // List of usernames unsuccessfully read
+        this.unverifiedUsers = []   // Users yet to be verified
+        this.fullImageList = []     // All images in order
     }
 
     // *[Symbol.iterator] () {
@@ -71,80 +85,171 @@ export class UsernameTracker {
         return this.hash.size
     }
 
-    add (username, confidence) {
+    add (username, confidence, userVerify=false) {
         let userObj = this.hash.get(username)
+
         if (userObj == undefined) {
             userObj = new Username(username, confidence)
-            // userObj.index = this.list.push(userObj)
             this.hash.set(username, userObj)
-        } 
-        else // update confidence
+
+        } else {    // update confidence
             userObj.confidence = Math.max(confidence, userObj.confidence)
+
+            if (userVerify) userObj.verifyAmount += 1
+            else if (userObj.verifyAmount < 1)  userObj.verifyAmount = 1
+        }
         
         return userObj
     }
 
-    addAll (tesseractData, sharpImg) {
+    
+    remove(username) {
+        if (!this.hash.has(username)) return null
+        
+        const user = this.hash.get(username)
+        this.hash.delete(username)
+    }
+
+    rename(oldUsername, newUsername) {
+        if (!this.hash.has(oldUsername)) return null
+
+        const user = this.hash.get(oldUsername)
+        this.hash.delete(oldUsername)
+        this.add(newUsername, user.confidence, true)
+
+        const img = this.imgHash.get(oldUsername)
+        // this.imgHash.delete(oldUsername)
+        this.hash.set(newUsername, img) // maybe don't replace old one?
+    }
+
+    addPage (tesseractData, sharpImg, curr_ts) {
         const retList = []
+        // const curr_ts = Date.now()
+        const fullUsername = {x0: 0, width: 1000}   // NOTE: Hardcoded
+        const heightPadding = 10;
+
+        if (tesseractData.lines < 4) {
+            console.warn(`Discard, not enough usernames found. ${tesseractData.lines}`)
+        }
+
+        // 27 lines per image is expected
+
         for (let line of tesseractData.lines) {
-            let username = line.text.trim()
-            if (username != '' && username.length > 2) {
-                // TODO: Check for aliases
-                const userObj = this.add(username, line.confidence)
+            const username = line.text.trim()
+            const validUsername = username != '' && username.length > 2
+
+            if (validUsername) {
+                const userObj = this.add(username, line.confidence) // TODO: Add timestamp
                 if (line.confidence == 0) { 
-                    // line -> word -> symbol
+                    // line -> word -> symbol to recalc confidence
                     const symbolSum = line.words[0].symbols.reduce( (acc,b) => acc+b.confidence, 0)
                     userObj.confidence = symbolSum / (2 * line.words[0].symbols.length)
                 }
                 
-                const bbox = line.bbox
-                // NOTE: Hard coded values
-                const fullWord = {x0: 0, width: 1000}
-
-                // sharpImg.extract({left: bbox.x0, width: bbox.x1-bbox.x0, top:bbox.y0, height: bbox.y1-bbox.y0}).jpeg().toBuffer()
-                sharpImg.extract({left: fullWord.x0, width: fullWord.width, top:bbox.y0, height: bbox.y1-bbox.y0}).jpeg().toBuffer()
-                .then( imgBuffer => {
-                    this.imgHash.set(username, imgBuffer)
-                }).catch( err => {
-                    console.warn(`Unable to set user image buffer ${err}`)
-                })
-                
                 retList.push(`${username}, ${userObj.confidence}`)
             }
+            
+            const nextImgIdx = this.fullImageList.push([]) - 1
+            // Add the image to hash
+            const bbox = line.bbox
+            sharpImg.extract({  left: fullUsername.x0, 
+                                width: fullUsername.width, 
+                                top: Math.max(bbox.y0 - heightPadding, 0), 
+                                height: (bbox.y1+heightPadding) - bbox.y0 }) // TODO: Need image metadata
+                                // height: Math.min(bbox.y1-bbox.y0+heightPadding, bbox.y1-bbox.y0)})
+            .jpeg().toBuffer()
+            .then( imgBuffer => {
+                // const fullImgIdx = this.fullImageList.push(new UserImage(this.pageIdx, imgBuffer, null))
+                this.addImage(username, imgBuffer, nextImgIdx)
+                // this.fullImageList.push([this.imageIdx, imgBuffer, username])
+            }).catch( err => {
+                console.warn(`Unable to set image buffer ${err}`)
+            })
         }
+
+        // find unread images
+        this.pageIdx += 1
         return retList
     }
 
-    remove(username) {
-        if (!this.hash.has(username)) return False
-        
-        const user = this.hash.get(username)
-        this.hash.delete(username)
-        // this.list.pop(user.index)
+    
+    addImage(username, imgBuffer, fullImgIdx) {
+        const newImg = new UserImage(this.pageIdx, imgBuffer, null)
+        // const fullImgIdx = this.fullImageList.push(newImg)-1
+        this.fullImageList[fullImgIdx] = newImg
+
+        const userObj = this.hash.get(username)
+        // this.unqImageID += 1
+        if (!userObj) { // Add for user identification
+            this.unverifiedImgs.push(imgBuffer)
+        } else if (userObj.verifyAmount < 2) {
+            // else add to imgHash & add to unverified user
+            userObj.fullImgIdxList.push(fullImgIdx)
+            this.unverifiedUsers.push(userObj)
+        } else {
+            userObj.fullImgIdxList.push(fullImgIdx)
+        }
     }
 
     clear () {
         this.hash.clear()
-        // this.list.length = 0
+        this.imgHash.clear()
+        this.unverifiedImgs.length = 0
+        this.unverifiedUsers.length = 0
+        this.fullImageList.length = 0
     }
-
-
 
     getImage(username) {
         // Return this image associated with this user
         if (this.hash.has(username)) {
-            return this.imgHash.get(username)
+            const userObj = this.hash.get(username)
+            const imgObj = this.fullImageList[userObj.fullImgIdxList[0]] // Return random?
+            return imgObj.imgBuffer
+            // return this.imgHash.get(username)
         }
         return null
     }
 
+    getFullImageLength () {
+        // Return length of images
+        return this.fullImageList.length
+    }
+
+    getImageFromFullList (idx) {
+        if (idx < this.fullImageList.length)
+            return this.fullImageList[idx].imgBuffer
+        else
+            return null
+    }
+
+
+    status () {
+        // Return status for server debug
+        return {
+            'user_list': this.hash.size,
+            'full_img_list': this.fullImageList.length,
+            'read_pages': this.pageIdx,
+            'unverifed': {
+                'users': this.unverifiedUsers.length,
+                'img': this.unverifiedImgs.length
+            }
+        }
+    }
+
     PERFORMANCE_MARK_FIND = "find_username"
     USER_RANK_LIST = 10
-    find (searchUsername) {
+
+    /**
+     * 
+     * @param {String} searchUsername 
+     * @param {Number} lowestRank 
+     * @returns {LimitedList} 
+     */
+    find (searchUsername, lowestRank=Infinity) {
         // Attempt to find the 5 closest usernames to this text
         const sort = (a,b) => a[0] < b[0]
         const usernameRanking = new LimitedList(this.USER_RANK_LIST, null, sort)
-        let currentMax = Infinity
+        let currentMax = lowestRank
         performance.mark(this.PERFORMANCE_MARK_FIND)
 
         for (const userObj of this.hash.values()) {

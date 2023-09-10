@@ -1,23 +1,50 @@
 # TODO.md
 
-timestamp when the names are recognized
+## todo today
+    1. Sketch up front page of website
+        Figure out how/where to put Status
+        
+        Status: 1. Running 2. Users found 3. Viewers online
+
+        - Create a new user-only route for the user+ranking
+
+    2. Do simple get/fetch of username 
+        (yes/probably/unlikely/no) 
+        Show more info (find page)
+    3. Do advanced search on separate page
+    4. Do the full page by image for the debug admin
+    5. Continue with the user defined images and figure out server+interface
 
 ---
 
+## Server Notes
+    Eventually I have to do the tests and run this on a server.
+    Here are the steps
+    1. Install and test run streamlink + ffmpeg for performance
+    2. Pull git, start using the NPM (p2m or smth)
+    3. Install nginx, start putting the static content in S3 & routing
+    4. Do the Route53 stuff & test stuff
+    5. Buy a domain or something
 
-So things work, however text recogn is still slightly inaccurate.
-I have some ideas to improve it
 
-1. Manually paint sampling points to improve recogn
-2. Put anti-sampling points to remove false positives
-3. Scale non-matching colours by proximity to the base color
-4. Do anti-flood fill if a flood fill goes above the vertical boundaries, and increase the left padding (cause of numbers)
-5. Mess with scaling and blurring while running automated tests
+---
+## Thoughts
 
-I always forget to do this and then I figure out how much easier life is
-when you have a plan that you don't have to rewrite every 2 minutess
+At this point, the recognition is about the best I can consider.
+There are some things that can be tweaked;
+    - Tweak the color values
+    - Mess with anti-flood fill
+    - Recognize and remove the pointer (cause Barb literally can't give me a break)
+    - Figure out ways to remove/ignore white text from Twitch chat
+    - Mess with more blurring (I think scaling matches tests done)
+    - timestamp pictures taken
+    - timestamp when the names are recognized
 
-Here's the plan for MVP.
+Bigger projects
+    - Manually paint sampling points to improve recogn
+    - Weigh the points, restrict the points by a better collision detection
+        - Anti-sampling points?
+    - Maybe do some automating tests for tests
 
 # MVP - Able to run on my local machine
 

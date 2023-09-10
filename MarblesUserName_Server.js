@@ -20,7 +20,7 @@ const HOST = 'localhost'
 // debug variables
 const debug = true;
 const debugTesseract = false;
-const debugProcess = false
+const debugProcess = false;
 
 // server state
 const SERVER_STATE_ENUM = {
@@ -37,7 +37,8 @@ const serverStatus = {
 let parserInterval = null
 
 const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s' // "https://www.twitch.tv/videos/1895894790?t=06h39m40s"
-const LIVE_URL = '"https://www.twitch.tv/barbarousking"'
+const LIVE_URL = 'https://www.twitch.tv/barbarousking'
+const TWITCH_URL = 'https://www.twitch.tv/'
 let globalStreamURL = DEBUG_URL
 const streamlinkCmd = ['streamlink', globalStreamURL, 'best', '--stdout'] 
 // const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2', '-pix_fmt','rgba', '-vf','fps=fps=1/2', '-y', '-update','1', 'live.png']
@@ -101,13 +102,15 @@ async function shutdownWorkerPool () {
 
 
 // Server processing functions
-function startStreamMonitor(streamURL=null) {
+function startStreamMonitor(twitch_user=null) {
     // Start process for stream url
 
     if (streamlinkProcess) return // TODO: Write error
 
-    globalStreamURL ??= streamURL
-    // streamlinkCmd[1] = streamURL
+    if (twitch_user)
+        streamlinkCmd[1] = TWITCH_URL + twitch_user
+    else
+        streamlinkCmd[1] = globalStreamURL
 
 
     console.debug(`Starting monitor in directory: ${process.cwd()}`)
@@ -189,7 +192,10 @@ function startStreamMonitor(streamURL=null) {
 
     })
 
-    streamlinkProcess.on('close', () => console.debug('Streamlink process has closed.'))
+    streamlinkProcess.on('close', () => {
+        console.debug('Streamlink process has closed.')
+        serverState = SERVER_STATE_ENUM.STOPPED
+    })
     ffmpegProcess.on('close', () => console.debug('FFMpeg process has closed.'))
 
 
@@ -232,7 +238,7 @@ async function parseImgFile(imageLike) {
     ).then( ({data, info}) => {
         // add to nameBuffer
         serverStatus.imgs_read += 1
-        let retList = usernameList.addAll(data, mng.bufferToPNG(mng.buffer, true, false))
+        let retList = usernameList.addPage(data, mng.bufferToPNG(mng.buffer, true, false))
         console.debug(`UserList is now: ${usernameList.length}, last added: ${retList.at(-1)}`)
     }).catch ( err => {
         console.warn(`Error occurred ${err}, execution exited`)
@@ -302,6 +308,8 @@ async function scheduleTextRecogn (imageLike, options) {
 }
 
 // ---------------------------------------------------------------
+// ---------------------------------------------------------------
+// ---------------------------------------------------------------
 // Server part
 
 server.use(express.json()) // for parsing application/json
@@ -311,15 +319,23 @@ server.get('/alive', (req, res) => {
     res.send('5alive');
 })
 
+server.use((req, res, next) => {
+    res.append('Access-Control-Allow-Origin', ['*']);
+    res.append('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
+    res.append('Access-Control-Allow-Headers', 'Content-Type');
+    next();
+});
+
 // Admin functions
 
-server.all('/start', (req, res) => {
+server.all(['/start', '/start/:streamName'], (req, res) => {
     if (streamlinkProcess == null) {
         console.log("Starting up image parser...")
         
         usernameList.clear()
         setupWorkerPool(4)
-        startStreamMonitor()
+        const streamName = req.params.streamName
+        startStreamMonitor(streamName)
         serverStatus.started_stream_ts = new Date()
         // parserInterval = setInterval(parseImgFile, READ_IMG_TIMEOUT)
         serverState = SERVER_STATE_ENUM.RUNNING
@@ -383,10 +399,10 @@ function humanReadableTimeDiff (milliseconds) {
 server.all('/status', (req, res) => {
     res.send({
         'status': serverState,
-        'job_queue': OCRScheduler.getQueueLen(),
+        'job_queue': OCRScheduler ? OCRScheduler.getQueueLen() : 'X',
         'img_stats': serverStatus,
         'streaming': humanReadableTimeDiff(Date.now() - serverStatus.started_stream_ts),
-        'userList_length': usernameList.hash.size
+        'userList': usernameList.status()
     })
 })
 
@@ -397,6 +413,37 @@ server.get('/find/:userId', (req, res) => {
     let reqUsername = req.params.userId
     console.debug(`Finding user ${reqUsername}`)
     return res.json(usernameList.find(reqUsername))
+})
+
+server.get('/user_find/:userId', (req, res) => {
+    // Get probablity that user is in the list
+    const reqUsername = req.params.userId
+    console.debug(`User-Find user ${reqUsername}`)
+
+    const userObj = usernameList.hash.get(reqUsername)
+    if (userObj) {
+        // return actual object
+        // TODO: Return 0 if userVerified
+        return res.json({'userObj': userObj, 'match': 1 })
+    } else {
+        // return best matches [levenDist, userObj]
+        let users = usernameList.find(reqUsername, 7)
+        
+        let levDist = users.at(0) ? users.at(0)[0] : Infinity
+        let matchDist = 5
+        // now score based on distance
+        if (levDist < 2) 
+            matchDist = 1
+        else if (levDist < 4)
+            matchDist = 2
+        else if (levDist < 7)
+            matchDist = 3
+        
+        return res.json({'userObj': users.at(0)?.[1], 'match': matchDist })
+    }
+
+
+    // If userFind, then return
 })
 
 server.get(['/img/:userId'], (req, res) => {
@@ -411,26 +458,39 @@ server.get(['/img/:userId'], (req, res) => {
     }
 })
 
+server.get(['/fullimg/:id'], (req, res) => {
+    const reqId = req.params.id
+    console.debug(`Returning image num: ${reqId}`)
+    const userImage = usernameList.getImageFromFullList(reqId)
+    if (userImage) {
+        res.contentType('jpeg')
+        res.send(userImage)
+    } else {
+        res.sendStatus(404)
+    }
+})
+
 
 server.get('/list', (req, res) => {
 
     // let iter = [...usernameList]
     
-    res.send({
-        len: usernameList.length,
-        userList: [...usernameList.hash.entries()].map(  ([username, userObj]) => [username, userObj.confidence])
-    })
+    // res.send({
+    //     len: usernameList.length,
+    //     userList:  Object.fromEntries(usernameList.hash) // .map(  ([username, userObj]) => [username, userObj.confidence])
+    // })
+    res.send(Object.fromEntries(usernameList.hash))
 })
 
 
 server.get(['/debug'], 
-(req, res) => {
+    (req, res) => {
 
     let filename = req.query?.filename
     if (!filename) filename = TEST_FILENAME
 
     debugRun(filename).then( ({mng, data}) => {
-        let retList = usernameList.addAll(data, mng.bufferToPNG(mng.orig_buffer, true, false))
+        let retList = usernameList.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false))
         res.send({list: retList, debug:true})
         console.debug("Sent debug response")
     }).catch( err => {
