@@ -1,9 +1,10 @@
 // Node Server that manages, saves and processes images for MarblesNameGrabber
 
 import express from 'express'
+import HyperExpress from 'hyper-express'
 import path from 'node:path'
-import fs from 'node:fs'
-import sharp from 'sharp'
+// import fs from 'node:fs'
+// import sharp from 'sharp'
 import { spawn } from 'node:child_process'
 
 
@@ -11,9 +12,10 @@ import {MarbleNameGrabberNode} from "./MarblesNameGrabberNode.mjs"
 import {UsernameTracker} from './UsernameTrackerClass.mjs'
 
 import { createWorker, createScheduler } from 'tesseract.js'
-import { setInterval } from 'node:timers'
+// import { setInterval } from 'node:timers'
 
-const server = express()
+// const server = express()
+const server = new HyperExpress.Server()
 const PORT = 4000;
 const HOST = 'localhost'
 
@@ -227,7 +229,7 @@ async function parseImgFile(imageLike) {
     
     let mng = new MarbleNameGrabberNode(imageLike, false)
 
-    console.debug(`Queuing LIVE image read ${OCRScheduler.getQueueLen()}`)
+    console.debug(`Queuing LIVE image queue: ${OCRScheduler.getQueueLen()}`)
 
     return mng.buildBuffer()
     .catch( err => {
@@ -312,43 +314,50 @@ async function scheduleTextRecogn (imageLike, options) {
 // ---------------------------------------------------------------
 // Server part
 
-server.use(express.json()) // for parsing application/json
-server.use(express.urlencoded({ extended: true })) // for parsing application/x-www-form-urlencoded
+// server.use(express.json()) // for parsing application/json
+// server.use(express.urlencoded({ extended: true })) // for parsing application/x-www-form-urlencoded
+
+server.get('/', (req, res) => {
+    // Going to put this under reverse-proxy so this isn't serving static files
+})
 
 server.get('/alive', (req, res) => {
     res.send('5alive');
 })
 
-server.use((req, res, next) => {
-    res.append('Access-Control-Allow-Origin', ['*']);
-    res.append('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
-    res.append('Access-Control-Allow-Headers', 'Content-Type');
-    next();
-});
+// server.use((req, res, next) => {
+//     res.append('Access-Control-Allow-Origin', ['*']);
+//     res.append('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
+//     res.append('Access-Control-Allow-Headers', 'Content-Type');
+//     next();
+// });
 
 // Admin functions
 
-server.all(['/start', '/start/:streamName'], (req, res) => {
+// server.all(['/start', '/start/:streamName'], (req, res) => {
+server.all('/start', (req, res) => {
     if (streamlinkProcess == null) {
         console.log("Starting up image parser...")
         
         usernameList.clear()
         setupWorkerPool(4)
-        const streamName = req.params.streamName
+        const streamName = ''
+        // const streamName = req.params.streamName
         startStreamMonitor(streamName)
         serverStatus.started_stream_ts = new Date()
         // parserInterval = setInterval(parseImgFile, READ_IMG_TIMEOUT)
         serverState = SERVER_STATE_ENUM.RUNNING
         
-        res.send({state: serverState, text:"Running"})
+        res.json({state: serverState, text:"Running"})
     } else {
-        res.send({state: serverState, text:"Already Running"})
+        res.json({state: serverState, text:"Already Running"})
     }
 
 })
 
 server.all('/stop', (req, res) => {
     // if (parserInterval) {
+    let resp_text = "Stopped"
     if (streamlinkProcess) {
         console.log("Stopping image parser")
         // TODO: Stop workers without killing the scheduler
@@ -363,9 +372,10 @@ server.all('/stop', (req, res) => {
 
         clearInterval(parserInterval)
         parserInterval = null
+        resp_text = "Stopped image parser"
     }
 
-    res.send({state: serverState, text:"Stopped"})
+    res.json({state: serverState, text: resp_text})
 })
 
 server.all('/clear/:pwd', (req, res) => {
@@ -397,7 +407,7 @@ function humanReadableTimeDiff (milliseconds) {
 }
 
 server.all('/status', (req, res) => {
-    res.send({
+    res.json({
         'status': serverState,
         'job_queue': OCRScheduler ? OCRScheduler.getQueueLen() : 'X',
         'img_stats': serverStatus,
@@ -430,7 +440,7 @@ server.get('/user_find/:userId', (req, res) => {
         let users = usernameList.find(reqUsername, 7)
         
         let levDist = users.at(0) ? users.at(0)[0] : Infinity
-        let matchDist = 5
+        let matchDist = 4
         // now score based on distance
         if (levDist < 2) 
             matchDist = 1
@@ -446,7 +456,7 @@ server.get('/user_find/:userId', (req, res) => {
     // If userFind, then return
 })
 
-server.get(['/img/:userId'], (req, res) => {
+server.get('/img/:userId', (req, res) => {
     const reqUsername = req.params.userId
     console.debug(`Returning user image ${reqUsername}`)
     const userImage = usernameList.getImage(reqUsername)
@@ -458,7 +468,7 @@ server.get(['/img/:userId'], (req, res) => {
     }
 })
 
-server.get(['/fullimg/:id'], (req, res) => {
+server.get('/fullimg/:id', (req, res) => {
     const reqId = req.params.id
     console.debug(`Returning image num: ${reqId}`)
     const userImage = usernameList.getImageFromFullList(reqId)
@@ -483,7 +493,7 @@ server.get('/list', (req, res) => {
 })
 
 
-server.get(['/debug'], 
+server.get('/debug', 
     (req, res) => {
 
     let filename = req.query?.filename
@@ -498,7 +508,9 @@ server.get(['/debug'],
     })
 })
 
-server.listen(PORT, () => {
+// server.listen(PORT, () => {
+server.listen(PORT)
+.then( (socket) => {
     console.log(`Server running at ${HOST}:${PORT}`)
 })
 

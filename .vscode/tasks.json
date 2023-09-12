@@ -1,0 +1,22 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Production Server",
+			"type": "shell",
+			"command": "$env:NODE_ENV=\\\"production\\\"; node ./MarblesUserName_Server.js",
+			// "windows": {
+			// 	"command": ".\\scripts\\test.cmd"
+			// },
+			// "presentation": {
+			// 	"reveal": "always",
+			// 	"panel": "new"
+			// }
+		},
+		{
+			"label": "Run Artillery Load Test [:4000]",
+			"type": "shell",
+			"command": "artillery run ./load_test_config.yml"
+		}
+	]
+}

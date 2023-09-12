@@ -8,26 +8,35 @@ const userOffset = 1_000 * 4;
 const EMPTY_IMG = "data:,"
 
 let TrackingUsername = ''
+let userInputQueueBool = false
 
 const UsernameInputEl = document.getElementById('username_input')
 const UsernameOutputEl = document.getElementById('username_simple_out')
-const ServerStatusEl = document.getElementById('server_status')
 const UsernameGeneral = document.getElementById('username_general')
-
 const UserImgEl = document.getElementById('userImg')
+
+const ServerStatusEl = document.getElementById('server_status')
+const ServerUsersEl = document.getElementById('user_tracked')
+const WebsiteUsersEl = document.getElementById('viewers_visiting')
 
 
 function fetchServerStatus () {
     fetch(`${serverURL}/status`)
     .catch( resp => {
         // ◗
-        ServerStatusEl.textContent = `◉ Offline.`                
+        ServerStatusEl.textContent = `◉ Offline.`
+        setTimeout(fetchServerStatus, 1_000 * 15) // retry
+        return Promise.reject('offline server, try again much later')
     })
     .then(resp => resp.json())
     .then( serverJSON => {
         handleServerStatus(serverJSON)
+        setTimeout(fetchServerStatus, 1_000*3) // retry
     })
-    setTimeout(fetchServerStatus, 1_000*3) // retry
+    .catch( err => {
+        console.log("Error occurred, return")
+        return
+    })
 }
 
 function fetchUserList () {
@@ -50,6 +59,7 @@ let inputTimeout = 0;
 /** Queue input after 2 seconds of no input */
 function queueInput(inputEvent) {
     UsernameOutputEl.textContent = '...'
+    userInputQueueBool = true
     clearInterval(inputTimeout)
     inputTimeout = setTimeout(handleInput, USER_INPUT_DELAY, inputEvent)
 }
@@ -65,9 +75,8 @@ function handleInput (inputEvent) {
     
     const username = UsernameInputEl.value.trim()
     if (TrackingUsername == username) {
-        // early-out
+        // early-out IF server has not been updated & user not found
         // console.debug("Redoing already tracked name")
-        // TODO: Figure out how to know when the backend has changed
     }
 
     if (username == '') return
@@ -76,21 +85,26 @@ function handleInput (inputEvent) {
     TrackingUsername = username
 
     try {
-        // Setup UI stuff
-        UserImgEl.src = EMPTY_IMG
-        UsernameOutputEl.textContent = 'Finding username...'
+        // Setup UI stuff if user initiated    
+        if (userInputQueueBool) {
+            UserImgEl.src = EMPTY_IMG
+            UserImgEl.classList.add('hidden')
+            UsernameOutputEl.textContent = 'Finding username...'
+            userInputQueueBool = false
+        }
         
         fetch(`${serverURL}/user_find/${username}`)
         .then( res => res.json() )
         .then( userFindJSON => {
-            UsernameOutputEl.textContent = MATCH_RET[userFindJSON['match']]
+            UsernameOutputEl.textContent = MATCH_RET[userFindJSON['match']] ?? MATCH_RET.at(-1)
             
             if (userFindJSON['userObj']) {
                 UsernameOutputEl.textContent += `\nFound ${userFindJSON['userObj']['name']}`
                 
-                if (UserImgEl.src == EMPTY_IMG) {
-                    UserImgEl.src = `${serverURL}/fullImg/${userFindJSON['userObj']['fullImgIdxList'][0]}`
-                }
+                // if (UserImgEl.src == EMPTY_IMG) {
+                UserImgEl.src = `${serverURL}/fullImg/${userFindJSON['userObj']['fullImgIdxList'][0]}`
+                UserImgEl.classList.remove('hidden')
+                // }
             }
         })
         inputTimeout = setTimeout(handleInput, USER_INPUT_DELAY, inputEvent)
@@ -106,8 +120,8 @@ function handleInput (inputEvent) {
 function handleServerStatus(serverJSON) {
     // Assume serverJSON is valid
     ServerStatusEl.textContent = `${serverJSON['status']}`
-    ServerStatusEl.textContent += `\n${serverJSON['userList']['user_list']} recognized user(s)`
-    ServerStatusEl.textContent += `\n1 viewers`
+    ServerUsersEl.textContent = `${serverJSON['userList']['user_list']} found user(s)`
+    WebsiteUsersEl.textContent = `1 site viewers` // TODO: Finish
 }
 
 function setupPage() {

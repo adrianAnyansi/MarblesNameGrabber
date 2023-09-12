@@ -1,0 +1,29 @@
+config:
+    target: "http://127.0.0.1:4000"
+    phases:
+    - duration: 30
+      arrivalRate: 2
+      name: "Poking in"
+
+    - duration: 200
+      arrivalCount: 3000
+      name: "Main flood"
+
+    - duration: 120
+      arrivalRate: 10
+      maxVusers: 100
+      name: "Stragglers"
+
+scenarios:
+  - name: "Simple Find"
+    flow:
+      - get:
+          url: '/status'
+      
+      - think: 10 # Entering username
+
+      - loop:   # Loop of username checking
+        - get:
+            url: '/user_find/Fank_Jankler'
+        - think: 3
+        count: 20 # Assume that server cuts person off here

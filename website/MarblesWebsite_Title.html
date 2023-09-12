@@ -6,16 +6,38 @@
     </head>
     <style>
         .big-title {
-            font-size: 10vw;
+            font-size: 9vw;
             margin: 0;
+        }
+        #serverBox {
+            display: flex;
+            flex-direction: column;
+        }
+        #last_title {
+            display: flex;
+            flex-direction: row;
+        }
+        #last_title .big-title {
+            display: inline-block;
+        }
+        #username_input {
+            font-size: 5vw;
+            padding: 0.5vw;
+        }
+        img.hidden {
+            display: none
         }
     </style>
     <body>
         <h2 class="big-title">Am I in</h2>
         <h2 class="big-title">BarbarousKing's</h2>
-        <div>
-            <span id="server_status">Hello testing</span>
-            <h1 class="big-title" style="display:inline-block">Marbles?</h1>
+        <div id="last_title">
+            <h1 class="big-title">Marbles?</h1>
+            <div id="serverBox">
+                <span id="server_status">Getting server status</span>
+                <span id="user_tracked">Users found</span>
+                <span id="viewers_visiting">Website viewers</span>
+            </div>
         </div>
 
         <input id="username_input" placeholder="Enter Username">
@@ -23,7 +45,7 @@
         <p id="username_simple_out"></p>
         <p id="username_general"></p>
 
-        <img id="userImg" src="">
+        <img id="userImg" class="hidden" src="">
         
 
         <p>*Note: Website is delayed and about 85% accurate.</p>

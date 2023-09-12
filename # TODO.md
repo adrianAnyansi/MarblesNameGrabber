@@ -1,6 +1,11 @@
 # TODO.md
 
 ## todo today
+
+Seperate the server from the router so I can test different frameworks easily
+
+Then work on the image recogn page probably
+
     1. Sketch up front page of website
         Figure out how/where to put Status
         
@@ -11,7 +16,13 @@
     2. Do simple get/fetch of username 
         (yes/probably/unlikely/no) 
         Show more info (find page)
-    3. Do advanced search on separate page
+
+    3. Add extra pages (footer) (home, about, identify)
+        - Advanced search can just be a modified identify
+
+        server queues request then sends name to target
+        (req_id, img, name, )
+
     4. Do the full page by image for the debug admin
     5. Continue with the user defined images and figure out server+interface
 
