@@ -12,7 +12,7 @@
                 "<node_internals>/**"
             ],
             "cwd": "${workspaceFolder}",
-            "program": "${workspaceFolder}\\MarblesUserName_Server.js"
+            "program": "${workspaceFolder}\\src\\MarblesUserName_Server.js"
         }
     ]
 }

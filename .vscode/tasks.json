@@ -4,7 +4,7 @@
 		{
 			"label": "Run Production Server",
 			"type": "shell",
-			"command": "$env:NODE_ENV=\\\"production\\\"; node ./MarblesUserName_Server.js",
+			"command": "$env:NODE_ENV=\\\"production\\\"; node ./src/MarblesUserName_Server.js",
 			// "windows": {
 			// 	"command": ".\\scripts\\test.cmd"
 			// },
