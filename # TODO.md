@@ -3,6 +3,11 @@
 ## todo today
 
 Seperate the server from the router so I can test different frameworks easily
+(Ok Express is good enough for me, I wasn't running production and now the response time went 2000ms > 1000ms)
+Improve the logging so I don't write a bunch while iterating
+
+Write the auto-quit function
+
 
 Then work on the image recogn page probably
 

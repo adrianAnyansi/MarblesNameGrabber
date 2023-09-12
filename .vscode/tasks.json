@@ -4,14 +4,8 @@
 		{
 			"label": "Run Production Server",
 			"type": "shell",
-			"command": "$env:NODE_ENV=\\\"production\\\"; node ./src/MarblesUserName_Server.js",
-			// "windows": {
-			// 	"command": ".\\scripts\\test.cmd"
-			// },
-			// "presentation": {
-			// 	"reveal": "always",
-			// 	"panel": "new"
-			// }
+			"command": "$env:NODE_ENV=\\\"production\\\"; node ./src/ExpressRouter.mjs",
+			"problemMatcher": []
 		},
 		{
 			"label": "Run Artillery Load Test [:4000]",
