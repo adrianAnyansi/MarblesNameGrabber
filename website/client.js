@@ -1,6 +1,6 @@
 // Fetch the program
-// let UsernameList = []
-const serverURL = 'http://localhost:4000'
+// const serverURL = 'http://localhost:4000'
+const serverURL = ''
 
 let UsernameHash = new Map()
 const userNext = 1_000 * 10;
@@ -119,7 +119,7 @@ function handleInput (inputEvent) {
 **/
 function handleServerStatus(serverJSON) {
     // Assume serverJSON is valid
-    ServerStatusEl.textContent = `${serverJSON['status']}`
+    ServerStatusEl.textContent = `${serverJSON['status']['state']}`
     ServerUsersEl.textContent = `${serverJSON['userList']['user_list']} found user(s)`
     WebsiteUsersEl.textContent = `1 site viewers` // TODO: Finish
 }

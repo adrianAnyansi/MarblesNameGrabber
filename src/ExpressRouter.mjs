@@ -5,6 +5,7 @@
 import express from 'express'
 import { MarblesAppServer } from './MarblesUserName_Server.mjs';
 // import HyperExpress from 'hyper-express'
+import path from 'path'
 
 const server = express()
 const PORT = 4000;
@@ -21,6 +22,15 @@ const app_server = new MarblesAppServer()
 //     res.append('Access-Control-Allow-Headers', 'Content-Type');
 //     next();
 // });
+
+server.get(['/', '/website/*'], (req, res) => {
+    let rootPath = null
+    if (req.path == '/')
+        rootPath = path.resolve('website/index.html')
+    else
+        rootPath = path.resolve(req.path.slice(1))
+    res.sendFile(rootPath)
+})  
 
 /**
  * Start running the image parser 

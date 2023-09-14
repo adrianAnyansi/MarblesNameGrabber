@@ -4,12 +4,14 @@
 
 Seperate the server from the router so I can test different frameworks easily
 (Ok Express is good enough for me, I wasn't running production and now the response time went 2000ms > 1000ms)
+
 Improve the logging so I don't write a bunch while iterating
 
-Write the auto-quit function
-
+Write the auto-quit function for username parse
 
 Then work on the image recogn page probably
+
+
 
     1. Sketch up front page of website
         Figure out how/where to put Status
@@ -41,6 +43,21 @@ Then work on the image recogn page probably
     3. Install nginx, start putting the static content in S3 & routing
     4. Do the Route53 stuff & test stuff
     5. Buy a domain or something
+
+## Server setup notes
+
+    sudo apt update
+    sudo apt install streamlink
+    sudo apt install ffmpeg (already installed)
+    mkdir github
+    git clone https://github.com/adrianAnyansi/MarblesNameGrabber.git
+    cd MarblesNameGrabber/
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
+    source ~/.bashrc
+    nvm install v18.17.1
+
+    
+
 
 
 ---
