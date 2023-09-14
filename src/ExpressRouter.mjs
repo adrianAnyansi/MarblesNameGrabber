@@ -36,9 +36,12 @@ server.get(['/', '/website/*'], (req, res) => {
  * Start running the image parser 
  * returns a JSON indicating the result of startup
  */
-server.post(['/start', '/start/:streamName'], (req, res) => {
+server.post(['/start', '/start/*'], (req, res) => {
     
-    const streamName = req.params.streamName
+    let streamName = null
+    if (req.originalUrl != '/start')
+        streamName = req.originalUrl.replace('/start/', '')
+    
     res.json(app_server.start(streamName))
 
 })
@@ -55,6 +58,7 @@ server.post('/stop', (req, res) => {
  * Clear usernameList
  */
 server.post('/clear', (req, res) => {
+    // AUTH
     res.send(app_server.clear()) // TODO: Handle errors
 })
 
@@ -126,6 +130,12 @@ server.get('/debug', (req, res) => {
     // })
 })
 
+const env = process.env.NODE_ENV || 'development';
+
+
 server.listen(PORT, (socket) => {
+    if (env == 'development') {
+        console.warn(`Running in development mode!`)
+    }
     console.log(`Server running at ${HOST}:${PORT}`)
 })

@@ -1,5 +1,6 @@
 config:
-    target: "http://127.0.0.1:4000"
+    # target: "http://127.0.0.1:4000"
+    target: "http://54.80.211.55"
     phases:
     - duration: 30
       arrivalRate: 2

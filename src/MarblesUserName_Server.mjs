@@ -299,7 +299,7 @@ export class MarblesAppServer {
         if (this.streamlinkProcess == null) {
             this.usernameList.clear()
             
-            this.setupWorkerPool(4)
+            this.setupWorkerPool(2)
             this.startStreamMonitor(channel)
 
             this.serverStatus.started_stream_ts = new Date()
@@ -331,6 +331,7 @@ export class MarblesAppServer {
 
     clear () {
         this.usernameList.clear()
+        return "Cleared usernameList."
     }
 
     status () {

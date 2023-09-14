@@ -2,27 +2,24 @@
 
 ## todo today
 
-Seperate the server from the router so I can test different frameworks easily
-(Ok Express is good enough for me, I wasn't running production and now the response time went 2000ms > 1000ms)
+Setup pm2, server live through nginx
+test start command and latency
+if ok, start working on image identify
+    also about page
+if not, look into serverless & ansible to spinup server on use
+    (oh, I don't know the IP, gotta set that up too)
 
+fix status start time
+
+Testing shows that the server occupies about 1500 MB of RAM, which causes it to crash early on a T2.Micro
+
+
+## todo later
 Improve the logging so I don't write a bunch while iterating
 
-Write the auto-quit function for username parse
+Write a caching function per username to save the result of a query
 
 Then work on the image recogn page probably
-
-
-
-    1. Sketch up front page of website
-        Figure out how/where to put Status
-        
-        Status: 1. Running 2. Users found 3. Viewers online
-
-        - Create a new user-only route for the user+ranking
-
-    2. Do simple get/fetch of username 
-        (yes/probably/unlikely/no) 
-        Show more info (find page)
 
     3. Add extra pages (footer) (home, about, identify)
         - Advanced search can just be a modified identify
@@ -56,7 +53,7 @@ Then work on the image recogn page probably
     source ~/.bashrc
     nvm install v18.17.1
 
-    
+
 
 
 
