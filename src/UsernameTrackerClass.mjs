@@ -261,7 +261,7 @@ export class UsernameTracker {
             if (dist < currentMax) usernameRanking.push(userRankObj)
         }
 
-        console.debug(`Find username ranking took ${performance.measure('username_mark', this.PERFORMANCE_MARK_FIND).duration.toFixed(2)}ms`)
+        // console.debug(`Find username ranking took ${performance.measure('username_mark', this.PERFORMANCE_MARK_FIND).duration.toFixed(2)}ms`)
         return usernameRanking.list
     }
 

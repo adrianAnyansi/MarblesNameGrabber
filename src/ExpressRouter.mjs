@@ -75,7 +75,7 @@ server.get('/find/:userName', (req, res) => {
 
 server.get('/user_find/:userId', (req, res) => {
     const reqUsername = req.params.userId
-    console.debug(`User-Find user ${reqUsername}`)
+    // console.debug(`User-Find user ${reqUsername}`)
 
     return res.json(app_server.userFind(reqUsername))
 })
