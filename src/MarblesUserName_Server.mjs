@@ -327,7 +327,7 @@ export class MarblesAppServer {
             // TODO: Stop workers without killing the scheduler
 
             this.streamlinkProcess.kill('SIGINT')
-            this.ffmpegProcess.kill('SIGINT')   // Trying to use SIGINT for Linux
+            // this.ffmpegProcess.kill('SIGINT')   // Trying to use SIGINT for Linux
             // console.log("Killed streamlink processes")
 
             this.streamlinkProcess = null
