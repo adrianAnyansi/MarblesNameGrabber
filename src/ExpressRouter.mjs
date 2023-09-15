@@ -132,10 +132,7 @@ server.get('/debug', (req, res) => {
 
 const env = process.env.NODE_ENV || 'development';
 
-
 server.listen(PORT, (socket) => {
-    if (env == 'development') {
-        console.warn(`Running in development mode!`)
-    }
-    console.log(`Server running at ${HOST}:${PORT}`)
+    let server_env = (env == 'development') ? 'DEV' : 'PROD'
+    console.log(`Server[${server_env}] running at ${HOST}:${PORT}`)
 })

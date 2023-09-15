@@ -29,7 +29,7 @@ let ffmpegFPS = '2'
 
 let pngChunkBufferArr = []
 const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
-
+const NUM_LIVE_WORKERS = 6
 const TEST_FILENAME = "testing/test.png"
 // const LIVE_FILENAME = "live.png"
 
@@ -121,7 +121,7 @@ export class MarblesAppServer {
         this.streamlinkProcess.stdout.pipe(this.ffmpegProcess.stdin) // pipe to ffmpeg
 
         
-        // Print start/running depending on ffmpeg output
+        // On Streamlink start, make log to request
         if (this.debugProcess) {
             this.streamlinkProcess.stderr.on('data', (data) => {
                 console.log(data.toString())
@@ -137,6 +137,7 @@ export class MarblesAppServer {
             })
         }
 
+        // On FFMpeg start, make log
         if (this.debugProcess) {
             this.ffmpegProcess.stderr.on('data', (data) => {
                 console.log(data.toString())
@@ -187,11 +188,21 @@ export class MarblesAppServer {
 
         })
 
+        this.streamlinkProcess.on('error', () => {
+            console.warn("An unknown error occurred while writing Streamlink process.")
+        })
+        this.ffmpegProcess.on('error', () => {
+            console.warn("An unknown error occurred while writing FFMpeg process.")
+        })
+
         this.streamlinkProcess.on('close', () => {
             console.debug('Streamlink process has closed.')
             this.serverStatus.state = SERVER_STATE_ENUM.STOPPED
         })
-        this.ffmpegProcess.on('close', () => console.debug('FFMpeg process has closed.'))
+        this.ffmpegProcess.on('close', () => {
+            console.debug('FFMpeg process has closed.')
+            this.serverStatus.state = SERVER_STATE_ENUM.STOPPED
+        })
 
         console.debug("Started up streamlink->ffmpeg buffer")
     }
@@ -299,7 +310,7 @@ export class MarblesAppServer {
         if (this.streamlinkProcess == null) {
             this.usernameList.clear()
             
-            this.setupWorkerPool(2)
+            this.setupWorkerPool(NUM_LIVE_WORKERS)
             this.startStreamMonitor(channel)
 
             this.serverStatus.started_stream_ts = new Date()
@@ -315,8 +326,8 @@ export class MarblesAppServer {
             // console.log("Stopping image parser")
             // TODO: Stop workers without killing the scheduler
 
-            this.streamlinkProcess.kill()
-            this.ffmpegProcess.kill()
+            this.streamlinkProcess.kill('SIGINT')
+            this.ffmpegProcess.kill('SIGINT')   // Trying to use SIGINT for Linux
             // console.log("Killed streamlink processes")
 
             this.streamlinkProcess = null
