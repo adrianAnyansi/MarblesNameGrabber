@@ -59,6 +59,7 @@ server.post('/stop', (req, res) => {
  */
 server.post('/clear', (req, res) => {
     // AUTH
+    console.log("Cleared userList and images.")
     res.send(app_server.clear()) // TODO: Handle errors
 })
 
@@ -109,13 +110,15 @@ server.get('/list', (req, res) => {
     res.json(app_server.list())
 })
 
-server.get('/debug', (req, res) => {
+server.post('/debug', async (req, res) => {
 
     let filename = req.query?.filename
     // if (!filename) filename = TEST_FILENAME
 
     try {
-        res.send(app_server.debug(filename))    // FIXME: Add params for errors and etc
+        let json_resp = await app_server.debug(filename)
+        res.send(json_resp)    // FIXME: Add params for errors and etc
+        console.debug("Sent debug response")
     } catch (err) {
         res.status(400).send(`An unknown error occured. ${err}`)
     }

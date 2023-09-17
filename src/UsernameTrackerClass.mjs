@@ -138,6 +138,8 @@ export class UsernameTracker {
             const username = line.text.trim()
             const validUsername = username != '' && username.length > 2
 
+            if (username == '') continue    // Ignore empty lines
+
             if (validUsername) {
                 const userObj = this.add(username, line.confidence) // TODO: Add timestamp
                 if (line.confidence == 0) { 
@@ -194,9 +196,9 @@ export class UsernameTracker {
     clear () {
         this.hash.clear()
         this.imgHash.clear()
-        this.unverifiedImgs.length = 0
-        this.unverifiedUsers.length = 0
-        this.fullImageList.length = 0
+        this.unverifiedImgs = []
+        this.unverifiedUsers = []
+        this.fullImageList = []
     }
 
     getImage(username) {

@@ -2,6 +2,12 @@
 
 ## todo today
 
+Redirect root domain to www
+Setup up auto connect
+Setup start reading marbles names (using simple image recgon on the !PLAY)
+Setup auto end
+Make server state WAITING
+
 Setup pm2, server live through nginx
 test start command and latency
 if ok, start working on image identify

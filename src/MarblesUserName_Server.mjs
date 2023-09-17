@@ -12,14 +12,15 @@ import { humanReadableTimeDiff } from './DataStructureModule.mjs'
 
 // server state
 const SERVER_STATE_ENUM = {
-    STOPPED: 'STOPPED',
-    RUNNING: 'RUNNING',
-    READING: 'READING',
-    COMPLETE: 'COMPLETE'
+    STOPPED: 'STOPPED', // Server has stopped reading or hasnt started reading
+    WAITING: 'WAITING', // Server is waiting for the load screen
+    READING: 'READING', // Server is currently performing OCR and reading
+    COMPLETE: 'COMPLETE'// Server has completed reading, usernames are stored
 }
 
 const TWITCH_URL = 'https://www.twitch.tv/'
-const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s' // "https://www.twitch.tv/videos/1895894790?t=06h39m40s"
+const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s' 
+                // "https://www.twitch.tv/videos/1895894790?t=06h39m40s"
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
 let defaultStreamURL = DEBUG_URL
 // const streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']
@@ -27,11 +28,13 @@ let defaultStreamURL = DEBUG_URL
 let ffmpegFPS = '2'
 // const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=fps=${ffmpegFPS}`, 'pipe:1']
 
-let pngChunkBufferArr = []
 const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
-const NUM_LIVE_WORKERS = 6
+const NUM_LIVE_WORKERS = 6 // Num Tesseract workers
 const TEST_FILENAME = "testing/test.png"
 // const LIVE_FILENAME = "live.png"
+const EMPTY_PAGE_COMPLETE = 6   // number of frames* without any valid names on them
+
+
 
 export class MarblesAppServer {
     
@@ -60,6 +63,7 @@ export class MarblesAppServer {
         this.numOCRWorkers = 0
 
         this.usernameList = new UsernameTracker()
+        this.emptyListPages = 0 // Number of images without any names
     }
 
     // ---------------
@@ -86,6 +90,7 @@ export class MarblesAppServer {
 
     /** Terminate workers in scheduler */
     async shutdownWorkerPool () {
+        this.numOCRWorkers = 0
         return this.OCRScheduler.terminate()
         // TODO: Change this to just terminate some workers?
     }
@@ -207,7 +212,37 @@ export class MarblesAppServer {
         console.debug("Started up streamlink->ffmpeg buffer")
     }
 
+    /**
+     * Shutdown streamlink & ffmpeg processes
+     * @returns {Boolean} wasShutdown
+     */
+    shutdownStreamMonitor() {
+
+        if (this.streamlinkProcess) {
+            // console.log("Stopping image parser")
+
+            this.streamlinkProcess.kill('SIGINT')
+            // this.ffmpegProcess.kill('SIGINT')   // Trying to use SIGINT for Linux
+            // console.log("Killed streamlink processes")
+
+            this.streamlinkProcess = null
+            this.ffmpegProcess = null
+        }
+
+        return false
+    }
+
+    /**
+     * Parse an image for names
+     * @param {*} imageLike 
+     * @returns 
+     */
     async parseImgFile(imageLike) {
+
+        if (this.serverStatus.state == SERVER_STATE_ENUM.COMPLETE) {
+            console.debug(`In COMPLETE/STOP state, ignoring.`)
+            return
+        }
 
         this.serverStatus.imgs_downloaded += 1
 
@@ -219,6 +254,18 @@ export class MarblesAppServer {
         } // TODO: Use options
         
         let mng = new MarbleNameGrabberNode(imageLike, false)
+
+        if (this.serverStatus.state == SERVER_STATE_ENUM.WAITING) {
+            const validMarblesImgBool = await mng.checkValidMarblesNamesImg()
+            if (validMarblesImgBool) {
+                console.log("Found Marbles Pre-Race header, starting read")
+                this.serverStatus.state = SERVER_STATE_ENUM.READING
+            } else {
+                return
+            }
+        }
+            
+        // testing value
 
         console.debug(`Queuing LIVE image queue: ${this.OCRScheduler.getQueueLen()}`)
 
@@ -232,9 +279,21 @@ export class MarblesAppServer {
             // add to nameBuffer
             this.serverStatus.imgs_read += 1
             let retList = this.usernameList.addPage(data, mng.bufferToPNG(mng.buffer, true, false))
+            if (retList.length == 0)
+                this.emptyListPages += 1
             console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}`)
+            
+            if (this.emptyListPages >= EMPTY_PAGE_COMPLETE) {
+                console.log(`${this.emptyListPages} empty frames; dumping queue & moving to COMPLETE state.`)
+                this.serverStatus.state = SERVER_STATE_ENUM.COMPLETE
+                this.shutdownStreamMonitor()
+                this.OCRScheduler.jobQueue = 0
+                // this.shutdownWorkerPool()    // FIXME: The scheduler doesn't clear the workers somehow when doing this
+                                                // I'm too lazy to write a proper solution
+                return
+            }
         }).catch ( err => {
-            console.warn(`Error occurred ${err}, execution exited`)
+            console.warn(`Error occurred during imageParse ${err}, execution exited`)
             // Since this is continous, this info is discarded
         })
     }
@@ -244,7 +303,7 @@ export class MarblesAppServer {
         console.log(`Running debug! ${filename}`)
         console.log(`Working directory: ${path.resolve()}`)
         
-        await setupWorkerPool(1)
+        await this.setupWorkerPool(1)
 
         let mng = new MarbleNameGrabberNode(filename, true)
         
@@ -263,6 +322,7 @@ export class MarblesAppServer {
             }
         )
     }
+
 
     // Tesseract.js
     async addOCRWorker (worker_num) {
@@ -305,7 +365,7 @@ export class MarblesAppServer {
      * @param {String} channel
      */
     start (channel) {
-        let retText = 'Already running'
+        let retText = 'Already started'
 
         if (this.streamlinkProcess == null) {
             this.usernameList.clear()
@@ -314,25 +374,18 @@ export class MarblesAppServer {
             this.startStreamMonitor(channel)
 
             this.serverStatus.started_stream_ts = new Date()
-            this.serverStatus.state = SERVER_STATE_ENUM.RUNNING
-            retText = "Started Running"
+            this.serverStatus.state = SERVER_STATE_ENUM.WAITING
+            retText = "Waiting for names"
         }
         return {"state": this.serverStatus.state, "text": retText}
     }
 
     stop () {
-        let resp_text = "Stopped"
-        if (this.streamlinkProcess) {
-            // console.log("Stopping image parser")
-            // TODO: Stop workers without killing the scheduler
+        let resp_text = "Already Stopped"
 
-            this.streamlinkProcess.kill('SIGINT')
-            // this.ffmpegProcess.kill('SIGINT')   // Trying to use SIGINT for Linux
-            // console.log("Killed streamlink processes")
+        const stopped = this.shutdownStreamMonitor()
 
-            this.streamlinkProcess = null
-            this.ffmpegProcess = null
-
+        if (stopped) {
             resp_text = "Stopped image parser"
             this.serverStatus.state = SERVER_STATE_ENUM.STOPPED
         }
@@ -396,11 +449,10 @@ export class MarblesAppServer {
 
     debug (filename) {
 
-        this.debugRun(filename)
+        return this.debugRun(filename)
         .then( ({mng, data}) => {
             let retList = this.usernameList.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false))
-            res.send({list: retList, debug:true})
-            console.debug("Sent debug response")
+            return {list: retList, debug:true}
         })
         
         // ELSE RAISE ERROR

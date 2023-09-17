@@ -53,6 +53,11 @@ function sqrColorDistance (rgba, rgba2) {
     return ans
 }
 
+/**
+ * 
+ * @param {*} colorList 
+ * @returns {[Number, Number]}
+ */
 function calcMinColorDistance (colorList) {
     // binary search across each color channel
     const redRange = [0, 255]
@@ -106,8 +111,45 @@ const colorSampling = {
                     0xFFFEFF, 0xFFFFFF, 0xE5E5E7, 0xFFFFFD, 0xFFFAF7,
                 toHex([216, 216, 216]), 
             ],
-    VIP_PINK: [0xE824B8, 0x9D126D, 0xDD20C2, 0xEC22C4]
+    // VIP_PINK: [0xE824B8, 0x9D126D, 0xDD20C2, 0xEC22C4, 0xe999cf],
+    VIP_PINK: [0xfc92d8, 0xe795d1, 0xff8ddb, 0xfa8bd6, 0xff8ed4, 0xeb8ccc, 0xf494d5, 0xef9bcc, 0xf88fd3, 0xda79c2, 0xea95cb],
+    FOUNDER: [0xed21d7, 0xff12bf, 0xd736b2, 0xff25d0, 0xdc25bc, 0xd431b7, 0xc31a97, 0xeb23c7, 0xcf36ac, 0xf522c5, 0xef28e6]
     // TEST:       [0x000000, 0x101010, 0x040404]
+}
+
+
+const userColors = {}
+for (let color in colorSampling) {
+    userColors[color] = calcMinColorDistance(colorSampling[color])
+}
+// userColors[SUB_BLUE][1] += 20
+
+const cacheColorMatch = new Map(Object.values(userColors).map(color => [color, new Map()]))
+
+// ------------------
+
+const screenSampling = {
+    DARK_GRAY :  [0x21303f, 0x1e303f, 0x23323c, 0x263141, 0x233241, 0x21303c, 0x1e3138, 0x26313f, 0x232e3f, 0x1e2a37],
+    ORANGE: [0xff5921, 0xfd5515, 0xff5921, 0xfa570f, 0xf26021, 0xf95400, 0xda5823, 0xf9560e, 0xc44007, 0xf9560e, 0xe54600, 0xda5823, 0xfd560b ]
+}
+
+const screenColorRanges = {}
+for (let color in screenSampling) {
+    screenColorRanges[color] = calcMinColorDistance(screenSampling[color])
+}
+
+const PRE_RACE_RECT_ORANGE = {
+    x: 1130/1920,
+    y: 98/1080,
+    w: (1244-1130)/1920,
+    h: (101-98)/1080
+}
+
+const PRE_RACE_RECT_GRAY = {
+    x: 1135/1920,
+    y: 105/1080,
+    w: (1196-1135)/1920,
+    h: (145-105)/1080
 }
 
 
@@ -129,13 +171,6 @@ const NO_MATCH_ALPHA = 0xFD
 const ANTI_MATCH_ALPHA = 0xFC
 
 
-const userColors = {}
-for (let color in colorSampling) {
-    userColors[color] = calcMinColorDistance(colorSampling[color])
-}
-// userColors[SUB_BLUE][1] += 20
-
-const cacheColorMatch = new Map(Object.values(userColors).map(color => [color, new Map()]))
 
 // CLASS
 
@@ -241,6 +276,48 @@ export class MarbleNameGrabberNode {
             (rgba >> 8*2) & int8mask,
             (rgba >> 8*3) & int8mask,
         ]
+    }
+
+    /**
+     * Static get RGBA value of pixel at particular location
+     * @param {Number} x 
+     * @param {Number} y 
+     * @param {Buffer} buffer 
+     * @param {*} info 
+     * @returns {[Number, Number, Number, Number]} RGBA
+     */
+    static getPixelStatic (x, y, buffer, info) {
+        const px_off = MarbleNameGrabberNode.toPixelOffsetStatic(x, y, info)
+        const rgba = buffer.readUInt32LE(px_off)
+        const int8mask = 0xFF
+
+        return [
+            (rgba & int8mask),
+            (rgba >> 8*1) & int8mask,
+            (rgba >> 8*2) & int8mask,
+            (rgba >> 8*3) & int8mask,
+        ]
+    }
+
+    /**
+     * Get flat pixel offset from x,y values
+     * @param {Number} x 
+     * @param {Number} y 
+     * @param {*} info
+     * @returns {Number} px_offset
+     */
+    static toPixelOffsetStatic (x_coord, y_coord, info) {
+        const w_pixels = info?.w ?? info?.width
+        return (y_coord * w_pixels + x_coord) * info.channels;
+    }
+
+    static setPixel(x, y, rgba, buffer, info) {
+        const px_off = MarbleNameGrabberNode.toPixelOffsetStatic(x,y, info)
+        buffer.writeUInt8(rgba[0], px_off+0)
+        buffer.writeUInt8(rgba[1], px_off+1)
+        buffer.writeUInt8(rgba[2], px_off+2)
+        if (rgba[3])
+            buffer.writeUInt8(rgba[3], px_off+3)
     }
 
     setPixel(x,y, rgba) {
@@ -560,6 +637,46 @@ export class MarbleNameGrabberNode {
 
         return breathIterCount
 
+    }
+
+    
+    // Identify
+    /**
+     * Returns true if matches the px of Marbles pre-race screen
+     * @returns {Boolean}
+     */
+    async checkValidMarblesNamesImg() {
+        // pick random px in box, then test range
+        const {data, info} = await sharp(this.imageLike).raw().toBuffer( { resolveWithObject: true })
+
+        const normOrangeRect = this.normalizeRect(PRE_RACE_RECT_ORANGE, info.width, info.height)
+        const normGrayRect = this.normalizeRect(PRE_RACE_RECT_GRAY, info.width, info.height)
+
+        // const getPxOffset = (x_coord, y_coord) => (y_coord * info.width + x_coord) * info.channels;
+        // const getPx = (pxOffset) => 
+
+        // Test at least 50%
+        function testRect (rect, colorRange) {
+            let testResult = 0
+            let testTotal = 0
+            const iw = Math.ceil(rect.w * (1/60))
+            const ih = Math.ceil(rect.h * (1/60))
+
+            for (let i=0; i<rect.w; i+=iw) {
+                for (let j=0; j<rect.h; j+=ih) {
+                    testTotal += 1
+                    if ( redmean(MarbleNameGrabberNode.getPixelStatic(rect.x+i, rect.y+j, data, info), colorRange[0]) < colorRange[1] ) {
+                        testResult += 1
+                    }
+                }
+            }
+            return (testResult/testTotal) > 0.6
+        }
+
+        if (testRect(normOrangeRect, screenColorRanges.ORANGE) && testRect(normGrayRect, screenColorRanges.DARK_GRAY)) {
+            return true
+        }
+        return false
     }
 
     bufferToPNG(buffer=this.buffer, scaleForOCR=true, toPNG=true) {
