@@ -2,11 +2,9 @@
 
 ## todo today
 
-Redirect root domain to www
-Setup up auto connect based on Twitch API
-
 Website work
     Countdown to name refresh
+    About page
     Styling and junk
 
 Server stability
@@ -18,7 +16,6 @@ Image identify
     Update result when returned
 
 test start command and latency
-
 Testing shows that the server occupies about 1500 MB of RAM, which causes it to crash early on a T2.Micro
 
 
