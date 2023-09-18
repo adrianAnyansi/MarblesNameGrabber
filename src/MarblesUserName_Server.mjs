@@ -437,7 +437,7 @@ export class MarblesAppServer {
                 .then( resp => {
                     if (firstReq) {
                         console.log("Set up Twitch Game Monitor")
-                        firstReq = true
+                        firstReq = false
                     }
 
                     // check game name
@@ -445,7 +445,8 @@ export class MarblesAppServer {
                     if (new_game_name.toLowerCase() == 'marbles on stream' &&
                         this.last_game_name != new_game_name) {
                             // Start up the streamMonitor
-                            console.log(`Switched Game to ${new_game_name}; starting streamMonitor`)
+                            console.log(`Switched Game to ${new_game_name}; clearing & starting streamMonitor`)
+                            this.clear()
                             this.start(TWITCH_DEFAULT_BROADCASTER)
                         }
 

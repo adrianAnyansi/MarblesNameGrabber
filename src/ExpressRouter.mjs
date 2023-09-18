@@ -5,6 +5,7 @@
 import express from 'express'
 import { MarblesAppServer } from './MarblesUserName_Server.mjs';
 // import HyperExpress from 'hyper-express'
+import helmet from "helmet";
 import path from 'path'
 
 const server = express()
@@ -22,6 +23,8 @@ const app_server = new MarblesAppServer()
 //     res.append('Access-Control-Allow-Headers', 'Content-Type');
 //     next();
 // });
+
+server.use(helmet())
 
 server.get(['/', '/website/*'], (req, res) => {
     let rootPath = null
