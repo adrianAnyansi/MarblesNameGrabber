@@ -2,6 +2,8 @@
 
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import axios from 'axios'
+import fs from 'fs/promises'
 
 import {MarbleNameGrabberNode} from "./MarblesNameGrabberNode.mjs"
 import {UsernameTracker} from './UsernameTrackerClass.mjs'
@@ -22,7 +24,7 @@ const TWITCH_URL = 'https://www.twitch.tv/'
 const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s' 
                 // "https://www.twitch.tv/videos/1895894790?t=06h39m40s"
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
-let defaultStreamURL = DEBUG_URL
+let defaultStreamURL = LIVE_URL
 // const streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']
 
 let ffmpegFPS = '2'
@@ -34,7 +36,12 @@ const TEST_FILENAME = "testing/test.png"
 // const LIVE_FILENAME = "live.png"
 const EMPTY_PAGE_COMPLETE = 6   // number of frames* without any valid names on them
 
-
+let TWITCH_ACCESS_TOKEN_BODY = null
+const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
+const TWITCH_CHANNEL_INFO_URL = "https://api.twitch.tv/helix/channels"
+const TWITCH_DEFAULT_BROADCASTER = "barbarousking" // Default twitch channel
+const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id for barbarousking
+const TWITCH_CRED_FILE = 'twitch_creds.json'
 
 export class MarblesAppServer {
     
@@ -64,6 +71,15 @@ export class MarblesAppServer {
 
         this.usernameList = new UsernameTracker()
         this.emptyListPages = 0 // Number of images without any names
+
+        this.twitch_access_token = null
+        this.game_type_monitor_interval = null
+
+        this.broadcaster_id = TWITCH_DEFAULT_BROADCASTER_ID
+        this.last_game_name = null
+
+        // Start up the Twitch game monitor
+        this.setupTwitchMonitor()
     }
 
     // ---------------
@@ -360,6 +376,90 @@ export class MarblesAppServer {
     // --------------------------------------------------------------------
     // Router/Server functions
     // --------------------------------------------------------------------
+
+    /**
+     * Retrieve and store twitch token for channel info
+     */
+    async getTwitchToken() {
+
+        if (this.twitch_access_token) return this.twitch_access_token
+
+        // Retrieve twitch JSON info
+        if (!TWITCH_ACCESS_TOKEN_BODY) {
+            try {
+            const fileContent = await fs.readFile(TWITCH_CRED_FILE, {encoding:'utf8'})
+            TWITCH_ACCESS_TOKEN_BODY = JSON.parse(fileContent)
+            } catch (err) {
+                console.warn("Twitch credential file not found. Exiting")
+                return
+            }
+        }
+
+        const auth_body = TWITCH_ACCESS_TOKEN_BODY
+
+        return axios.post(TWITCH_TOKEN_URL, auth_body,
+            { headers:{'Content-Type': 'application/x-www-form-urlencoded'} }
+        )
+        .then( res => {
+            // save token
+            this.twitch_access_token = res.data['access_token']
+            
+            // Set auth headers
+            this.twitch_auth_headers = {
+                "Authorization": `Bearer ${this.twitch_access_token}`,
+                "Client-Id": `${TWITCH_ACCESS_TOKEN_BODY.client_id}`
+            }
+            // set timeout to clear this token
+            // const timeoutMs = parseInt(res.data['expires_in']) * 1_000
+            const timeoutMs = 15* 24 * 60 * 60 * 1_000 // Capped to 24 days due to stuff.
+            // FIXME: Setup a new callback that triggers comparing Date.now instead
+            setTimeout(()=> {this.twitch_access_token = null}, timeoutMs)
+            
+            console.log("Retrieved Twitch Access Token")
+            return this.twitch_access_token
+        })
+    }
+
+    /**
+     * Setup the twitch game monitor & start when 
+     */
+    async setupTwitchMonitor () {
+
+        if (!this.game_type_monitor_interval) {
+            await this.getTwitchToken()
+
+            let firstReq = true
+            this.game_type_monitor_interval = setInterval( () => {
+                axios.get(`${TWITCH_CHANNEL_INFO_URL}?broadcaster_id=${this.broadcaster_id}`, 
+                // axios.post(`https://api.twitch.tv/helix/users`,
+                    { headers: this.twitch_auth_headers }
+                )
+                .then( resp => {
+                    if (firstReq) {
+                        console.log("Set up Twitch Game Monitor")
+                        firstReq = true
+                    }
+
+                    // check game name
+                    const new_game_name = resp.data.data[0]['game_name']
+                    if (new_game_name.toLowerCase() == 'marbles on stream' &&
+                        this.last_game_name != new_game_name) {
+                            // Start up the streamMonitor
+                            console.log(`Switched Game to ${new_game_name}; starting streamMonitor`)
+                            this.start(TWITCH_DEFAULT_BROADCASTER)
+                        }
+
+                    this.last_game_name = new_game_name
+                }).catch( err => {
+                    console.warn(`Failed to setup the game-monitor ${err}`)
+                    clearInterval(this.game_type_monitor_interval)
+                })
+            }, 1_000 * 3) // Check every 3 seconds
+        }
+    }
+
+
+
     /**
      * Setup worker pool
      * @param {String} channel
@@ -402,7 +502,7 @@ export class MarblesAppServer {
         return {
             'status': this.serverStatus,
             'job_queue': this.OCRScheduler ? this.OCRScheduler.getQueueLen() : 'X',
-            'streaming': humanReadableTimeDiff(Date.now() - this.serverStatus.started_stream_ts),
+            'streaming': (this.serverStatus.started_stream_ts) ? humanReadableTimeDiff(Date.now() - this.serverStatus.started_stream_ts) : 'X',
             'userList': this.usernameList.status()
         }
     }

@@ -3,19 +3,21 @@
 ## todo today
 
 Redirect root domain to www
-Setup up auto connect
-Setup start reading marbles names (using simple image recgon on the !PLAY)
-Setup auto end
-Make server state WAITING
+Setup up auto connect based on Twitch API
 
-Setup pm2, server live through nginx
+Website work
+    Countdown to name refresh
+    Styling and junk
+
+Server stability
+    More load-testing if possible
+    Caching levenDistance answers
+
+Image identify
+    Get an id that's sent to users when removing stuff from the system
+    Update result when returned
+
 test start command and latency
-if ok, start working on image identify
-    also about page
-if not, look into serverless & ansible to spinup server on use
-    (oh, I don't know the IP, gotta set that up too)
-
-fix status start time
 
 Testing shows that the server occupies about 1500 MB of RAM, which causes it to crash early on a T2.Micro
 

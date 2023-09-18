@@ -53,7 +53,7 @@ function fetchUserList () {
     setTimeout(fetchUserList, Math.random()*userOffset + userNext)
 }
 
-const USER_INPUT_DELAY = 1_000 * 2;
+const USER_INPUT_DELAY = 1_000 * 6;
 let inputTimeout = 0;
 
 /** Queue input after 2 seconds of no input */

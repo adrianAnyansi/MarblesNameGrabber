@@ -1,6 +1,7 @@
 // Moved to util class
 
 export function humanReadableTimeDiff (milliseconds) {
+
     let seconds = parseInt(milliseconds / 1000)
     let minutes = parseInt(seconds / 60)
     seconds %= 60
