@@ -68,7 +68,7 @@ server.post('/clear', (req, res) => {
 
 server.get('/status', (req, res) => {
     // TODO: Create a user version with less detail
-    res.json(app_server.status())
+    res.json(app_server.status(req))
 })
 
 server.get('/find/:userName', (req, res) => {

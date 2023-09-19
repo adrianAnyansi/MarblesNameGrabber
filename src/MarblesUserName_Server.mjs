@@ -51,6 +51,8 @@ export class MarblesAppServer {
             imgs_downloaded: 0,
             imgs_read: 0,
             started_stream_ts: null,
+            viewers: 0,
+            interval: 1_000 * 3
         }
 
         // debug variables
@@ -77,6 +79,8 @@ export class MarblesAppServer {
 
         this.broadcaster_id = TWITCH_DEFAULT_BROADCASTER_ID
         this.last_game_name = null
+
+        this.monitoredViewers = []
 
         // Start up the Twitch game monitor
         this.setupTwitchMonitor()
@@ -499,7 +503,16 @@ export class MarblesAppServer {
         return "Cleared usernameList."
     }
 
-    status () {
+    status (req) {
+
+        // Track viewers
+        const curr_dt = Date.now()
+        while (this.monitoredViewers && this.monitoredViewers[0] < curr_dt)
+            this.monitoredViewers.shift()
+        this.monitoredViewers.push(Date.now() + this.serverStatus.interval) // TODO: Link client to this value
+
+        this.serverStatus.viewers = this.monitoredViewers.length
+
         return {
             'status': this.serverStatus,
             'job_queue': this.OCRScheduler ? this.OCRScheduler.getQueueLen() : 'X',
@@ -541,7 +554,7 @@ export class MarblesAppServer {
     }
 
     getFullImg(reqId) {
-        return this.usernameList.getFullImg(reqId)
+        return this.usernameList.getImageFromFullList(reqId)
     }
 
     list () {
