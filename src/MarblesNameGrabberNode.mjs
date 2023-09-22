@@ -194,7 +194,8 @@ export class MarbleNameGrabberNode {
         this.imageLike = imageLike // image being read
         this.imageSize = null   // {w,h} for rect of original image
 
-        this.orig_buffer = null // buffer used for debugging
+        this.orig_buffer = null // buffer used to write the orig buffer before edits 
+                                // because PROD makes little edits, only DEBUG makes a full-copy at isolateUserNames
         this.buffer = null      // buffer of raw pixel data
         this.binBuffer = null   // binarized buffer of black text on a white background
         this.bufferSize = null      // {w,h} for rect of the cropped image
@@ -409,9 +410,10 @@ export class MarbleNameGrabberNode {
         await this.buildBuffer()
 
         if (this.debug) {
-            if (!this.orig_buffer)
+            if (!this.orig_buffer) {
                 this.orig_buffer = Buffer.alloc(this.buffer.length)
-            this.buffer.copy(this.orig_buffer)
+                this.buffer.copy(this.orig_buffer)
+            }
             this.bufferToFile(this.DEBUG_NAME_RAW_FILE, this.orig_buffer, false)
             
             // await this.bufferToFile(this.DEBUG_NAME_RAW_FILE, this.buffer, false)

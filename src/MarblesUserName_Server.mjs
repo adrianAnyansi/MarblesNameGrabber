@@ -359,13 +359,14 @@ export class MarblesAppServer {
 
         
         const command = new InvokeCommand(input)
+        console.debug('Sending lambda request')
         let result = await this.lambdaClient.send(command)
 
         if (result['StatusCode'] != 200)
             throw Error(result["LogResult"])
         else {
             let resPayload = JSON.parse(Buffer.from(result["Payload"]).toString())
-            let {data, info} = resPayload
+            // let {data, info, jobId} = resPayload
             return resPayload
         }
     }
@@ -379,9 +380,11 @@ export class MarblesAppServer {
 
         if (withLambda) {
             await mng.buildBuffer().catch( err => {console.error(`Buffer build errored! ${err}`); throw err})
+            mng.orig_buffer = mng.buffer
 
             return mng.dumpInternalBuffer()
             .then( ({buffer, imgMetadata, info}) => this.sendImgToLambda(buffer, imgMetadata, info, true))
+            .then( ({data, info, jobId}) => {console.debug(`Lambda complete job-${jobId}`); return {mng: mng, data: data}})
             .catch( err => {console.error(`Lambda errored! ${err}`); throw err})
         }
         
