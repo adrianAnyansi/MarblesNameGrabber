@@ -2,8 +2,12 @@
 
 ## todo today
 
+Lambda testing
+    Update remote with new MarblesGrabber
+    Add creds to server
+    U
+
 Website work
-    Countdown to name refresh
     About page
     Styling and junk
 

@@ -10,6 +10,7 @@ import {UsernameTracker} from './UsernameTrackerClass.mjs'
 
 import { createWorker, createScheduler } from 'tesseract.js'
 import { humanReadableTimeDiff } from './DataStructureModule.mjs'
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
 // import { setInterval } from 'node:timers'
 
 // server state
@@ -23,6 +24,7 @@ const SERVER_STATE_ENUM = {
 const TWITCH_URL = 'https://www.twitch.tv/'
 const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s' 
                 // "https://www.twitch.tv/videos/1895894790?t=06h39m40s"
+                // "https://www.twitch.tv/videos/1914386426?t=1h6m3s"
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
 let defaultStreamURL = LIVE_URL
 // const streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']
@@ -32,9 +34,12 @@ let ffmpegFPS = '2'
 
 const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
 const NUM_LIVE_WORKERS = 6 // Num Tesseract workers
+const WORKER_RECOGNIZE_PARAMS = {
+    blocks:true, hocr:false, text:false, tsv:false
+}
 const TEST_FILENAME = "testing/test.png"
 // const LIVE_FILENAME = "live.png"
-const EMPTY_PAGE_COMPLETE = 6   // number of frames* without any valid names on them
+const EMPTY_PAGE_COMPLETE = 20   // number of frames* without any valid names on them
 
 let TWITCH_ACCESS_TOKEN_BODY = null
 const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
@@ -42,6 +47,8 @@ const TWITCH_CHANNEL_INFO_URL = "https://api.twitch.tv/helix/channels"
 const TWITCH_DEFAULT_BROADCASTER = "barbarousking" // Default twitch channel
 const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id for barbarousking
 const TWITCH_CRED_FILE = 'twitch_creds.json'
+
+const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
 
 export class MarblesAppServer {
     
@@ -58,12 +65,13 @@ export class MarblesAppServer {
         // debug variables
         this.debugTesseract = false;
         this.debugProcess = false;
+        this.debugLambda = false;
 
         this.pngChunkBufferArr = []
 
         // Processors & Commands
         this.streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']
-        this.ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=fps=${ffmpegFPS}`, 'pipe:1']
+        this.ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=${ffmpegFPS}`, 'pipe:1']
         this.streamlinkProcess = null
         this.ffmpegProcess = null
 
@@ -80,7 +88,10 @@ export class MarblesAppServer {
         this.broadcaster_id = TWITCH_DEFAULT_BROADCASTER_ID
         this.last_game_name = null
 
-        this.monitoredViewers = []
+        this.monitoredViewers = [] // keep track of viewers on website
+
+        if (this.debugLambda)  AWS_LAMBDA_CONFIG["logger"] = console
+        this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
 
         // Start up the Twitch game monitor
         this.setupTwitchMonitor()
@@ -127,6 +138,8 @@ export class MarblesAppServer {
         // Start process for stream url
 
         if (this.streamlinkProcess) return // TODO: Return error
+
+        this.emptyListPages = 0
 
         if (twitch_channel)
             this.streamlinkCmd[1] = TWITCH_URL + twitch_channel
@@ -308,6 +321,7 @@ export class MarblesAppServer {
                 this.serverStatus.state = SERVER_STATE_ENUM.COMPLETE
                 this.shutdownStreamMonitor()
                 this.OCRScheduler.jobQueue = 0
+                this.emptyListPages = 0
                 // this.shutdownWorkerPool()    // FIXME: The scheduler doesn't clear the workers somehow when doing this
                                                 // I'm too lazy to write a proper solution
                 return
@@ -318,14 +332,60 @@ export class MarblesAppServer {
         })
     }
 
-    async debugRun (filename = null) {
+    /**
+     * Sends image file to lambda function, which returns a payload containing the tesseract information
+     * 
+     * @param {Buffer} imgBuffer An buffer containing a png image
+     * @returns {Promise} Promise containing lambda result with tesseract info. Or throws an error
+     */
+    async sendImgToLambda(bufferCrop, imgMetadata, info, lambdaTest=false) {
+
+        const payload = {
+            buffer: bufferCrop.toString('base64'),
+            imgMetadata: imgMetadata,
+            info: info,
+            jobId: "test",
+            test: false
+        }
+
+        const input = { // Invocation request
+            FunctionName: "OCR-on-Marbles-Image",
+            InvocationType: "RequestResponse",
+            LogType: "Tail",
+            // ClientContext: "Context",
+            Payload: JSON.stringify(payload), // stringified value
+            // Qualifier: "Qualifier"
+        }
+
+        
+        const command = new InvokeCommand(input)
+        let result = await this.lambdaClient.send(command)
+
+        if (result['StatusCode'] != 200)
+            throw Error(result["LogResult"])
+        else {
+            let resPayload = JSON.parse(Buffer.from(result["Payload"]).toString())
+            let {data, info} = resPayload
+            return resPayload
+        }
+    }
+
+    async debugRun (filename = null, withLambda = false) {
         filename ??= TEST_FILENAME
         console.log(`Running debug! ${filename}`)
         console.log(`Working directory: ${path.resolve()}`)
         
-        await this.setupWorkerPool(1)
-
         let mng = new MarbleNameGrabberNode(filename, true)
+
+        if (withLambda) {
+            await mng.buildBuffer().catch( err => {console.error(`Buffer build errored! ${err}`); throw err})
+
+            return mng.dumpInternalBuffer()
+            .then( ({buffer, imgMetadata, info}) => this.sendImgToLambda(buffer, imgMetadata, info, true))
+            .catch( err => {console.error(`Lambda errored! ${err}`); throw err})
+        }
+        
+        await this.setupWorkerPool(1)
         
         return mng.buildBuffer()
         .catch( err => {
@@ -361,7 +421,12 @@ export class MarblesAppServer {
             tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQKRSTUVWXYZ_0123456789', // only search a-z, _, 0-9
             preserve_interword_spaces: '0', // discard spaces between words
             tessedit_pageseg_mode: '6',      // read as vertical block of uniform text
-            // tessedit_pageseg_mode: '11',      // read individual characters (this is more likely to drop lines)
+            // tessedit_pageseg_mode: '11',      // read individual characters (this is more likely to drop lines),
+            // tessjs_create_hocr: "0",
+            // tessjs_create_tsv: "0",
+            // tessjs_create_box: "1",
+            // tessjs_create_unlv: "0",
+            // tessjs_create_osd: "0"
         })
 
         console.debug(`Tesseract Worker ${worker_num} is built & init`)
@@ -561,9 +626,9 @@ export class MarblesAppServer {
         return Object.fromEntries(this.usernameList.hash)
     }
 
-    debug (filename) {
+    debug (filename, withLambda) {
 
-        return this.debugRun(filename)
+        return this.debugRun(filename, withLambda)
         .then( ({mng, data}) => {
             let retList = this.usernameList.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false))
             return {list: retList, debug:true}
@@ -589,6 +654,8 @@ export class MarblesAppServer {
   streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best --stdout | ffmpeg -re -f mpegts -i pipe:0 -f image2 -pix_fmt rgba -vf fps=fps=1/2 -y -update 1 live.png
   
   streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best --stdout | ffmpeg -re -f mpegts -i pipe:0 -copyts -f image2 -pix_fmt rgba -vf fps=fps=1/2 -frame_pts true %d.png
+  
+  streamlink "https://twitch.tv/barbarousking" "best" --stdout | ffmpeg -re -f mpegts -i pipe:0 -vf fps=2 test.ts
 
   ffmpeg -re '-f','mpegts', '-i','pipe:0', '-f','image2', '-pix_fmt','rgba', '-vf','fps=fps=1/2', 'pipe:1'
 

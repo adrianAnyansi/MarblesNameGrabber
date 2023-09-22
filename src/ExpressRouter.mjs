@@ -116,24 +116,16 @@ server.get('/list', (req, res) => {
 server.post('/debug', async (req, res) => {
 
     let filename = req.query?.filename
+    let withLambda = (req.query?.withlambda) ? true : false
     // if (!filename) filename = TEST_FILENAME
 
     try {
-        let json_resp = await app_server.debug(filename)
+        let json_resp = await app_server.debug(filename, withLambda)
         res.send(json_resp)    // FIXME: Add params for errors and etc
         console.debug("Sent debug response")
     } catch (err) {
         res.status(400).send(`An unknown error occured. ${err}`)
     }
-    
-
-    // debugRun(filename).then( ({mng, data}) => {
-    //     let retList = usernameList.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false))
-    //     res.send({list: retList, debug:true})
-    //     console.debug("Sent debug response")
-    // }).catch( err => {
-    //     res.status(400).send(`An unknown error occurred. ${err}`)
-    // })
 })
 
 const env = process.env.NODE_ENV || 'development';

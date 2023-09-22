@@ -113,7 +113,8 @@ const colorSampling = {
             ],
     // VIP_PINK: [0xE824B8, 0x9D126D, 0xDD20C2, 0xEC22C4, 0xe999cf],
     VIP_PINK: [0xfc92d8, 0xe795d1, 0xff8ddb, 0xfa8bd6, 0xff8ed4, 0xeb8ccc, 0xf494d5, 0xef9bcc, 0xf88fd3, 0xda79c2, 0xea95cb],
-    FOUNDER: [0xed21d7, 0xff12bf, 0xd736b2, 0xff25d0, 0xdc25bc, 0xd431b7, 0xc31a97, 0xeb23c7, 0xcf36ac, 0xf522c5, 0xef28e6]
+    FOUNDER: [0xed21d7, 0xff12bf, 0xd736b2, 0xff25d0, 0xdc25bc, 0xd431b7, 0xc31a97, 0xeb23c7, 0xcf36ac, 0xf522c5, 0xef28e6],
+    STREAMER_RED: [0xfc9eaf, 0xe38b9d, 0xe992a7, 0xe8809a, 0xdc7169, 0xe15b83, 0xe8809a, 0xe18b98, 0xe1918e, 0xf57f7d, 0xff96a0, 0xf58071, 0xff8394]
     // TEST:       [0x000000, 0x101010, 0x040404]
 }
 
@@ -191,17 +192,11 @@ export class MarbleNameGrabberNode {
         // Get references, etc
 
         this.imageLike = imageLike // image being read
-        // this.imageOptions = {raw: {  width: this.bufferSize.w, 
-        //     height: this.bufferSize.h, 
-        //     channels: this.bufferSize.channels, 
-        //     premultiplied: this.bufferSize.premultiplied
-        // }}
         this.imageSize = null   // {w,h} for rect of original image
 
         this.orig_buffer = null // buffer used for debugging
         this.buffer = null      // buffer of raw pixel data
         this.binBuffer = null   // binarized buffer of black text on a white background
-        this.bufferPromise = null   // promise that is resolved when buffer has been set
         this.bufferSize = null      // {w,h} for rect of the cropped image
 
         // debug will write intermediate to file for debugging
@@ -209,17 +204,35 @@ export class MarbleNameGrabberNode {
 
     }
 
+    /**
+     * Build buffer & etc using a cropped buffer instead of the full buffer
+     */
+    async quickBuffer (bufferCrop, imgMetadata, info) {
+        this.buffer = null // delete previous buffer
+        this.bufferSize = null
+        this.imageSize = null
+
+        this.imageSize = {w: imgMetadata.w, h: imgMetadata.h}
+        this.bufferSize = {w: info.w, h:info.h, channels: info.channels, premultiplied: info.premultiplied, size: info.size }
+
+        this.buffer = bufferCrop
+        if (!this.debug) this.orig_buffer = this.buffer
+        this.binBuffer = Buffer.alloc(info.size, new Uint8Array(toRGBA(WHITE)))
+
+        return Promise.resolve()
+    }
+
     async buildBuffer () {
         // Build sharp object and extract buffer as UInt8Array
 
-        if (this.bufferPromise) return this.bufferPromise
+        if (this.buffer) return this.buffer
         
         let sharpImg = sharp(this.imageLike)
         this.buffer = null // delete previous buffer
         this.bufferSize = null
         this.imageSize = null
 
-        this.bufferPromise = sharpImg.metadata()
+        return sharpImg.metadata()
             .then( imgMetadata => {
                 // console.debug("Got metadata")
                 this.imageSize = {w: imgMetadata.width, h: imgMetadata.height}
@@ -232,18 +245,28 @@ export class MarbleNameGrabberNode {
             .then( ({data, info}) => {
                 if (data) {
                     this.bufferSize = {w: info.width, h:info.height, channels: info.channels, premultiplied: info.premultiplied, size: info.size }
+                    
                     this.buffer = data
                     if (!this.debug) this.orig_buffer = this.buffer
                     this.binBuffer = Buffer.alloc(info.size, new Uint8Array(toRGBA(WHITE)))
                 }
-                return Promise.resolve(data)
+                return this.buffer
             })
             .catch( err => {
                 console.warn(`Did not get buffer Error:${err}`)
                 throw err
             })
+    }
 
-        return this.bufferPromise
+    /**
+     * This dumps the buffer & metadata for the cropped image
+     */
+    async dumpInternalBuffer () {
+        return {
+            buffer:      this.buffer,
+            imgMetadata: this.imageSize,
+            info:        this.bufferSize
+        }
     }
 
     normalizeRect (rect, width, height) {
