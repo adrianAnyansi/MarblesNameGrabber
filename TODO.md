@@ -1,27 +1,23 @@
 # TODO.md
 
-## todo today
+## Important
 
-Lambda testing
-    Update remote with new MarblesGrabber
-    Add creds to server
-    U
+1. Gotta fix the web UI
+2. Put auth behind start/stop/clear etc
+3. Think about the list mechanics
+4. Think about doing extra FPS during list changes
+
+## todo someday
 
 Website work
     About page
     Styling and junk
+    Stop updating when a user has found+confirmed their name
 
 Server stability
-    More load-testing if possible
     Caching levenDistance answers
 
 Image identify
-    Get an id that's sent to users when removing stuff from the system
-    Update result when returned
-
-test start command and latency
-Testing shows that the server occupies about 1500 MB of RAM, which causes it to crash early on a T2.Micro
-
 
 ## todo later
 Improve the logging so I don't write a bunch while iterating
@@ -73,7 +69,7 @@ At this point, the recognition is about the best I can consider.
 There are some things that can be tweaked;
     - Tweak the color values
     - Mess with anti-flood fill
-    - Recognize and remove the pointer (cause Barb literally can't give me a break)
+    - Recognize and remove the cursor/pointer (cause Barb literally can't give me a break)
     - Figure out ways to remove/ignore white text from Twitch chat
     - Mess with more blurring (I think scaling matches tests done)
     - timestamp pictures taken

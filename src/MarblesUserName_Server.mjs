@@ -33,6 +33,7 @@ let ffmpegFPS = '2'
 // const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=fps=${ffmpegFPS}`, 'pipe:1']
 
 const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
+
 const NUM_LIVE_WORKERS = 6 // Num Tesseract workers
 const WORKER_RECOGNIZE_PARAMS = {
     blocks:true, hocr:false, text:false, tsv:false
@@ -50,6 +51,7 @@ const TWITCH_CRED_FILE = 'twitch_creds.json'
 
 const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
 const USE_LAMBDA = true
+const NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
 
 export class MarblesAppServer {
     
@@ -128,6 +130,17 @@ export class MarblesAppServer {
         this.numOCRWorkers = 0
         return this.OCRScheduler.terminate()
         // TODO: Change this to just terminate some workers?
+    }
+
+    /** Warmup lambda by sending an empty file */
+    async warmupLambda (workers) {
+        // Im throwing away lambdaClient, dont know if this is recommened
+        this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
+
+        let lambda_id=0
+        while (lambda_id < workers) {
+            this.sendWarmupLambda(`warmup ${lambda_id++}`)
+        }
     }
 
 // -------------------------
@@ -373,7 +386,7 @@ export class MarblesAppServer {
             imgMetadata: imgMetadata,
             info: info,
             jobId: jobId,
-            test: false
+            test: lambdaTest
         }
 
         const input = { // Invocation request
@@ -399,6 +412,29 @@ export class MarblesAppServer {
         }
     }
 
+    /** Send Warmup request to lambda */
+    async sendWarmupLambda(jobId='test') {
+
+        const payload = {
+            buffer: "",
+            jobId: jobId,
+            warmup: true
+        }
+
+        const input = { // Invocation request
+            FunctionName: "OCR-on-Marbles-Image",
+            InvocationType: "RequestResponse",
+            LogType: "Tail",
+            Payload: JSON.stringify(payload), // stringified value
+        }
+
+        
+        const command = new InvokeCommand(input)
+        console.debug('Sending lambda warmup')
+        return this.lambdaClient.send(command)
+        .then(resp => resp['StatusCode'])
+
+    }
     
     /**
      * Get current image queue
@@ -613,8 +649,9 @@ export class MarblesAppServer {
             
             if (!USE_LAMBDA)
                 this.setupWorkerPool(NUM_LIVE_WORKERS)
-            else
-                this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
+            else 
+                this.warmupLambda(NUM_LAMBDA_WORKERS)
+                // this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
             
             this.startStreamMonitor(channel)
 
