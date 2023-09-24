@@ -49,17 +49,19 @@ const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id f
 const TWITCH_CRED_FILE = 'twitch_creds.json'
 
 const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
+const USE_LAMBDA = true
 
 export class MarblesAppServer {
     
     constructor () {
         this.serverStatus = {
-            state: SERVER_STATE_ENUM.STOPPED,
-            imgs_downloaded: 0,
-            imgs_read: 0,
-            started_stream_ts: null,
-            viewers: 0,
-            interval: 1_000 * 3
+            state: SERVER_STATE_ENUM.STOPPED,   // current state
+            imgs_downloaded: 0,                 // downloaded images from the stream
+            imgs_read: 0,                       // images read from stream (that are valid marbles names)
+            started_stream_ts: null,            // how long the program has ingested data
+            ended_stream_ts: null,              // when stream ingest ended
+            viewers: 0,                         // current viewers on the site
+            interval: 1_000 * 3                 // interval to refresh status
         }
 
         // debug variables
@@ -67,31 +69,33 @@ export class MarblesAppServer {
         this.debugProcess = false;
         this.debugLambda = false;
 
-        this.pngChunkBufferArr = []
-
         // Processors & Commands
-        this.streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']
+        this.streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']   // Streamlink shell cmd
         this.ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=${ffmpegFPS}`, 'pipe:1']
-        this.streamlinkProcess = null
-        this.ffmpegProcess = null
+        this.streamlinkProcess = null   // Node process for streamlink
+        this.ffmpegProcess = null       // Node process for ffmpeg
+        this.pngChunkBufferArr = []     // Maintained PNG buffer over iterations
 
         // Tesseract variables
         this.OCRScheduler = null
         this.numOCRWorkers = 0
 
-        this.usernameList = new UsernameTracker()
+        this.usernameList = new UsernameTracker()   // Userlist
         this.emptyListPages = 0 // Number of images without any names
 
+        // Twitch tokens
         this.twitch_access_token = null
         this.game_type_monitor_interval = null
-
         this.broadcaster_id = TWITCH_DEFAULT_BROADCASTER_ID
         this.last_game_name = null
 
         this.monitoredViewers = [] // keep track of viewers on website
 
+        // Lambda state
         if (this.debugLambda)  AWS_LAMBDA_CONFIG["logger"] = console
-        this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
+        // this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
+        this.lambdaClient = null
+        this.lambdaQueue = 0
 
         // Start up the Twitch game monitor
         this.setupTwitchMonitor()
@@ -131,6 +135,7 @@ export class MarblesAppServer {
 // -------------------------
     /**
      * Start downloading channel or vod to read
+     * Note this also setups variables assuming a state changing going to START
      * @param {String} twitch_channel 
      * @returns 
      */
@@ -139,7 +144,11 @@ export class MarblesAppServer {
 
         if (this.streamlinkProcess) return // TODO: Return error
 
+        // Setup variables
         this.emptyListPages = 0
+        this.serverStatus.state = SERVER_STATE_ENUM.WAITING
+
+
 
         if (twitch_channel)
             this.streamlinkCmd[1] = TWITCH_URL + twitch_channel
@@ -168,6 +177,7 @@ export class MarblesAppServer {
             let outputBuffer = false
             this.streamlinkProcess.stderr.on('data', (data) => {
                 const stringOut = data.toString()
+                // FIXME: Output error when stream is unavailable
                 if (!outputBuffer & stringOut.includes('Opening stream')) {
                     outputBuffer = true
                     console.debug('Streamlink is downloading stream-')
@@ -235,6 +245,7 @@ export class MarblesAppServer {
 
         this.streamlinkProcess.on('close', () => {
             console.debug('Streamlink process has closed.')
+            this.spinDown()
             this.serverStatus.state = SERVER_STATE_ENUM.STOPPED
         })
         this.ffmpegProcess.on('close', () => {
@@ -260,6 +271,7 @@ export class MarblesAppServer {
 
             this.streamlinkProcess = null
             this.ffmpegProcess = null
+            return true
         }
 
         return false
@@ -279,12 +291,12 @@ export class MarblesAppServer {
 
         this.serverStatus.imgs_downloaded += 1
 
-        let currTs = (new Date()).getTime()
+        // let currTs = (new Date()).getTime()
         
-        const options = {
-            "id": `file_dt_${currTs}`,
-            "jobId": `file_dt_${currTs}`,
-        } // TODO: Use options
+        // const options = {
+        //     "id": `file_dt_${currTs}`,
+        //     "jobId": `file_dt_${currTs}`,
+        // } // TODO: Use options
         
         let mng = new MarbleNameGrabberNode(imageLike, false)
 
@@ -293,24 +305,43 @@ export class MarblesAppServer {
             if (validMarblesImgBool) {
                 console.log("Found Marbles Pre-Race header, starting read")
                 this.serverStatus.state = SERVER_STATE_ENUM.READING
+                this.serverStatus.started_stream_ts = new Date()
             } else {
                 return
             }
         }
-            
-        // testing value
+        
+        // Parse the image for names
+        console.debug(`Queuing LIVE image queue: ${this.getImageQueue()}`)
 
-        console.debug(`Queuing LIVE image queue: ${this.OCRScheduler.getQueueLen()}`)
-
-        return mng.buildBuffer()
+        // Build buffer
+        await mng.buildBuffer()
         .catch( err => {
             console.warn("Buffer was not created successfully, skipping")
             throw err
-        }).then( () =>  mng.isolateUserNames()
-        ).then( buffer =>  this.scheduleTextRecogn(buffer)
-        ).then( ({data, info}) => {
-            // add to nameBuffer
+        })
+        
+        // Perform tesseract 
+        let tesseractPromise = null
+        if (!USE_LAMBDA) {
+            tesseractPromise = mng.isolateUserNames()
+            .then( buffer =>  this.scheduleTextRecogn(buffer) )
+        } else {
+            // const {buffer, imgMetadata, info} = await mng.dumpInternalBuffer()
+            tesseractPromise = mng.dumpInternalBuffer()
+            .then ( ({buffer, imgMetadata, info}) => 
+                this.sendImgToLambda(buffer, imgMetadata, info, `lid:${this.serverStatus.imgs_downloaded}`, false)
+            )
+            this.lambdaQueue += 1
+            // tesseractPromise = this.sendImgToLambda(buffer, imgMetadata, info, `lid:${this.serverStatus.imgs_downloaded}`, false)
+        }
+        
+        tesseractPromise.then( ({data, info}) => {      // add result to nameBuffer
+            
+            if (USE_LAMBDA)
+                this.lambdaQueue -= 1
             this.serverStatus.imgs_read += 1
+
             let retList = this.usernameList.addPage(data, mng.bufferToPNG(mng.buffer, true, false))
             if (retList.length == 0)
                 this.emptyListPages += 1
@@ -319,11 +350,7 @@ export class MarblesAppServer {
             if (this.emptyListPages >= EMPTY_PAGE_COMPLETE) {
                 console.log(`${this.emptyListPages} empty frames; dumping queue & moving to COMPLETE state.`)
                 this.serverStatus.state = SERVER_STATE_ENUM.COMPLETE
-                this.shutdownStreamMonitor()
-                this.OCRScheduler.jobQueue = 0
-                this.emptyListPages = 0
-                // this.shutdownWorkerPool()    // FIXME: The scheduler doesn't clear the workers somehow when doing this
-                                                // I'm too lazy to write a proper solution
+                this.spinDown()
                 return
             }
         }).catch ( err => {
@@ -332,19 +359,20 @@ export class MarblesAppServer {
         })
     }
 
+
     /**
      * Sends image file to lambda function, which returns a payload containing the tesseract information
      * 
      * @param {Buffer} imgBuffer An buffer containing a png image
      * @returns {Promise} Promise containing lambda result with tesseract info. Or throws an error
      */
-    async sendImgToLambda(bufferCrop, imgMetadata, info, lambdaTest=false) {
+    async sendImgToLambda(bufferCrop, imgMetadata, info, jobId='test', lambdaTest=false) {
 
         const payload = {
             buffer: bufferCrop.toString('base64'),
             imgMetadata: imgMetadata,
             info: info,
-            jobId: "test",
+            jobId: jobId,
             test: false
         }
 
@@ -371,6 +399,37 @@ export class MarblesAppServer {
         }
     }
 
+    
+    /**
+     * Get current image queue
+     * @returns {Number}
+     */
+    getImageQueue () {
+        if (USE_LAMBDA)
+            return this.lambdaQueue
+        else if (this.OCRScheduler)
+            return this.OCRScheduler.getQueueLen()
+        else
+            return 0
+    }
+
+    /**
+     * Stop stream-monitor, reset base parameters
+     */
+    spinDown () {
+        this.shutdownStreamMonitor()
+        if (this.OCRScheduler)
+            this.OCRScheduler.jobQueue = 0
+        this.emptyListPages = 0
+        this.serverStatus.ended_stream_ts = new Date()
+    }
+
+    /**
+     * Runs whatever debug thing I want with a local filename I want 
+     * @param {*} filename 
+     * @param {*} withLambda 
+     * @returns 
+     */
     async debugRun (filename = null, withLambda = false) {
         filename ??= TEST_FILENAME
         console.log(`Running debug! ${filename}`)
@@ -383,7 +442,7 @@ export class MarblesAppServer {
             mng.orig_buffer = mng.buffer
 
             return mng.dumpInternalBuffer()
-            .then( ({buffer, imgMetadata, info}) => this.sendImgToLambda(buffer, imgMetadata, info, true))
+            .then( ({buffer, imgMetadata, info}) => this.sendImgToLambda(buffer, imgMetadata, info, 'test', true))
             .then( ({data, info, jobId}) => {console.debug(`Lambda complete job-${jobId}`); return {mng: mng, data: data}})
             .catch( err => {console.error(`Lambda errored! ${err}`); throw err})
         }
@@ -408,6 +467,11 @@ export class MarblesAppServer {
 
 
     // Tesseract.js
+    /**
+     * Create new worker and add to scheduler
+     * @param {*} worker_num worker id
+     * @returns 
+     */
     async addOCRWorker (worker_num) {
         console.debug(`Creating Tesseract worker ${worker_num}`)
 
@@ -438,6 +502,12 @@ export class MarblesAppServer {
 
     }
 
+    /**
+     * Schedule text recognition on the OCR scheduler
+     * @param {*} imageLike 
+     * @param {*} options 
+     * @returns 
+     */
     async scheduleTextRecogn (imageLike, options) {
         // Create OCR job on scheduler
         if (!this.OCRScheduler) 
@@ -459,8 +529,8 @@ export class MarblesAppServer {
         // Retrieve twitch JSON info
         if (!TWITCH_ACCESS_TOKEN_BODY) {
             try {
-            const fileContent = await fs.readFile(TWITCH_CRED_FILE, {encoding:'utf8'})
-            TWITCH_ACCESS_TOKEN_BODY = JSON.parse(fileContent)
+                const fileContent = await fs.readFile(TWITCH_CRED_FILE, {encoding:'utf8'})
+                TWITCH_ACCESS_TOKEN_BODY = JSON.parse(fileContent)
             } catch (err) {
                 console.warn("Twitch credential file not found. Exiting")
                 return
@@ -483,7 +553,7 @@ export class MarblesAppServer {
             }
             // set timeout to clear this token
             // const timeoutMs = parseInt(res.data['expires_in']) * 1_000
-            const timeoutMs = 15* 24 * 60 * 60 * 1_000 // Capped to 24 days due to stuff.
+            const timeoutMs = 15* 24 * 60 * 60 * 1_000 // Capped to 24 days due to int overflow.
             // FIXME: Setup a new callback that triggers comparing Date.now instead
             setTimeout(()=> {this.twitch_access_token = null}, timeoutMs)
             
@@ -531,8 +601,6 @@ export class MarblesAppServer {
         }
     }
 
-
-
     /**
      * Setup worker pool
      * @param {String} channel
@@ -543,11 +611,15 @@ export class MarblesAppServer {
         if (this.streamlinkProcess == null) {
             this.usernameList.clear()
             
-            this.setupWorkerPool(NUM_LIVE_WORKERS)
+            if (!USE_LAMBDA)
+                this.setupWorkerPool(NUM_LIVE_WORKERS)
+            else
+                this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
+            
             this.startStreamMonitor(channel)
 
-            this.serverStatus.started_stream_ts = new Date()
-            this.serverStatus.state = SERVER_STATE_ENUM.WAITING
+            // this.serverStatus.started_stream_ts = new Date()
+            // this.serverStatus.state = SERVER_STATE_ENUM.WAITING
             retText = "Waiting for names"
         }
         return {"state": this.serverStatus.state, "text": retText}
@@ -556,14 +628,21 @@ export class MarblesAppServer {
     stop () {
         let resp_text = "Already Stopped"
 
-        const stopped = this.shutdownStreamMonitor()
+        if (this.serverStatus.state != SERVER_STATE_ENUM.STOPPED) {
+            this.spinDown()
+        // const stopped = this.shutdownStreamMonitor()
 
-        if (stopped) {
+        // if (stopped) {
             resp_text = "Stopped image parser"
             this.serverStatus.state = SERVER_STATE_ENUM.STOPPED
         }
 
         return {"state": this.serverStatus.state, "text": resp_text}
+    }
+
+    setMarblesDate (date) {
+        this.serverStatus.marbles_date = new Date(date)
+        return "Marbles Date set!"
     }
 
     clear () {
@@ -581,11 +660,21 @@ export class MarblesAppServer {
 
         this.serverStatus.viewers = this.monitoredViewers.length
 
+        let streaming_time = 'X'
+        if (this.serverStatus.started_stream_ts) {
+            if (this.serverStatus.ended_stream_ts)
+                streaming_time = humanReadableTimeDiff(this.serverStatus.ended_stream_ts - this.serverStatus.started_stream_ts)
+            else
+                streaming_time = humanReadableTimeDiff(Date.now() - this.serverStatus.started_stream_ts)
+        }
+        
+        
+
         return {
             'status': this.serverStatus,
-            'job_queue': this.OCRScheduler ? this.OCRScheduler.getQueueLen() : 'X',
-            'streaming': (this.serverStatus.started_stream_ts) ? humanReadableTimeDiff(Date.now() - this.serverStatus.started_stream_ts) : 'X',
-            'userList': this.usernameList.status()
+            'job_queue': this.getImageQueue(),
+            'streaming': streaming_time,
+            'userList': this.usernameList.status(),
         }
     }
 
