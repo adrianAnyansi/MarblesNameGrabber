@@ -7,7 +7,25 @@
 3. Think about the list mechanics
 4. Think about doing extra FPS during list changes
 
-## todo someday
+## todo today
+
+Server
+    Remove lower/upper letter levendistance fail
+    Track pages
+
+Website
+    Track page
+        Make the icon thing for moving numbers
+        link server status to the icon
+    
+    Easter egg (only on about page)
+    About page 
+        Barb warning
+        Explain how it works
+        Explain marbles
+    Verify page
+        Do the userlist stuff first before finishing that one
+
 
 Website work
     About page

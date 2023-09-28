@@ -2,65 +2,137 @@
 <html lang="en-US">
     <head>
         <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width" /> 
-        <title>AmIInMarbles??</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <link rel="icon" href="website/marblesonstream.png" type="image/x-icon" />
+        <title>Am I In Marbles??</title>
     </head>
-    <style>
-        body {
-            background-color: #273131;
-            color: snow;
-        }
-        input {
-            background-color: snow;
-        }
-
-        .big-title {
-            font-size: 9vw;
-            margin: 0;
-        }
-        #serverBox {
-            display: flex;
-            flex-direction: column;
-        }
-        #last_title {
-            display: flex;
-            flex-direction: row;
-        }
-        #last_title .big-title {
-            display: inline-block;
-        }
-        #username_input {
-            font-size: 5vw;
-            padding: 0.5vw;
-        }
-        img.hidden {
-            display: none
-        }
-    </style>
+    <link rel="stylesheet" type="text/css" href="website/site.css"/>
     <body>
-        <h2 class="big-title">Am I in</h2>
-        <h2 class="big-title">BarbarousKing's</h2>
-        <div id="last_title">
-            <h1 class="big-title">Marbles?</h1>
-            <div id="serverBox">
-                <span id="server_status">Getting server status</span>
-                <span id="user_tracked">Users found</span>
-                <span id="viewers_visiting">Website viewers</span>
+        <div class="page trackingPage">
+            <h2 class="big-title">Am I in</h2>
+            <!-- <img src="website/doom-2016-right.png" id="name_img"> -->
+            <h2 class="big-title" id="streamerName">BarbarousKing's</h2>
+            <div id="last_title">
+                <h1 class="big-title">Marbles?</h1>
+                <div id="serverBox">
+                    <div>
+                        <span id="serverStatusIcon" class="unknown">⏺</span>
+                        <span id="server_status">Getting server status</span>
+                    </div>
+                    <span id="viewers_visiting">Website viewers</span>
+                </div>
             </div>
+
+            <br/>
+            <br/>
+            <br/>
+            <div id="username_input_box">
+                <input id="username_input" placeholder="">
+                <p id="username_placeholder">Enter username</p>
+                <!-- <p id="username_placeholder2">Enter username</p> -->
+            </div>
+            <div id="username_output_box">
+                <p id="username_simple_out"></p> 
+                <p id="user_tracked">possible user(s)</p>
+            </div>
+            <br/>
+
+            <p style="display:none" id="username_general"></p>
+
+            <div style="position:relative">
+                <!-- <p style="position:absolute">Image will be displayed here</p> -->
+                <img id="userImg" class="hidden" src="">
+            </div>
+
+            <br/>
+            <br/>
+            <p>
+                This website is not affliated with BarbarousKing or MarblesOnStream, it's a project by a viewer.
+            </p>
         </div>
 
-        <input id="username_input" placeholder="Enter Username">
+        <div class="page verifyPage">
+            <p> Coming soon! Need to do some backend stuff first!</p>
+        </div>
 
-        <p id="username_simple_out"></p>
-        <p id="username_general"></p>
 
-        <img id="userImg" class="hidden" src="">
-        
-        <div>
-            <p>*Note: Website is delayed and about 85% accurate.</p>
-            <p>Short about: This page is a front-end for tracking entrants into BarbarousKing's Fabled Marbles Event.</p>
-            <p>Please enter username <b>exactly</b> as it appears in Twitch chat.</p>
-            <p>Website will have more improvements later</p>
+        <div class="page aboutPage">
+            <h2 class="big-title">About</h2>
+
+            <p class="aboutQuestion"><span>Q: </span>Wait, so what is this site?</p>
+
+            <p>
+                This is a fan site made to track entrants in Twitch.tv streamer BarbarousKing Marbles-On-Stream event.
+            </p>
+
+            <p class="aboutQuestion"><span>Q: </span> Hmm.. how does it work?</p>
+
+            <p>
+                Marbles-On-Stream doesn't have an API to find people in races, so this site does that.
+                Short answer is that it's <b>watching the stream</b>, removes as much of the background from the username list as it can, 
+                then sends the image for text recognition to extract the usernames.
+            </p>
+            <p><i>So Barb please don't obscure names and don't move camera while reading names</i></p>
+            <p>
+                Both the background extract & text recognition are not perfect, so the site is not completely accurate and uses some human
+                interaction to verify usernames. The long answer is... very long. 
+                There's a lot of pixel manipulation and architecture to make this work.
+            </p>
+
+            <p class="aboutQuestion"><span>Q: </span> Ok but how accurate? Am I in or not?</p>
+
+            <p>
+                Testing shows it's about ~92% accurate and ~1.4s behind live. 
+            </p>
+            <p>
+                The exact amount can vary depending on how many names are obscured by certain events like:
+                <ul>
+                    <li>Twitch chat not being moved early</li>
+                    <li>Marble names in world overlaping Username list</li>
+                    <li>Bitrate making names unreadable</li>
+                    <li>Other oversights in code</li>
+                </ul>
+                I think filling the gap is best done manually and I'm working on that. I plan on making a UI that lets everyone help
+                identify usernames that the bot can't read.
+            </p>
+
+            <p class="aboutQuestion"><span>Q: </span>So with all this; you must know the secret of getting into marbles?</p>
+
+            <p>
+                Uhhhh... 
+                So the short answer is:
+                <ul>
+                    <li>Be Early and chat <b>right</b> after the loading screen completes </li>
+                    <li>Type <b>!play</b> or <b>!PLAY</b> or <b>!Play</b> or <b>!play #</b> (# can be any single number)</li>
+                    <li>Hope the RNG gods smile on you!</li>
+                </ul>
+            </p>
+            <p>
+                The technical explaination is: your chat goes to the Twitch IRC servers which is then downloaded onto Barb's machine. However due to
+                the massive amount of messages sent during Marbles, the messages no longer arrive in order. So generally your message will make it in,
+                but when I have no clue <b>when</b> if it's based on lag to the streamer, ordered, random. 
+            </p>
+
+            <p class="aboutQuestion"><span>Q: </span>Wait a secon- why not just read Barb's chat on screen then?</p>
+
+            <p>
+                <ol>
+                    <li> Have you seen how tiny that is? The bot is already inaccurate, no way it can read text that's half that size.</li>
+                    <li> Stream chat gets removed to a random spot on screen</li>
+                    <li> That chat scrolls so fast there's zero chance the computer will capture everyone.</li>
+                </ol>
+            </p>
+            <p>
+                Also I don't read Twitch chat as that is also in a random order compared to Barb. It might be possible to connect to the same IRC server the streamer is on,
+                but discovering which IRC server that is prior to marbles seems hard. So nah.
+            </p>
+
+            <p class="aboutQuestion"><span>Q: </span>Alright I found a bug or the site returned the wrong name. Who do I snitch to?</p>
+
+            <p>
+                Just say something on discord or in the #rats-nest. @MiloticMaster
+            </p>
+
         </div>
     </body>
     <script type="text/javascript" src="website/client.js"></script>

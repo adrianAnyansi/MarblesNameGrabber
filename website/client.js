@@ -79,7 +79,15 @@ function userInfoInterval(default_text, default_elem=UsernameOutputEl) {
 /** Queue input after 2 seconds of no input */
 function queueInput(inputEvent) {
     
-    userInfoInterval('Checking username')
+    if (UsernameInputEl.value.trim() == "") {
+        UsernameOutputEl.textContent = ""
+        clearInterval(userCheckingStatusInterval)
+        userCheckingStatusInterval = null
+        clearInterval(inputTimeout)
+        inputTimeout = null
+        return
+    }
+    userInfoInterval('Checking input')
 
     userInputQueueBool = true
     clearInterval(inputTimeout)
@@ -99,29 +107,29 @@ function handleInput (inputEvent) {
     userCheckingStatusInterval = null
     
     const username = UsernameInputEl.value.trim()
-    if (TrackingUsername == username) {
-        // early-out IF server has not been updated & user not found
-        // console.debug("Redoing already tracked name")
-    }
 
     if (username == '') return
-    if (username.length < 3) UsernameOutputEl.textContent = 'Please enter more than 3 characters'
+    if (username.length < 3) {
+        UsernameOutputEl.textContent = 'Please enter more than 3 characters'
+        return
+    }
 
-    TrackingUsername = username
+    TrackingUsername = username // set global
 
     try {
         // Setup UI stuff if user initiated    
         if (userInputQueueBool) {
             UserImgEl.src = EMPTY_IMG
             UserImgEl.classList.add('hidden')
-            UsernameOutputEl.textContent = 'Finding username...'
-            if (userCheckingStatusInterval == null) {
-                let dotNum = 0
-                userCheckingStatusInterval = setInterval( () => {
-                    dotNum = (dotNum + 1) % 4
-                    UsernameOutputEl.textContent = 'Finding username'+''.padEnd(dotNum, '.')
-                }, 1_000)
-            }
+            // UsernameOutputEl.textContent = 'Finding username...'
+            userInfoInterval('Finding username')
+            // if (userCheckingStatusInterval == null) {
+            //     let dotNum = 0
+            //     userCheckingStatusInterval = setInterval( () => {
+            //         dotNum = (dotNum + 1) % 4
+            //         UsernameOutputEl.textContent = 'Finding username'+''.padEnd(dotNum, '.')
+            //     }, 1_000)
+            // }
             userInputQueueBool = false
         }
         
@@ -155,14 +163,14 @@ function handleInput (inputEvent) {
 function handleServerStatus(serverJSON) {
     // Assume serverJSON is valid
     ServerStatusEl.textContent = `${serverJSON['status']['state']}`
-    ServerUsersEl.textContent = `${serverJSON['userList']['user_list']} found user(s)`
+    ServerUsersEl.textContent = `${serverJSON['userList']['user_list']} possible user(s)`
     WebsiteUsersEl.textContent = `${serverJSON['status']['viewers']} site viewers` // TODO: Finish
 }
 
 function setupPage() {
     fetchServerStatus()
     UsernameInputEl.addEventListener('input', queueInput)
-    if (UsernameInputEl.value) handleInput()
+    if (UsernameInputEl.value) handleInput() // trigger search if browser has cached the user input
     // fetchUserList()
 }
 

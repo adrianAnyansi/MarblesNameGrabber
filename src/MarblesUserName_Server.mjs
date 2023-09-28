@@ -50,7 +50,7 @@ const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id f
 const TWITCH_CRED_FILE = 'twitch_creds.json'
 
 const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
-const USE_LAMBDA = true
+const USE_LAMBDA = false
 const NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
 
 export class MarblesAppServer {
@@ -353,6 +353,7 @@ export class MarblesAppServer {
             
             if (USE_LAMBDA)
                 this.lambdaQueue -= 1
+            // NOTE: Should I log the resulting jobId from lambda/tesseract?
             this.serverStatus.imgs_read += 1
 
             let retList = this.usernameList.addPage(data, mng.bufferToPNG(mng.buffer, true, false))
@@ -400,7 +401,7 @@ export class MarblesAppServer {
 
         
         const command = new InvokeCommand(input)
-        console.debug('Sending lambda request')
+        console.debug(`Sending lambda request ${jobId}`)
         let result = await this.lambdaClient.send(command)
 
         if (result['StatusCode'] != 200)
@@ -430,7 +431,7 @@ export class MarblesAppServer {
 
         
         const command = new InvokeCommand(input)
-        console.debug('Sending lambda warmup')
+        console.debug(`Sending lambda warmup ${jobId}`)
         return this.lambdaClient.send(command)
         .then(resp => resp['StatusCode'])
 
