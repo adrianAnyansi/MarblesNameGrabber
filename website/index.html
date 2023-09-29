@@ -71,14 +71,13 @@
 
             <p>
                 Marbles-On-Stream doesn't have an API to find people in races, so this site does that.
-                Short answer is that it's <b>watching the stream</b>, removes as much of the background from the username list as it can, 
-                then sends the image for text recognition to extract the usernames.
+                Short answer is that it's <b>watching the stream</b>, removes as much of the background as it can, 
+                then sends the image to text recognition to extract the usernames.
             </p>
-            <p><i>So Barb please don't obscure names and don't move camera while reading names</i></p>
+            <p><i>So Barb please don't obscure names during the initial scroll</i></p>
             <p>
                 Both the background extract & text recognition are not perfect, so the site is not completely accurate and uses some human
-                interaction to verify usernames. The long answer is... very long. 
-                There's a lot of pixel manipulation and architecture to make this work.
+                interaction to verify usernames. The long answer is... very long & technical.
             </p>
 
             <p class="aboutQuestion"><span>Q: </span> Ok but how accurate? Am I in or not?</p>
@@ -87,17 +86,17 @@
                 Testing shows it's about ~92% accurate and ~1.4s behind live. 
             </p>
             <p>
-                The exact amount can vary depending on how many names are obscured by certain events like:
-                <ul>
-                    <li>Twitch chat not being moved early</li>
-                    <li>Marble names in world overlaping Username list</li>
-                    <li>Bitrate making names unreadable</li>
-                    <li>Other oversights in code</li>
-                </ul>
-                <p>
-                    I think filling the gap is best done manually and I'm working on that. I plan on making a UI that lets everyone help
-                    identify usernames that the bot can't read.
-                </p>
+                The exact amount can vary depending on obscured names, bitrate, certain letters, etc.
+            </p>
+            <!-- <ul>
+                <li>Twitch chat not being moved early</li>
+                <li>Marble names in world overlaping Username list</li>
+                <li>Bitrate making names unreadable</li>
+                <li>Other oversights in code</li>
+            </ul> -->
+            <p>
+                I think filling the gap is best done manually and I'm working on that. I plan on making a UI that lets everyone help
+                identify usernames that the bot can't read.
             </p>
 
             <p class="aboutQuestion"><span>Q: </span>So with all this work; you must know the secret of getting into marbles?</p>
@@ -105,16 +104,16 @@
             <p>
                 Uhhhh... 
                 So the short answer is:
-                <ul>
+                <ol>
                     <li>Be Early and chat <b>right</b> after the loading screen completes </li>
-                    <li>Type <b>!play</b> or <b>!PLAY</b> or <b>!Play</b> or <b>!play #</b> (# can be any single number)</li>
+                    <li>Type <b>!play</b> or <b>!PLAY</b> or <b>!Play</b> or <b>!play #</b> <i>(# can be any single number)</i> </li>
                     <li>Hope the RNG gods smile on you!</li>
-                </ul>
+                </ol>
             </p>
             <p>
                 The technical explaination is: your chat goes to the Twitch IRC servers which is then downloaded onto Barb's machine. However due to
                 the massive amount of messages sent during Marbles, the messages no longer arrive in order. So generally your message will make it in,
-                but when I have no clue <b>when</b> if it's based on lag to the streamer, ordered, random. 
+                but when I have no clue <b>when</b> if it's based on lag to the streamer, ordered, random, etc. 
             </p>
 
             
@@ -122,21 +121,23 @@
             <p class="aboutQuestion"><span>Q: </span>Wait a secon- why not just read Barb's chat on screen then?</p>
 
             <p>
-                <ol>
-                    <li> Have you seen how tiny that is? The bot is already inaccurate, no way it can read text that's half that size.</li>
-                    <li> Stream chat gets removed/or moved to a random spot on screen</li>
-                    <li> That chat scrolls so fast there's zero chance the computer will capture everyone.</li>
-                </ol>
+                <ul>
+                    <li> Have you seen how tiny that is? Smaller letters will make it even more inaccurate.</li>
+                    <li> Stream chat either gets removed/or moved to a random spot on screen </li>
+                    <li> That chat scrolls so fast that the computer will miss people. </li>
+                </ul>
             </p>
             <p>
-                Also I don't read Twitch chat as that is also in a random order compared to Barb. It might be possible to connect to the same IRC server the streamer is on,
-                but discovering which IRC server that is prior to marbles seems hard. So nah.
+                Also I can't use Twitch chat as my order is different from Barb's. (Though it might supplement it) So this is my current best option.
             </p>
 
-            <p class="aboutQuestion"><span>Q: </span>Alright I found a bug or the site returned the wrong name. Who do I snitch to?</p>
+            <p class="aboutQuestion"><span>Q: </span>Alright so I found a bug. Who do I snitch to?</p>
 
             <p>
                 Just say something on discord or in the #rats-nest. @MiloticMaster
+            </p>
+            <p>
+                Thanks for using this! barbLove
             </p>
 
         </div>

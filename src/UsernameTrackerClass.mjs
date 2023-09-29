@@ -77,7 +77,7 @@ export class UsernameTracker {
         this.fullImageList = []     // All images in order
 
         this.usersInOrder = []  // List of users in order
-        this.lastPage = []      // Users on the last page
+        this.lastPage = null      // Users on the last page
     }
 
     // *[Symbol.iterator] () {
@@ -132,13 +132,15 @@ export class UsernameTracker {
         // const curr_ts = Date.now()
         const fullUsername = {x0: 0, width: 1000}   // NOTE: Hardcoded
         const heightPadding = 10;
+        
+        this.pageIdx += 1       // NOTE: Might not use this
 
         if (tesseractData.lines < 4) {
             console.warn(`Discard, not enough usernames found. ${tesseractData.lines}`)
+            return retList
         }
 
         // 27 lines per image is expected
-
         for (let line of tesseractData.lines) {
             const username = line.text.trim()
             const validUsername = username != '' && username.length > 2
@@ -174,8 +176,35 @@ export class UsernameTracker {
             })
         }
 
-        // find unread images
-        this.pageIdx += 1
+        // take the last line, try to match to previous page
+        // let firstLine = tesseractData.lines.at(0).text.trim()
+        // if (firstLine != null && this.lastPage) {
+        //     // best-match within 4
+        //     let matchHash = {}
+        //     let lowestMatch = {name: null, match: 4}
+        //     for (let i=0; i<this.lastPage.length; i++) {
+        //         const name = this.lastPage[i].text.trim()
+        //         if (name == "") continue
+        //         matchHash[name] = i
+                
+        //         let dist = this.calcLevenDistance(firstLine, name, lowestMatch.match)
+        //         if (dist < lowestMatch.match) {
+        //             lowestMatch = {name: name, match: dist}
+        //         }
+        //     }
+
+        //     if (lowestMatch.name) {
+        //         console.warn(`Matched lastLine ${firstLine} to ${lowestMatch.name} match at ${matchHash[lowestMatch.name]}`)
+        //     } else {
+        //         console.warn(`No match for ${firstLine} amongst ${this.lastPage.lines.map( line => line.text )}`)
+        //     }
+
+        //     // stitch up the 2 pages 
+            
+        // }
+
+        // this.lastPage = tesseractData.lines // set page
+
         return retList
     }
 

@@ -23,6 +23,7 @@ body {
     container-type: inline-size;
     container-name: page;
     padding: 0 2.5%;
+    /*! min-height: 90vh; */
 }
 
 .big-title#streamerName {
@@ -223,13 +224,17 @@ body {
 }
 .trackingPage.page {
     padding: 0;
+    /*! height: 90vh; */
 }
 
 .aboutPage .aboutQuestion {
-    font-size: 1.3em
+    font-size: 1.3em;
+    color: #ff9090;
 }
 
 .aboutPage p:not(.aboutQuestion),
 .aboutPage li {
-    color: #b1afc4;
+    color: #e1e0e8;
+    font-family: Cambria;
+    /*! font-size: ; */
 }

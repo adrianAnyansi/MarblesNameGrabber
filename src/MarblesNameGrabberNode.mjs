@@ -651,10 +651,12 @@ export class MarbleNameGrabberNode {
 
             breathIterCount += 1
 
-            // px_rgba[3] = ANTI_MATCH_ALPHA
+            
             this.setBinPixel(cx, cy, toRGBA(WHITE)) // remove pixel from binBuffer
             if (this.debug)
                 px_rgba = toRGBA(YELLOW, ANTI_MATCH_ALPHA)
+            else
+                px_rgba[3] = ANTI_MATCH_ALPHA
             this.setPixel(cx, cy, px_rgba)
 
             floodFillQueue.push( ...offsetCoord.map( ([tx,ty]) => [cx+tx, cy+ty, -1]))

@@ -11,8 +11,8 @@
 
 Server
     Remove lower/upper letter levendistance fail
+    START/STOP AUTH
     Track pages
-    LevenDistance from the right? (this has no effect on final output, no negative numbers)
 
 Website
     Track page
