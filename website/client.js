@@ -8,6 +8,7 @@ const userOffset = 1_000 * 4;
 const EMPTY_IMG = "data:,"
 
 let TrackingUsername = ''
+let FoundUsername = null
 let userInputQueueBool = false
 
 let userCheckingStatusInterval = null
@@ -15,6 +16,7 @@ let userCheckingStatusInterval = null
 const UsernameInputEl = document.getElementById('username_input')
 const UsernameOutputEl = document.getElementById('username_simple_out')
 const UsernameGeneral = document.getElementById('username_general')
+const UsernameRecheck = document.getElementById('username_recheck')
 const UserImgEl = document.getElementById('userImg')
 
 const ServerStatusEl = document.getElementById('server_status')
@@ -67,7 +69,8 @@ function fetchUserList () {
 
 const USER_INPUT_DELAY = 1_000 * 6;
 const USER_FIRST_INPUT_DELAY = 1_000 * 2;
-let inputTimeout = 0;
+let inputTimeout = null;
+let delayTimeout = null;
 
 function userInfoInterval(default_text, default_elem=UsernameOutputEl) {
     default_elem.textContent = `${default_text}`+''.padEnd(3, '.')
@@ -88,6 +91,8 @@ function queueInput(inputEvent) {
         clearInterval(userCheckingStatusInterval)
         userCheckingStatusInterval = null
         clearInterval(inputTimeout)
+        clearInterval(delayTimeout)
+        UsernameRecheck.textContent = "" // TODO: Move clearing username output into function?
         inputTimeout = null
         return
     }
@@ -96,6 +101,8 @@ function queueInput(inputEvent) {
 
     userInputQueueBool = true
     clearInterval(inputTimeout)
+    clearInterval(delayTimeout)
+    UsernameRecheck.textContent = ""
     inputTimeout = setTimeout(handleInput, USER_FIRST_INPUT_DELAY, inputEvent)
 }
 
@@ -110,6 +117,7 @@ function handleInput (inputEvent) {
 
     clearInterval(userCheckingStatusInterval)
     userCheckingStatusInterval = null
+    UsernameRecheck.textContent = ""
     
     const username = UsernameInputEl.value.trim()
 
@@ -147,10 +155,32 @@ function handleInput (inputEvent) {
                 // if (UserImgEl.src == EMPTY_IMG) {
                 UserImgEl.src = `${serverURL}/fullImg/${userFindJSON['userObj']['fullImgIdxList'][0]}`
                 UserImgEl.classList.remove('hidden')
+                FoundUsername = userFindJSON['userObj']['name']
                 // }
             }
         })
-        inputTimeout = setTimeout(handleInput, USER_INPUT_DELAY, inputEvent)
+
+
+        
+        if ( !(['STOPPED', 'COMPLETE'].includes(ServerStatusEl.textContent) || // server status is stopped or complete
+                FoundUsername == UsernameInputEl.value )) {      // OR returned name == username
+        // if (true) {
+                inputTimeout = setTimeout(handleInput, USER_INPUT_DELAY, inputEvent)
+                
+                { // block to keep the temp variable
+                    let delaySecs = parseInt(USER_INPUT_DELAY / 1000)
+                    const delayFunc = () => {
+                        delaySecs -= 1
+                        UsernameRecheck.textContent = `recheck in ${delaySecs}s`
+                        if (delaySecs >= 1)
+                            delayTimeout = setTimeout(delayFunc, 1000)
+                        else 
+                            UsernameRecheck.textContent = ""
+                    }
+                    delayFunc()
+                }
+            }
+        
     } catch (e) {
         console.warn("Error happened, sorry", e)
     }
@@ -184,7 +214,7 @@ function dialNumber (numArr, textElem, textContent='#') {
     }
     
     let dir = numArr[1] - numArr[0] > 0 ? 1 : -1
-    if ( Math.abs(numArr[1] - numArr[0]) > 500 ) numArr[0] += dir * 10
+    if ( Math.abs(numArr[1] - numArr[0]) > 500 ) numArr[0] = numArr[1]//+= dir * 10
 
     numArr[0] += dir
     textElem.textContent = textContent.replace('#', numArr[0])

@@ -75,6 +75,9 @@ export class UsernameTracker {
         this.unverifiedImgs = []    // List of usernames unsuccessfully read
         this.unverifiedUsers = []   // Users yet to be verified
         this.fullImageList = []     // All images in order
+
+        this.usersInOrder = []  // List of users in order
+        this.lastPage = []      // Users on the last page
     }
 
     // *[Symbol.iterator] () {
@@ -122,7 +125,9 @@ export class UsernameTracker {
         this.hash.set(newUsername, img) // maybe don't replace old one?
     }
 
-    addPage (tesseractData, sharpImg, curr_ts) {
+    USERNAME_BOX_HEIGHT_PCT  = ((185+1) - 152) / 1080; // username max box height
+
+    addPage (tesseractData, sharpImg, img_size) {
         const retList = []
         // const curr_ts = Date.now()
         const fullUsername = {x0: 0, width: 1000}   // NOTE: Hardcoded

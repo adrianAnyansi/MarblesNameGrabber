@@ -60,9 +60,9 @@ function sqrColorDistance (rgba, rgba2) {
  */
 function calcMinColorDistance (colorList) {
     // binary search across each color channel
-    const redRange = [0, 255]
-    const blueRange = [0,255]
-    const greenRange = [0,255]
+    const redRange =    [0,255]
+    const blueRange =   [0,255]
+    const greenRange =  [0,255]
 
     const ranges = [redRange, blueRange, greenRange]
     const midOfRange = range => parseInt((range[1] - range[0])/2) + range[0]
@@ -423,9 +423,9 @@ export class MarbleNameGrabberNode {
 
         let y_start = 0;
         
-        const USERNAME_LEFT_PADDING = parseInt(this.USERNAME_LEFT_PADDING_PCT * this.imageSize.w)
-        const USERNAME_RIGHT_MIN = parseInt(this.USERNAME_RIGHT_MIN_PCT * this.imageSize.w)
-        const USERNAME_BOX_HEIGHT = parseInt(this.USERNAME_BOX_HEIGHT_PCT * this.imageSize.h)
+        const USERNAME_LEFT_PADDING = parseInt(this.USERNAME_LEFT_PADDING_PCT * this.imageSize.w)   // Max amount of pixels until giving up searching for a username
+        const USERNAME_RIGHT_MIN = parseInt(this.USERNAME_RIGHT_MIN_PCT * this.imageSize.w)         // Amount to check for valid username colors
+        const USERNAME_BOX_HEIGHT = parseInt(this.USERNAME_BOX_HEIGHT_PCT * this.imageSize.h)       // max height of the username
         
         // Normalize y_offsets into pixel lengths
         const CHECK_LINE_OFF = this.CHECK_LINES_PCT.map( check_offset => parseInt(check_offset * this.imageSize.h))
@@ -651,9 +651,10 @@ export class MarbleNameGrabberNode {
 
             breathIterCount += 1
 
-            px_rgba[3] = ANTI_MATCH_ALPHA
-            this.setBinPixel(cx, cy, toRGBA(WHITE)) // set in binBuffer
-            px_rgba = toRGBA(YELLOW, px_rgba[3])
+            // px_rgba[3] = ANTI_MATCH_ALPHA
+            this.setBinPixel(cx, cy, toRGBA(WHITE)) // remove pixel from binBuffer
+            if (this.debug)
+                px_rgba = toRGBA(YELLOW, ANTI_MATCH_ALPHA)
             this.setPixel(cx, cy, px_rgba)
 
             floodFillQueue.push( ...offsetCoord.map( ([tx,ty]) => [cx+tx, cy+ty, -1]))

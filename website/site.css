@@ -19,9 +19,10 @@ body {
 
 .page {
     max-width: 680px;
-    width: 95%;
+    width: 100%;
     container-type: inline-size;
     container-name: page;
+    padding: 0 2.5%;
 }
 
 .big-title#streamerName {
@@ -36,6 +37,10 @@ body {
 }
 .big-title {
     font-size: 8vb;
+    margin: 0;
+}
+.small-title {
+    font-size: 5vb;
     margin: 0;
 }
 
@@ -62,6 +67,11 @@ body {
     
     .big-title#streamerName {
         font-size: 20vw;
+        text-shadow: -1.7vw 1.7vw black;
+    }
+    
+    .small-title {
+        font-size: 4vb;
     }
 }
 
@@ -156,7 +166,7 @@ body {
 }
 
 
-img.hidden {
+.hidden {
     display: none
 }
 
@@ -193,10 +203,33 @@ img.hidden {
     position: absolute;
     left: 0;
     rotate: 90deg;
+    /*! display: flex; */
+    /*! flex-direction: column; */
+    bottom: 0;
+    translate: -50% 0;
 }
 
 .easter_egg img {
-    translate: 50% 70%;
-    z-index: -1;
+    translate: 10% 0%;
+    /*! z-index: -1; */
 }
 
+.aboutPage.page {
+    background-color: #ff00181a;
+}
+
+.verifyPage.page {
+    background-color: #69c63f1c;
+}
+.trackingPage.page {
+    padding: 0;
+}
+
+.aboutPage .aboutQuestion {
+    font-size: 1.3em
+}
+
+.aboutPage p:not(.aboutQuestion),
+.aboutPage li {
+    color: #b1afc4;
+}

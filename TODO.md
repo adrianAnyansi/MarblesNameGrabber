@@ -16,21 +16,10 @@ Server
 
 Website
     Track page
-        Recheck feedback
-            Turn off recheck when the name matches
         Add is this name accurate? For verify stuff
-
-    About page
-        Styling
-        Easter egg
     
-    About page 
-        Explain how it works
-        Explain marbles
     Verify page
         Do the userlist stuff first before finishing that one
-            
-
 
 Server stability
     Caching levenDistance answers
