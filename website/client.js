@@ -21,24 +21,28 @@ const ServerStatusEl = document.getElementById('server_status')
 const ServerUsersEl = document.getElementById('user_tracked')
 const WebsiteUsersEl = document.getElementById('viewers_visiting')
 
+const trackedUserNums = [0, 0]
+const visitingUserNums = [0, 0]
+
 
 if (location.host.includes('localhost') || location.host.includes('127.0.0.1')) {
     document.body.prepend('DEBUG')
 }
 
+// ==================
 
 function fetchServerStatus () {
     fetch(`${serverURL}/status`)
     .catch( resp => {
         // ◗
-        ServerStatusEl.textContent = `◉ Offline.`
+        ServerStatusEl.textContent = `Offline.`
         setTimeout(fetchServerStatus, 1_000 * 15) // retry
         return Promise.reject('offline server, try again much later')
     })
     .then(resp => resp.json())
     .then( serverJSON => {
         handleServerStatus(serverJSON)
-        const nextInterval = serverJSON['status']   ['interval'] ?? 1_000 * 6
+        const nextInterval = serverJSON['status']['interval'] ?? 1_000 * 6
         setTimeout(fetchServerStatus, nextInterval) // retry
     })
     .catch( err => {
@@ -87,6 +91,7 @@ function queueInput(inputEvent) {
         inputTimeout = null
         return
     }
+    UsernameOutputEl.className = ``
     userInfoInterval('Checking input')
 
     userInputQueueBool = true
@@ -95,7 +100,7 @@ function queueInput(inputEvent) {
 }
 
 
-const MATCH_RET = ['YES!', 'Probably', 'Maybe', 'Unlikely', 'No Match']
+const MATCH_RET = ['Match!', 'Probably', 'Maybe', 'Unlikely', 'No Match']
 
 /**
  * Trigger search query to server
@@ -121,15 +126,7 @@ function handleInput (inputEvent) {
         if (userInputQueueBool) {
             UserImgEl.src = EMPTY_IMG
             UserImgEl.classList.add('hidden')
-            // UsernameOutputEl.textContent = 'Finding username...'
             userInfoInterval('Finding username')
-            // if (userCheckingStatusInterval == null) {
-            //     let dotNum = 0
-            //     userCheckingStatusInterval = setInterval( () => {
-            //         dotNum = (dotNum + 1) % 4
-            //         UsernameOutputEl.textContent = 'Finding username'+''.padEnd(dotNum, '.')
-            //     }, 1_000)
-            // }
             userInputQueueBool = false
         }
         
@@ -140,9 +137,12 @@ function handleInput (inputEvent) {
             clearInterval(userCheckingStatusInterval)
             userCheckingStatusInterval = null
             UsernameOutputEl.textContent = MATCH_RET[userFindJSON['match']] ?? MATCH_RET.at(-1)
+            if (MATCH_RET[userFindJSON['match']]) {
+                UsernameOutputEl.className = `_${userFindJSON['match']}`
+            }
             
             if (userFindJSON['userObj']) {
-                UsernameOutputEl.textContent += `\nFound ${userFindJSON['userObj']['name']}`
+                // UsernameOutputEl.textContent += `\nFound ${userFindJSON['userObj']['name']}`
                 
                 // if (UserImgEl.src == EMPTY_IMG) {
                 UserImgEl.src = `${serverURL}/fullImg/${userFindJSON['userObj']['fullImgIdxList'][0]}`
@@ -163,10 +163,41 @@ function handleInput (inputEvent) {
 function handleServerStatus(serverJSON) {
     // Assume serverJSON is valid
     ServerStatusEl.textContent = `${serverJSON['status']['state']}`
-    ServerUsersEl.textContent = `${serverJSON['userList']['user_list']} possible user(s)`
-    WebsiteUsersEl.textContent = `${serverJSON['status']['viewers']} site viewers` // TODO: Finish
+    document.querySelector('#serverStatusIcon').classList = serverJSON['status']['state'].toLowerCase()
+    // ServerUsersEl.textContent = `${serverJSON['userList']['user_list']} possible user(s)`
+    WebsiteUsersEl.textContent = `${serverJSON['status']['viewers']} site viewer(s)` // TODO: Finish
+    
+    let dialingTracked = trackedUserNums[0] != trackedUserNums[1] // tracked is being moved already
+    trackedUserNums[1] = serverJSON['userList']['user_list']
+    if (!dialingTracked)
+        dialNumber(trackedUserNums, ServerUsersEl, '# possible user(s)')
+    
 }
 
+/**
+ * Dial number from numArr or down. Making a custom timer ala Pokemon so it scales
+ */
+function dialNumber (numArr, textElem, textContent='#') {
+    if (numArr[1] == numArr[0]) {
+        textElem.textContent = textContent.replace('#', numArr[0]) // set twice
+        return
+    }
+    
+    let dir = numArr[1] - numArr[0] > 0 ? 1 : -1
+    if ( Math.abs(numArr[1] - numArr[0]) > 500 ) numArr[0] += dir * 10
+
+    numArr[0] += dir
+    textElem.textContent = textContent.replace('#', numArr[0])
+    
+    // queue next change
+    const diff = Math.abs(numArr[1] - numArr[0])
+    let nextTime = (diff > 200) ? 3 : 3 + parseInt(((200 - diff)**1.5) / (200**1.5/80)) // 400 seems like a good max
+    setTimeout( () => dialNumber(numArr, textElem, textContent), nextTime)
+}
+
+
+
+/** Set up the connections and etc */
 function setupPage() {
     fetchServerStatus()
     UsernameInputEl.addEventListener('input', queueInput)

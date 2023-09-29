@@ -12,25 +12,25 @@
 Server
     Remove lower/upper letter levendistance fail
     Track pages
+    LevenDistance from the right? (this has no effect on final output, no negative numbers)
 
 Website
     Track page
-        Make the icon thing for moving numbers
-        link server status to the icon
+        Recheck feedback
+            Turn off recheck when the name matches
+        Add is this name accurate? For verify stuff
+
+    About page
+        Styling
+        Easter egg
     
-    Easter egg (only on about page)
     About page 
-        Barb warning
         Explain how it works
         Explain marbles
     Verify page
         Do the userlist stuff first before finishing that one
+            
 
-
-Website work
-    About page
-    Styling and junk
-    Stop updating when a user has found+confirmed their name
 
 Server stability
     Caching levenDistance answers

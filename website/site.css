@@ -15,11 +15,13 @@ body {
     flex-direction: column;
     align-items: center;
     font-family: Georgia;
-    /*! width: 100%; */
 }
 
 .page {
     max-width: 680px;
+    width: 95%;
+    container-type: inline-size;
+    container-name: page;
 }
 
 .big-title#streamerName {
@@ -32,16 +34,11 @@ body {
     color: #ea4949;
     translate: 1.0vw 0;
 }
-
-#name_img {
-    width: 100%;
-    filter: saturate(1);
-}
-
 .big-title {
     font-size: 8vb;
     margin: 0;
 }
+
 #serverBox {
     display: flex;
     flex-direction: column-reverse;
@@ -56,6 +53,18 @@ body {
     display: inline-block;
     margin: 0 0 -1.7vh 0;
 }
+
+@container page (width < 680px) {
+    .big-title {
+        font-size: 11vw;
+/*         color: purple; */
+    }
+    
+    .big-title#streamerName {
+        font-size: 20vw;
+    }
+}
+
 
 
 #username_input_box {
@@ -101,6 +110,13 @@ body {
     /* color: red; */
 }
 
+@container (width < 680px) {
+    #username_placeholder {
+        font-size: 6vw;
+/*         color: red; */
+    }
+}
+
 
 #username_output_box {
     display: flex;
@@ -113,23 +129,50 @@ body {
     width: 100%;
 }
 
+#username_output_box {
+    font-size: 2.0vb;
+    text-align: center;
+}
+
+#username_simple_out {
+    font-weight: bold;
+    padding: 0 2vb;
+    transition: background-color 0.4s
+}
+#username_simple_out._0 {    
+    background-color: green;
+}
+#username_simple_out._1 {    
+    background-color: #6c991b;
+}
+#username_simple_out._2 {
+    background-color: #a8a025;
+}
+#username_simple_out._3 {
+    background-color: #a85025;
+}
+#username_simple_out._4 {    
+    background-color: #953232;
+}
+
 
 img.hidden {
     display: none
 }
 
-@media (width <= 1980px) {
-      
+.easter_egg {
+    display: none
 }
-/* 
-@media (width > 1980px) {
-    .page {
-        width: 20%
+
+@media (width >= 2560px) {
+    .easter_egg {
+        display: inherit
     }
-} */
+}
 
 
-#serverStatusIcon.unknown {
+
+#serverStatusIcon {
     color: white;
 }
 #serverStatusIcon.stopped {
@@ -144,3 +187,16 @@ img.hidden {
 #serverStatusIcon.waiting {
     color: yellow;
 }
+
+
+.easter_egg {
+    position: absolute;
+    left: 0;
+    rotate: 90deg;
+}
+
+.easter_egg img {
+    translate: 50% 70%;
+    z-index: -1;
+}
+
