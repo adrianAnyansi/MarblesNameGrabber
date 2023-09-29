@@ -50,7 +50,7 @@ const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id f
 const TWITCH_CRED_FILE = 'twitch_creds.json'
 
 const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
-const USE_LAMBDA = false
+const USE_LAMBDA = true
 const NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
 
 export class MarblesAppServer {
