@@ -17,6 +17,7 @@ const UsernameInputEl = document.getElementById('username_input')
 const UsernameOutputEl = document.getElementById('username_simple_out')
 const UsernameGeneral = document.getElementById('username_general')
 const UsernameRecheck = document.getElementById('username_recheck')
+const UsernamePlaceholder = document.getElementById('username_placeholder')
 const UserImgEl = document.getElementById('userImg')
 
 const ServerStatusEl = document.getElementById('server_status')
@@ -120,8 +121,12 @@ function handleInput (inputEvent) {
     UsernameRecheck.textContent = ""
     
     const username = UsernameInputEl.value.trim()
+    UsernamePlaceholder.classList.add('hidden')
 
-    if (username == '') return
+    if (username == '') {
+        UsernamePlaceholder.classList.remove('hidden')
+        return
+    }
     if (username.length < 3) {
         UsernameOutputEl.textContent = 'Please enter more than 3 characters'
         return
