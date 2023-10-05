@@ -1,43 +1,72 @@
 # TODO.md
 
+## List Notes
+So I don't think there's any way to know if a string is being obscured by text, or if that space is simply empty.
+There's just nothing I can do about it since I rely on tesseract to tell me if there's text in that area.
+I think the plan is to use the fact that Barb's marbles has 2 failsafes
+    1. Since it fills up so quick, if I check lines above usernames I can capture those
+    2. In most other situations, the obstacles will be cleared
+
+So the current schema is as follows
+    For each page
+        Incr pageIdx
+        Get list of usernames (if there's text there)
+            For each username
+            Add image to fullImageList
+                If username idx occupied; add alias (if not included) & add image 
+                Else create new username
+                Update the userDict for quick search
+    
+Other NOTE: I can check the baseline of letters to remove Twitch chat if it doesn't line up with usernames
+I can also check the font size as well. 
+However it would be best to do this during the pixel-hunt phase and not the image capture phase, so Im simply
+ignoring it at this time.
+    
+
 ## Important
 
-1. Gotta fix the web UI
 2. Put auth behind start/stop/clear etc
 3. Think about the list mechanics
-4. Think about doing extra FPS during list changes
+
+## Image logging method
+
+    New method is intended to figure out & tag usernames + images in order and based on time.
+
+    UserObj refers to just the calc location*
+    Username -> location, page ingest, calc location
+        -> Aliases contained in the object
 
 ## todo today
 
-Server
-    Remove lower/upper letter levendistance fail
-    START/STOP AUTH
-    Track pages
-
 Website
-    Track page
-        Add is this name accurate? For verify stuff
+    Fix placeholder
+    Verify Logic
+        Retrieve - Get request
+            1. Is this a username?
+            2. Verify this username
+        Send back to server
+
+Server
+    Look into the server starting up too soon on Marbles game switch
+        Make sure the twitch check can be verified to be running (or has a wakeup after a day or so)
     
-    Verify page
-        Do the userlist stuff first before finishing that one
+    Image process queue
+        Get all images 
+    
+    Testing image stuff
+        Think about reducing the images used based on confidence
+        Or only save unique names to prevent pile-up of data
+
+    Remove lower/upper letter levendistance (only on user checks)
+    START/STOP AUTH
+    Verify image backend
 
 Server stability
-    Caching levenDistance answers
+    Caching levenDistance answers (for user queries)
 
-Image identify
 
 ## todo later
 Improve the logging so I don't write a bunch while iterating
-
-Write a caching function per username to save the result of a query
-
-Then work on the image recogn page probably
-
-    3. Add extra pages (footer) (home, about, identify)
-        - Advanced search can just be a modified identify
-
-        server queues request then sends name to target
-        (req_id, img, name, )
 
     4. Do the full page by image for the debug admin
     5. Continue with the user defined images and figure out server+interface

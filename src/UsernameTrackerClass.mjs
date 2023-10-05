@@ -4,27 +4,43 @@
 // export default {UsernameTracker, Heap}
 // export {UsernameTracker, Heap}
 
+import sharp from "sharp"
 import { LimitedList } from "./DataStructureModule.mjs"
 
 class Username {
-    constructor (name, confidence, timestamp=null) {
-        this.name = name
-        this.confidence = confidence
-        // this.index = index
+    /**
+     * Store info about the Username and etc
+     * @param {String} name Username string
+     * @param {Number} confidence confidence percentage
+     * @param {Number} index Index in the full 1000 list
+     * @param {Date} timestamp Ingest date
+     */
+    constructor (name, confidence, index, timestamp=null) {
+        this.name = name                // qualified name
+        this.confidence = confidence    // confidence pct
+        this.index = index              // index in full list
         
-        this.timestamp = timestamp
-        this.verifyAmount = 0
-        this.fullImgIdxList = [] // list of idxes that are this user
+        this.timestamp = timestamp      // ingest timestamp
+        this.verifyAmount = 0           // verified by human
+        this.fullImgIdxList = []        // images of this user
 
-        this.aliases = [] // list of usernames that are similar
+        this.aliases = set() // set of usernames that are similar
     }
 }
 
 class UserImage {
-    constructor (imageIdx, buffer, userObj) {
-        this.imageIdx = imageIdx
-        this.imgBuffer = buffer
-        this.userObj = userObj
+    /**
+     * Object for storing Images and corresponding info
+     * @param {*} pageIdx Which ingested page its on
+     * @param {*} division Where on page its located
+     * @param {*} buffer JPEG buffer
+     * @param {*} userObj Link to username object
+     */
+    constructor (pageIdx, division, buffer, userObj) {
+        this.pageIdx = pageIdx      // page captured
+        this.division = division    // division on that page
+        this.imgBuffer = buffer     // image object
+        this.userObj = userObj      // link to userObj
     }
 }
 
@@ -43,7 +59,8 @@ const DEFINED_ADJC_SETS = [
     ['4', 'd', 'A'],
     ['d', '9'],
     ['7', 'T'],
-    ['g', 'y']
+    ['g', 'y'],
+    ['C', 'G']
 ]
 const ADJC_LETTER_MAP = new Map()
 
@@ -68,27 +85,57 @@ export class UsernameTracker {
 
     constructor () {
         this.hash = new Map()       // hash of names
-        this.imgHash = new Map()    // hash of jpgs
+        this.usersInOrder = []  // List of UserObj in order
 
-        this.pageIdx = 0           // Currently injested images
-        this.unqImageID = 0         // Unique id
-        this.unverifiedImgs = []    // List of usernames unsuccessfully read
-        this.unverifiedUsers = []   // Users yet to be verified
+        this.pageIdx = 0           // Currently injested page
         this.fullImageList = []     // All images in order
 
-        this.usersInOrder = []  // List of users in order
-        this.lastPage = null      // Users on the last page
-    }
+        this.unverifiedImgs = []    // List of usernames unsuccessfully read
+        this.unverifiedUsers = set()   // Users yet to be verified
 
-    // *[Symbol.iterator] () {
-    //     yield this.hash.entries()
-    // }
+        this.lastPage = []      // Users on the last page
+    }
 
     get length () {
-        return this.hash.size
+        // return this.hash.size
+        return this.usersInOrder.length
     }
 
-    add (username, confidence, userVerify=false) {
+    /**
+     * Add username to userInOrder with object
+     * @param {*} username 
+     * @param {*} confidence 
+     * @param {*} index 
+     * @param {Date} capture_dt
+     * @returns {Username}
+     */
+    add (username, confidence, index, capture_dt) {
+        let userObj = this.usersInOrder.at(index)
+
+        if (!userObj) {
+            userObj = new Username(username, confidence, index, capture_dt)
+            this.hash.set(username, userObj)
+            this.usersInOrder[index] = userObj
+        } else { // add alias
+            userObj.aliases.add(username)
+            this.hash.set(username, userObj)
+            // if confidence higher, change main name
+            if (confidence > userObj.confidence ) {
+                userObj.confidence = confidence
+                userObj.name = username
+            }
+        }
+        return userObj
+    }
+
+    /**
+     * Deprecated (hash version of user)
+     * @param {*} username 
+     * @param {*} confidence 
+     * @param {*} userVerify 
+     * @returns 
+     */
+    addOld (username, confidence, userVerify=false) {
         let userObj = this.hash.get(username)
 
         if (userObj == undefined) {
@@ -105,7 +152,11 @@ export class UsernameTracker {
         return userObj
     }
 
-    
+    /**
+     * Deprecated, no longer manually removing usernames
+     * @param {*} username 
+     * @returns 
+     */
     remove(username) {
         if (!this.hash.has(username)) return null
         
@@ -120,102 +171,189 @@ export class UsernameTracker {
         this.hash.delete(oldUsername)
         this.add(newUsername, user.confidence, true)
 
-        const img = this.imgHash.get(oldUsername)
+        // const img = this.imgHash.get(oldUsername)
         // this.imgHash.delete(oldUsername)
         this.hash.set(newUsername, img) // maybe don't replace old one?
     }
 
+    // TODO: Move to constants
     USERNAME_BOX_HEIGHT_PCT  = ((185+1) - 152) / 1080; // username max box height
+    // USERNAME_BOX_HEIGHT = ((185+1) - 152) / 1080
+    OCR_SCALE_RATIO = 1000 / 547;
+    USERNAME_FULL_BOX_HEIGHT_PCT = (1080-154)/1080
+    USERNAME_BOX_CROP_PCT = this.USERNAME_BOX_HEIGHT_PCT / this.USERNAME_FULL_BOX_HEIGHT_PCT
 
-    addPage (tesseractData, sharpImg, img_size) {
-        const retList = []
+    MIN_PAGE_CHECK = 1  // At least # usernames must exist for this page to be checked
+
+    /**
+     * Add a page of usernames (including scrubbing to check which line is which)
+     * While this function is async, it's not expected to be run as such.
+     * @param {Object} tesseractData // contains .lines & .bbox of tesseract info
+     * @param {sharp} sharpOCRImg  Sharp imagelike of cropped Tesseract image
+     * @param {Object} img_size    Image_size to bypass metadata issues
+     * @returns {Array[String]} retList
+     */
+    addPage (tesseractData, sharpOCRImg, img_size, capture_dt) {
+        const retList = []  // List of names to return for state info
         // const curr_ts = Date.now()
-        const fullUsername = {x0: 0, width: 1000}   // NOTE: Hardcoded
-        const heightPadding = 10;
         
-        this.pageIdx += 1       // NOTE: Might not use this
-
-        if (tesseractData.lines < 4) {
-            console.warn(`Discard, not enough usernames found. ${tesseractData.lines}`)
+        const heightPadding = 10; // TODO: Turn into pct
+        if (!tesseractData.lines) return retList
+        
+        const validLines = tesseractData.lines.filter( line => line.text.length > 2)
+        if (validLines.length < this.MIN_PAGE_CHECK) {
+            console.warn(`Discard, not enough usernames found. ${validLines.length}`)
             return retList
         }
+
+        const trueImgHeight = this.OCR_SCALE_RATIO * img_size.h; // sharp.scale is not reflected in this buffer.
+        const trueImgWidth = this.OCR_SCALE_RATIO * img_size.w; // sharp.scale is not reflected in this buffer.
+        const pageData = []         // pageData #. {user:string, idx:int}
+        const pageParsedInfo = []   // Current page username objects
 
         // 27 lines per image is expected
         for (let line of tesseractData.lines) {
             const username = line.text.trim()
-            const validUsername = username != '' && username.length > 2
-
             if (username == '') continue    // Ignore empty lines
 
-            if (validUsername) {
-                const userObj = this.add(username, line.confidence) // TODO: Add timestamp
-                if (line.confidence == 0) { 
-                    // line -> word -> symbol to recalc confidence
+            // Determine pageData info: location where the username was read & save 
+            const ycenter = (line.bbox.y1 - line.bbox.y0)/2 + line.bbox.y0 // get vertical center
+            const division = Math.floor(ycenter / (this.USERNAME_BOX_CROP_PCT * trueImgHeight))   // check which division it lands in
+            pageData.push({username:username, division:division}) // set the current division
+
+            const validUsername = username.length > 2;
+            if (validUsername) { // Re-calc confidence then add to hash+list
+                const conf = line.confidence
+                if (line.confidence == 0) { // line -> word -> symbol to recalc confidence
                     const symbolSum = line.words[0].symbols.reduce( (acc,b) => acc+b.confidence, 0)
-                    userObj.confidence = symbolSum / (2 * line.words[0].symbols.length)
+                    conf = symbolSum / (2 * line.words[0].symbols.length)
                 }
+                pageParsedInfo[division] = {'username':username, 'conf':conf, 'division':division, 'capture_dt':capture_dt, 'line':line}
                 
-                retList.push(`${username}, ${userObj.confidence}`)
+                retList.push(`${username}, ${conf}`)
             }
             
-            const nextImgIdx = this.fullImageList.push([]) - 1
-            // Add the image to hash
+            // Extract the image
             const bbox = line.bbox
-            sharpImg.extract({  left: fullUsername.x0, 
-                                width: fullUsername.width, 
-                                top: Math.max(bbox.y0 - heightPadding, 0), 
-                                height: (bbox.y1+heightPadding) - bbox.y0 }) // TODO: Need image metadata
-                                // height: Math.min(bbox.y1-bbox.y0+heightPadding, bbox.y1-bbox.y0)})
-            .jpeg().toBuffer()
-            .then( imgBuffer => {
-                // const fullImgIdx = this.fullImageList.push(new UserImage(this.pageIdx, imgBuffer, null))
-                this.addImage(username, imgBuffer, nextImgIdx)
-                // this.fullImageList.push([this.imageIdx, imgBuffer, username])
-            }).catch( err => {
-                console.warn(`Unable to set image buffer ${err}`)
-            })
+            pageParsedInfo[division]['imgPromise'] = // set image buffer promise to be made after
+                sharpOCRImg.extract({  left: 0,
+                                    width: trueImgWidth,
+                                    top: Math.max(bbox.y0 - heightPadding, 0),
+                                    height: Math.min((bbox.y1+heightPadding) - bbox.y0, trueImgHeight)
+                })
+                .jpeg().toBuffer()
+                .catch( err => { console.warn(`Couldn't retrieve image buffer ${err}`)})
+            
         }
 
-        // take the last line, try to match to previous page
-        // let firstLine = tesseractData.lines.at(0).text.trim()
-        // if (firstLine != null && this.lastPage) {
-        //     // best-match within 4
-        //     let matchHash = {}
-        //     let lowestMatch = {name: null, match: 4}
-        //     for (let i=0; i<this.lastPage.length; i++) {
-        //         const name = this.lastPage[i].text.trim()
-        //         if (name == "") continue
-        //         matchHash[name] = i
+        // take the first line, try to match to previous page
+        const MIN_MATCH = 6     // best-match within leven distance of #
+        const LINK_AMOUNT = 3   // number of links required before joining pages
+        const linkUp = {}       // where currPage points to prev page
+        let pageDataLineIdx = 0     // Current line idx being checked
+        let linkAnswer = null       // final answer of link offset to previous page
+        
+        // NOTE: Push this to async maybe
+        // Match at least LINK_AMOUNT until the pages line up
+        while (this.lastPage.length > 0 && pageDataLineIdx < pageData.length) {
+            let lowestMatch = {name: null, match: MIN_MATCH, division: null}    // lowest leven match
+            const lineCheck = pageData.at(pageDataLineIdx++)    // line being checked
+            const checkUsername = lineCheck['username']
+
+            for (const lastUser of this.lastPage) {    // loop will not run if lastPage is empty
+                const {username, division} = lastUser
                 
-        //         let dist = this.calcLevenDistance(firstLine, name, lowestMatch.match)
-        //         if (dist < lowestMatch.match) {
-        //             lowestMatch = {name: name, match: dist}
-        //         }
-        //     }
+                let dist = this.calcLevenDistance(checkUsername, username, lowestMatch.match)
+                if (dist < lowestMatch.match)
+                    lowestMatch = {name: username, match: dist, division: division}
+            }
 
-        //     if (lowestMatch.name) {
-        //         console.warn(`Matched lastLine ${firstLine} to ${lowestMatch.name} match at ${matchHash[lowestMatch.name]}`)
-        //     } else {
-        //         console.warn(`No match for ${firstLine} amongst ${this.lastPage.lines.map( line => line.text )}`)
-        //     }
+            if (lowestMatch.name) {
+                const lineDivision = lineCheck['division']
+                console.warn(`Matched ${checkUsername}[${lineDivision}] to ${lowestMatch.name}[${lowestMatch.division}] prev`)
 
-        //     // stitch up the 2 pages 
-            
-        // }
+                const divisionOffset = lowestMatch.division - lineDivision
+                linkUp[divisionOffset] = (linkUp[divisionOffset] ?? 0) + 1
 
-        // this.lastPage = tesseractData.lines // set page
+                if (linkUp[divisionOffset] >= LINK_AMOUNT) {
+                    linkAnswer = divisionOffset
+                    break // break outer loop
+                }
+            }
+        }
 
+        let startIndex = this.usersInOrder.length   // Offset to full user list
+
+        if (linkAnswer) { // Stitch pages together
+            console.warn(`Matched lines by ${linkAnswer}. Joining pages.`)
+            startIndex -= linkAnswer
+        } else { // Add pages together
+            console.warn(`No match for ${pageData.at(0)} amongst `)
+            if (this.lastPage)
+                console.warn(`${this.lastPage.map( line => line.text )}`)
+            else
+                console.warn(`{empty list}`)
+        }
+
+        // Add users to list & Get image promises (including skipped divisions)
+        for (let i=0; i<pageParsedInfo.length; i++) {
+            const userInfo = pageParsedInfo.at(i)
+            const nextImgIdx = this.fullImageList.push([]) - 1
+
+            let imgPromise = null
+            if (userInfo == undefined) {    // add image from divission based on height/width
+                imgPromise = sharpOCRImg.extract({  left: 0,    width: trueImgWidth,
+                    top: i * this.USERNAME_BOX_CROP_PCT * trueImgHeight,
+                    height: i+1 * this.USERNAME_BOX_CROP_PCT * trueImgHeight
+                })
+                .jpeg().toBuffer()
+                .catch( err => { console.warn(`Couldn't retrieve image buffer ${err}`)})
+            } else {                        // else grab image promise while adding user
+                this.add(userInfo.username, userInfo.conf, startIndex + userInfo.division, userInfo.capture_dt)
+                imgPromise = userInfo.imgPromise
+            }
+
+            imgPromise.then( imgBuffer => 
+                this.addImage(this.pageIdx, userInfo.division, imgBuffer, startIndex + userInfo.division, nextImgIdx)
+            )
+        }
+
+        this.lastPage = pageData // set page
+        this.pageIdx += 1   // Increment page
+        
         return retList
     }
 
+    /**
+     * Add image to object, link to username object (if exists)
+     * @param {*} pageIdx 
+     * @param {*} division 
+     * @param {*} imgBuffer 
+     * @param {*} userIdx 
+     * @param {*} fullImgIdx 
+     */
+    addImage (pageIdx, division, imgBuffer, userIdx, fullImgIdx) {
+        
+        const userObj = this.usersInOrder.at(userIdx)
+        const newImg = new UserImage(pageIdx, division, imgBuffer, userObj)
+        
+        this.fullImageList[fullImgIdx] = newImg
+
+        if (!userObj) { // Add for user identification
+            this.unverifiedImgs.push(imgBuffer)
+        } else if (userObj.verifyAmount < 2) {  // add to unverified userObj
+            userObj.fullImgIdxList.push(fullImgIdx)
+            this.unverifiedUsers.push(userObj)
+        } else {
+            userObj.fullImgIdxList.push(fullImgIdx) // Add to userObj
+        }
+    }
     
-    addImage(username, imgBuffer, fullImgIdx) {
+    addImageOld(username, imgBuffer, fullImgIdx) {
         const newImg = new UserImage(this.pageIdx, imgBuffer, null)
-        // const fullImgIdx = this.fullImageList.push(newImg)-1
         this.fullImageList[fullImgIdx] = newImg
 
         const userObj = this.hash.get(username)
-        // this.unqImageID += 1
         if (!userObj) { // Add for user identification
             this.unverifiedImgs.push(imgBuffer)
         } else if (userObj.verifyAmount < 2) {
@@ -228,8 +366,9 @@ export class UsernameTracker {
     }
 
     clear () {
+        this.pageIdx = 0
         this.hash.clear()
-        this.imgHash.clear()
+
         this.unverifiedImgs = []
         this.unverifiedUsers = []
         this.fullImageList = []
@@ -241,7 +380,6 @@ export class UsernameTracker {
             const userObj = this.hash.get(username)
             const imgObj = this.fullImageList[userObj.fullImgIdxList[0]] // Return random?
             return imgObj.imgBuffer
-            // return this.imgHash.get(username)
         }
         return null
     }

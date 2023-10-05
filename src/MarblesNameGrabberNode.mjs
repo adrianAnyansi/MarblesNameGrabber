@@ -707,6 +707,13 @@ export class MarbleNameGrabberNode {
         return false
     }
 
+    /**
+     * Turn raw buffer into PNG buffer
+     * @param {*} buffer        Buffer that will be converted
+     * @param {*} scaleForOCR   Scale buffer up/down for OCR (specific to marbles name)
+     * @param {*} toPNG         Turn buffer into PNG
+     * @returns 
+     */
     bufferToPNG(buffer=this.buffer, scaleForOCR=true, toPNG=true) {
         // let retPromise = null
         let bufferPromise = sharp(buffer, {

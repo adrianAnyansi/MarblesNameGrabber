@@ -39,7 +39,7 @@ const WORKER_RECOGNIZE_PARAMS = {
     blocks:true, hocr:false, text:false, tsv:false
 }
 const TEST_FILENAME = "testing/test.png"
-// const LIVE_FILENAME = "live.png"
+const LIVE_FILENAME = "testing/#.png"
 const EMPTY_PAGE_COMPLETE = 20   // number of frames* without any valid names on them
 
 let TWITCH_ACCESS_TOKEN_BODY = null
@@ -50,8 +50,9 @@ const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id f
 const TWITCH_CRED_FILE = 'twitch_creds.json'
 
 const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
-const USE_LAMBDA = true
+const USE_LAMBDA = false
 const NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
+
 
 export class MarblesAppServer {
     
@@ -97,7 +98,11 @@ export class MarblesAppServer {
         if (this.debugLambda)  AWS_LAMBDA_CONFIG["logger"] = console
         // this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
         this.lambdaClient = null
-        this.lambdaQueue = 0
+        this.lambdaQueue = 0    // Keep track of images sent to lambda for processing
+        
+        this.imageProcessQueue = []    // Queue for image processing
+        this.imageProcessQueueLoc = 0    // Where the first element of imageProcessQueue points to
+        this.imageProcessId = 0          // Current id for image
 
         // Start up the Twitch game monitor
         this.setupTwitchMonitor()
@@ -160,7 +165,11 @@ export class MarblesAppServer {
         // Setup variables
         this.emptyListPages = 0
         this.serverStatus.state = SERVER_STATE_ENUM.WAITING
-
+        
+        // reset image queue
+        this.imageProcessId = 0
+        this.imageProcessQueueLoc = 0
+        this.imageProcessQueue = []
 
 
         if (twitch_channel)
@@ -304,7 +313,7 @@ export class MarblesAppServer {
 
         this.serverStatus.imgs_downloaded += 1
 
-        // let currTs = (new Date()).getTime()
+        let captureDt = Date.now()
         
         // const options = {
         //     "id": `file_dt_${currTs}`,
@@ -325,7 +334,9 @@ export class MarblesAppServer {
         }
         
         // Parse the image for names
-        console.debug(`Queuing LIVE image queue: ${this.getImageQueue()}`)
+        console.debug(`Queuing LIVE image queue: ${this.getTextRecgonQueue()}`)
+
+        const funcImgId = this.imageProcessId++
 
         // Build buffer
         await mng.buildBuffer()
@@ -336,6 +347,8 @@ export class MarblesAppServer {
         
         // Perform tesseract 
         let tesseractPromise = null
+        let pngBuffer = mng.bufferToPNG(mng.buffer, true, false)
+
         if (!USE_LAMBDA) {
             tesseractPromise = mng.isolateUserNames()
             .then( buffer =>  this.scheduleTextRecogn(buffer) )
@@ -353,19 +366,29 @@ export class MarblesAppServer {
             
             if (USE_LAMBDA)
                 this.lambdaQueue -= 1
-            // NOTE: Should I log the resulting jobId from lambda/tesseract?
             this.serverStatus.imgs_read += 1
 
-            let retList = this.usernameList.addPage(data, mng.bufferToPNG(mng.buffer, true, false))
-            if (retList.length == 0)
-                this.emptyListPages += 1
-            console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}`)
-            
-            if (this.emptyListPages >= EMPTY_PAGE_COMPLETE) {
-                console.log(`${this.emptyListPages} empty frames; dumping queue & moving to COMPLETE state.`)
-                this.serverStatus.state = SERVER_STATE_ENUM.COMPLETE
-                this.spinDown()
-                return
+            // Add to queue
+            this.imageProcessQueue[funcImgId - this.imageProcessQueueLoc] = [data, mng]
+            console.debug(`Added ${funcImgId} to queue ${funcImgId - this.imageProcessQueueLoc}`)
+
+            while (this.imageProcessQueue.at(0)) {  // While next image exists
+                let [qdata, qmng] = this.imageProcessQueue.shift()
+                this.imageProcessQueueLoc++
+
+                // qmng.bufferToPNG()
+                // let retList = await this.usernameList.addPage(qdata, qmng.bufferToPNG(qmng.buffer, true, false))
+                let retList = this.usernameList.addPage(qdata, pngBuffer, mng.imageSize, captureDt)
+                if (retList.length == 0)
+                    this.emptyListPages += 1
+                console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}`)
+                
+                if (this.emptyListPages >= EMPTY_PAGE_COMPLETE) {
+                    console.log(`${this.emptyListPages} empty frames; dumping queue & moving to COMPLETE state.`)
+                    this.serverStatus.state = SERVER_STATE_ENUM.COMPLETE
+                    this.spinDown()
+                    return
+                }
             }
         }).catch ( err => {
             console.warn(`Error occurred during imageParse ${err}, execution exited`)
@@ -441,7 +464,7 @@ export class MarblesAppServer {
      * Get current image queue
      * @returns {Number}
      */
-    getImageQueue () {
+    getTextRecgonQueue () {
         if (USE_LAMBDA)
             return this.lambdaQueue
         else if (this.OCRScheduler)
@@ -632,7 +655,7 @@ export class MarblesAppServer {
                     this.last_game_name = new_game_name
                 }).catch( err => {
                     console.warn(`Failed to setup the game-monitor ${err}`)
-                    clearInterval(this.game_type_monitor_interval)
+                    // clearInterval(this.game_type_monitor_interval) // Don't clear monitor
                 })
             }, 1_000 * 3) // Check every 3 seconds
         }
@@ -710,7 +733,7 @@ export class MarblesAppServer {
 
         return {
             'status': this.serverStatus,
-            'job_queue': this.getImageQueue(),
+            'job_queue': this.getTextRecgonQueue(),
             'streaming': streaming_time,
             'userList': this.usernameList.status(),
         }
@@ -759,8 +782,9 @@ export class MarblesAppServer {
     debug (filename, withLambda) {
 
         return this.debugRun(filename, withLambda)
-        .then( ({mng, data}) => {
-            let retList = this.usernameList.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false))
+        .then( async ({mng, data}) => {
+            // TODO: Fix resync
+            let retList = await this.usernameList.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false), mng.imageSize, Date.now())
             return {list: retList, debug:true}
         })
         
