@@ -101,6 +101,7 @@ export class MarblesAppServer {
         // Lambda state
         if (this.debugLambda)  AWS_LAMBDA_CONFIG["logger"] = console
         // this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
+        this.uselambda = USE_LAMBDA
         this.lambdaClient = null
         this.lambdaQueue = 0    // Keep track of images sent to lambda for processing
         
@@ -332,7 +333,7 @@ export class MarblesAppServer {
         let tesseractPromise = null
         let pngBuffer = mng.bufferToPNG(mng.buffer, true, false)
 
-        if (!USE_LAMBDA) {
+        if (!this.uselambda) {
             tesseractPromise = mng.isolateUserNames()
             .then( buffer =>  this.scheduleTextRecogn(buffer) )
         } else {
@@ -347,7 +348,7 @@ export class MarblesAppServer {
         
         tesseractPromise.then( ({data, info}) => {      // add result to nameBuffer
             
-            if (USE_LAMBDA)
+            if (this.uselambda)
                 this.lambdaQueue -= 1
             this.serverStatus.imgs_read += 1
 
@@ -448,7 +449,7 @@ export class MarblesAppServer {
      * @returns {Number}
      */
     getTextRecgonQueue () {
-        if (USE_LAMBDA)
+        if (this.uselambda)
             return this.lambdaQueue
         else if (this.OCRScheduler)
             return this.OCRScheduler.getQueueLen()
@@ -656,7 +657,7 @@ export class MarblesAppServer {
         if (this.streamlinkProcess == null) {
             this.usernameList.clear()
             
-            if (!USE_LAMBDA)
+            if (!this.uselambda)
                 this.setupWorkerPool(NUM_LIVE_WORKERS)
             else 
                 this.warmupLambda(NUM_LAMBDA_WORKERS)

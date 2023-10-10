@@ -1,6 +1,12 @@
 # TODO.md
 
 ## todo today
+Ok time to do the username length thingy.
+As soon as I fix CSS.
+
+
+
+
 Show marbles ingest date? (terrible for testing, would need to be manually updated) 
 
 Stop status if connected during stop but no update? - I can handle this traffic, just greatly reduce the update time?

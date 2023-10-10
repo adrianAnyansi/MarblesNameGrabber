@@ -12,6 +12,8 @@ const server = express()
 const PORT = 4000;
 const HOST = 'localhost'
 
+const env = process.env.NODE_ENV || 'development';
+
 const app_server = new MarblesAppServer()
 
 // server.use(express.json()) // for parsing application/json
@@ -130,9 +132,13 @@ server.post('/debug', async (req, res) => {
     }
 })
 
-const env = process.env.NODE_ENV || 'development';
 
 server.listen(PORT, (socket) => {
     let server_env = (env == 'development') ? 'DEV' : 'PROD'
     console.log(`Server[${server_env}] running at ${HOST}:${PORT}`)
+    
+    if (env != 'development') {
+        app_server.use_lambda = true
+        console.log("[PROD] server, default to lambda functions")
+    }
 })
