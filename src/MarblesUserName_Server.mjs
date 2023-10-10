@@ -738,7 +738,7 @@ export class MarblesAppServer {
             return {'userObj': userObj, 'match': 1 }
         } else {
             // return best matches [levenDist, userObj]
-            let users = this.usernameList.find(reqUsername, 7)
+            let users = this.usernameList.find(reqUsername, 7, false)
             
             let levDist = users.at(0) ? users.at(0)[0] : Infinity
             let matchDist = 4
@@ -750,7 +750,7 @@ export class MarblesAppServer {
             else if (levDist < 8)
                 matchDist = 3
             
-            return {'userObj': users.at(0)?.[1], 'match': matchDist }
+            return {'userObj': users.at(0)?.[1], 'match': matchDist, 'levenDist': levDist}
         }
     }
 

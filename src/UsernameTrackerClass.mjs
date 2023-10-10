@@ -264,7 +264,7 @@ export class UsernameTracker {
             for (const lastUser of this.lastPage) {    // loop will not run if lastPage is empty
                 const {username, division} = lastUser
                 
-                let dist = this.calcLevenDistance(checkUsername, username, lowestMatch.match)
+                let dist = this.calcLevenDistance(checkUsername, username, lowestMatch.match, true)
                 if (dist < lowestMatch.match)
                     lowestMatch = {name: username, match: dist, division: division}
             }
@@ -422,7 +422,7 @@ export class UsernameTracker {
      * @param {Number} lowestRank 
      * @returns {LimitedList} 
      */
-    find (searchUsername, lowestRank=Infinity) {
+    find (searchUsername, lowestRank=Infinity, lowerCasePenalty=true) {
         // Attempt to find the 5 closest usernames to this text
         const sort = (a,b) => a[0] < b[0]
         const usernameRanking = new LimitedList(this.USER_RANK_LIST, null, sort)
@@ -431,7 +431,7 @@ export class UsernameTracker {
 
         for (const userObj of this.hash.values()) {
             const testUsername = userObj.name
-            let dist = this.calcLevenDistance(searchUsername, testUsername, currentMax)
+            let dist = this.calcLevenDistance(searchUsername, testUsername, currentMax, lowerCasePenalty)
             const userRankObj = [dist, userObj]
 
             if (usernameRanking.isFull()) currentMax = usernameRanking.sneak()[0]
@@ -442,7 +442,14 @@ export class UsernameTracker {
         return usernameRanking.list
     }
 
-    calcLevenDistance (newUsername, oldUsername, earlyOut=Infinity) {
+    /**
+     * Returns the Leven Distance between two strings
+     * @param {string} newUsername 
+     * @param {string} oldUsername 
+     * @param {Number} earlyOut 
+     * @returns {Number}
+     */
+    calcLevenDistance (newUsername, oldUsername, earlyOut=Infinity, lowerCasePenalty=true) {
         // Return the distance between the two usernames
         const flatArray = new Uint8Array((newUsername.length+1) * (oldUsername.length+1))
         let getOffset = (x,y) => y*(newUsername.length+1) + x
@@ -459,7 +466,7 @@ export class UsernameTracker {
         // NOTES: If I want to penalize insertion/deletion, increase cost for left/up movement
         for (let x=1; x<newUsername.length+1; x++) {
             for (let y=1; y<oldUsername.length+1; y++) {
-                const penalty = this.compareLetters(newUsername[x-1], oldUsername[y-1])
+                const penalty = this.compareLetters(newUsername[x-1], oldUsername[y-1], lowerCasePenalty)
                 // const penalty = newUsername[x-1] == oldUsername[y-1] ? 0 : 1
                 const trip = Math.min(
                                 flatArray[getOffset(x-1, y)], 
@@ -507,10 +514,10 @@ export class UsernameTracker {
         return score
     }
 
-    compareLetters(ltA, ltB) {
+    compareLetters(ltA, ltB, lowerCasePenalty=true) {
         
         if (ltA == ltB) return 0
-        if (ltA.toLowerCase() == ltB.toLowerCase()) return 1
+        if (ltA.toLowerCase() == ltB.toLowerCase()) return lowerCasePenalty ? 1 : 0
         
         if ( ADJC_LETTER_MAP.has(ltA) ) {
             const adjcSet = ADJC_LETTER_MAP.get(ltA)

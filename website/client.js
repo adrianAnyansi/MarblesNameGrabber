@@ -69,7 +69,7 @@ function fetchUserList () {
 }
 
 const USER_INPUT_DELAY = 1_000 * 6;
-const USER_FIRST_INPUT_DELAY = 1_000 * 2;
+const USER_FIRST_INPUT_DELAY = 1_000 * 1.5;
 let inputTimeout = null;
 let delayTimeout = null;
 

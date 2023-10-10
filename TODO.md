@@ -1,15 +1,13 @@
 # TODO.md
 
 ## todo today
-
-Website clean-up
-Investigate server quick-start?
-Remove lower/upper letter levendistance (only on user checks)
 Review HTTP redirect & root domain redirect
-Stop status if connected during stop but no update?
+Stop status if connected during stop but no update? - I can handle this traffic, just greatly reduce the update time?
 
 Server startup
-    10/03 didn't start up, manual start -> stop -> start (check if twitch monitor started)
+    3/10 didn't start up, manual start -> stop -> start 
+        Twitch monitor worked on 29/9, maybe there were errors with Twitch?. 
+        Marbles bot worked; so I updated with the game_id to hopefully fix that issue.
 
 ## todo later
 - Do the full page by image for the debug admin
