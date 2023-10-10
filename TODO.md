@@ -1,7 +1,8 @@
 # TODO.md
 
 ## todo today
-Review HTTP redirect & root domain redirect
+Show marbles ingest date? (terrible for testing, would need to be manually updated) 
+
 Stop status if connected during stop but no update? - I can handle this traffic, just greatly reduce the update time?
 
 Server startup
@@ -38,8 +39,6 @@ Server stability
     // Don't think this is necessary due to the lambda removing a lot of the processing from the server
 
 ## Bugs
-- /Start doesnt work as expected; does not restart but "continues"
-- Look into the server starting up too soon on Marbles game switch
 
 ## Thoughts
 The list transition took significantly less time than expected. Writing some notes to talk about next steps.

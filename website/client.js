@@ -70,7 +70,7 @@ function fetchUserList () {
 
 const USER_INPUT_DELAY = 1_000 * 6;
 const USER_FIRST_INPUT_DELAY = 1_000 * 1.5;
-let inputTimeout = null;
+let handleInputTimeout = null;
 let delayTimeout = null;
 
 function userInfoInterval(default_text, default_elem=UsernameOutputEl) {
@@ -86,25 +86,30 @@ function userInfoInterval(default_text, default_elem=UsernameOutputEl) {
 
 /** Queue input after 2 seconds of no input */
 function queueInput(inputEvent) {
+
+    
     
     if (UsernameInputEl.value.trim() == "") {
         UsernameOutputEl.textContent = ""
-        clearInterval(userCheckingStatusInterval)
+        clearInterval(userCheckingStatusInterval) // clear user check
         userCheckingStatusInterval = null
-        clearInterval(inputTimeout)
-        clearInterval(delayTimeout)
+        clearInterval(handleInputTimeout) // clear previous queue input
+        clearInterval(delayTimeout) // clear feedback delay timeout
         UsernameRecheck.textContent = "" // TODO: Move clearing username output into function?
-        inputTimeout = null
+        handleInputTimeout = null
+        // UsernamePlaceholder.classList.remove('hidden') // hide placeholder
         return
+    } else {
+        // UsernamePlaceholder.classList.add('hidden') // show placeholder
     }
     UsernameOutputEl.className = ``
     userInfoInterval('Checking input')
 
     userInputQueueBool = true
-    clearInterval(inputTimeout)
+    clearInterval(handleInputTimeout)
     clearInterval(delayTimeout)
     UsernameRecheck.textContent = ""
-    inputTimeout = setTimeout(handleInput, USER_FIRST_INPUT_DELAY, inputEvent)
+    handleInputTimeout = setTimeout(handleInput, USER_FIRST_INPUT_DELAY, inputEvent)
 }
 
 
@@ -121,12 +126,6 @@ function handleInput (inputEvent) {
     UsernameRecheck.textContent = ""
     
     const username = UsernameInputEl.value.trim()
-    UsernamePlaceholder.classList.add('hidden')
-
-    if (username == '') {
-        UsernamePlaceholder.classList.remove('hidden')
-        return
-    }
     if (username.length < 3) {
         UsernameOutputEl.textContent = 'Please enter more than 3 characters'
         return
@@ -170,7 +169,7 @@ function handleInput (inputEvent) {
         if ( !(['STOPPED', 'COMPLETE'].includes(ServerStatusEl.textContent) || // server status is stopped or complete
                 FoundUsername == UsernameInputEl.value )) {      // OR returned name == username
         // if (true) {
-                inputTimeout = setTimeout(handleInput, USER_INPUT_DELAY, inputEvent)
+                handleInputTimeout = setTimeout(handleInput, USER_INPUT_DELAY, inputEvent)
                 
                 { // block to keep the temp variable
                     let delaySecs = parseInt(USER_INPUT_DELAY / 1000)
