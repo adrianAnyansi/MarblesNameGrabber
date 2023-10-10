@@ -606,9 +606,10 @@ export class MarblesAppServer {
     }
 
     /**
-     * Setup the twitch game monitor & start when 
+     * Setup the twitch game monitor & start when game switches to Marbles On Stream
      */
     async setupTwitchMonitor () {
+        const MARBLES_ON_STREAM_GAME_ID = 509511
 
         if (!this.game_type_monitor_interval) {
             await this.getTwitchToken()
@@ -627,17 +628,18 @@ export class MarblesAppServer {
 
                     // check game name
                     const new_game_name = resp.data.data[0]['game_name']
-                    if (new_game_name.toLowerCase() == 'marbles on stream' &&
+                    const new_game_id = parseInt(resp.data.data[0]['game_id'])
+                    if ((new_game_id == MARBLES_ON_STREAM_GAME_ID || new_game_name.toLowerCase() == 'marbles on stream') &&
                         this.last_game_name != new_game_name) {
                             // Start up the streamMonitor
                             console.log(`Switched Game to ${new_game_name}; clearing & starting streamMonitor`)
-                            this.clear()
+                            this.clear() // Redundant, start already causes a clear
                             this.start(TWITCH_DEFAULT_BROADCASTER)
                         }
 
                     this.last_game_name = new_game_name
                 }).catch( err => {
-                    console.warn(`Failed to setup the game-monitor ${err}`)
+                    console.warn(`Failed to get Twitch-Monitor ${err}`)
                     // clearInterval(this.game_type_monitor_interval) // Don't clear monitor
                 })
             }, 1_000 * 3) // Check every 3 seconds
