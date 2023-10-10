@@ -34,6 +34,7 @@ let ffmpegFPS = '2'
 // const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=fps=${ffmpegFPS}`, 'pipe:1']
 
 const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
+const PNG_IEND_CHUNK = 0x49454E44
 
 const NUM_LIVE_WORKERS = 6 // Num Tesseract workers
 const WORKER_RECOGNIZE_PARAMS = {
@@ -228,37 +229,15 @@ export class MarblesAppServer {
 
         this.ffmpegProcess.stdout.on('data', (partialPngBuffer) => {
             // NOTE: Data is a buffer with partial image data
-
-            let lastIdx = 0
-            let lead_idx = 0
-
-            while (lead_idx+4 <  partialPngBuffer.length) {
-                if (partialPngBuffer.readUInt32BE(lead_idx) == PNG_MAGIC_NUMBER) {
-                    // if (lead_idx % 4 != 0) console.error(`offset did not end at 0`)
-                    // console.debug(`Offset started at ${lead_idx} and ${lead_idx%4}`)
-
-                    if (lead_idx != lastIdx)
-                        this.pngChunkBufferArr.push(partialPngBuffer.slice(lastIdx, lead_idx))
-
-                    if (this.pngChunkBufferArr.length > 0) {
-                        // Buffer is complete, do effort
-                        const pngBuffer = Buffer.concat(this.pngChunkBufferArr)
-                        this.pngChunkBufferArr.length = 0 // clear array
-                        // console.log(`Got PNG Buffer size:${pngBuffer.length}`)
-                        // TODO: Debug flag
-                        // fs.writeFileSync('process-stdout.png', pngBuffer, 
-                        //     err => console.error(`You failed a thing ${err}`))
-                        this.parseImgFile(pngBuffer)
-                    }
-
-                    lastIdx = lead_idx
-                }
-                // lead_idx += 4
-                break;
+            
+            this.pngChunkBufferArr.push(partialPngBuffer)
+            // PNG chunk is 12 BYTES (but since length is 0, first 4 bytes are 0)
+            if (partialPngBuffer.readUInt32BE(partialPngBuffer.length-8) == PNG_IEND_CHUNK) {
+                // close png
+                const pngBuffer = Buffer.concat(this.pngChunkBufferArr)
+                this.pngChunkBufferArr.length = 0 // clear array
+                this.parseImgFile(pngBuffer)
             }
-
-            // copy remainder into here
-            this.pngChunkBufferArr.push(partialPngBuffer.subarray(lastIdx)) // push shallow-copy of buffer here
 
         })
 
@@ -711,6 +690,8 @@ export class MarblesAppServer {
     }
 
     clear () {
+        this.serverStatus.imgs_downloaded = 0
+        this.serverStatus.imgs_read = 0
         this.usernameList.clear()
         return "Cleared usernameList."
     }

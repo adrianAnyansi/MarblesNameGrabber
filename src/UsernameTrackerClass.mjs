@@ -374,6 +374,7 @@ export class UsernameTracker {
         this.unverifiedUsers.clear()
         
         this.fullImageList = []
+        this.lastPage = []
     }
 
     getImage(username) {

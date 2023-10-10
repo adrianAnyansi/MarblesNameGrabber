@@ -5,7 +5,11 @@
 Website clean-up
 Investigate server quick-start?
 Remove lower/upper letter levendistance (only on user checks)
+Review HTTP redirect & root domain redirect
+Stop status if connected during stop but no update?
 
+Server startup
+    10/03 didn't start up, manual start -> stop -> start (check if twitch monitor started)
 
 ## todo later
 - Do the full page by image for the debug admin
