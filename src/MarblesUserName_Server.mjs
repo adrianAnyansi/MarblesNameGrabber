@@ -25,6 +25,7 @@ const TWITCH_URL = 'https://www.twitch.tv/'
 const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s' 
                 // "https://www.twitch.tv/videos/1895894790?t=06h39m40s"
                 // "https://www.twitch.tv/videos/1914386426?t=1h6m3s"
+                // start/videos/1938079879?t=4h55m20s       // no chat box; 29/9
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
 let defaultStreamURL = LIVE_URL
 // const streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']
@@ -40,7 +41,8 @@ const WORKER_RECOGNIZE_PARAMS = {
 }
 const TEST_FILENAME = "testing/test.png"
 const LIVE_FILENAME = "testing/#.png"
-const EMPTY_PAGE_COMPLETE = 20   // number of frames* without any valid names on them
+const VOD_DUMP_LOC = "testing/vod_dump/"
+const EMPTY_PAGE_COMPLETE = 5 * parseInt(ffmpegFPS)   // number of frames* without any valid names on them
 
 let TWITCH_ACCESS_TOKEN_BODY = null
 const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
@@ -71,6 +73,7 @@ export class MarblesAppServer {
         this.debugTesseract = false;
         this.debugProcess = false;
         this.debugLambda = false;
+        this.debugVODDump = false;
 
         // Processors & Commands
         this.streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']   // Streamlink shell cmd
@@ -250,7 +253,8 @@ export class MarblesAppServer {
 
                     lastIdx = lead_idx
                 }
-                lead_idx += 4
+                // lead_idx += 4
+                break;
             }
 
             // copy remainder into here
@@ -285,7 +289,7 @@ export class MarblesAppServer {
     shutdownStreamMonitor() {
 
         if (this.streamlinkProcess) {
-            // console.log("Stopping image parser")
+            console.log("Stopping processes & image parser")
 
             this.streamlinkProcess.kill('SIGINT')
             // this.ffmpegProcess.kill('SIGINT')   // Trying to use SIGINT for Linux
@@ -313,12 +317,12 @@ export class MarblesAppServer {
 
         this.serverStatus.imgs_downloaded += 1
 
+        if (this.debugVODDump) {
+            fs.writeFile(`${VOD_DUMP_LOC}${this.serverStatus.imgs_downloaded}.png`, imageLike)
+            return
+        }
+
         let captureDt = Date.now()
-        
-        // const options = {
-        //     "id": `file_dt_${currTs}`,
-        //     "jobId": `file_dt_${currTs}`,
-        // } // TODO: Use options
         
         let mng = new MarbleNameGrabberNode(imageLike, false)
 
@@ -370,7 +374,7 @@ export class MarblesAppServer {
 
             // Add to queue
             this.imageProcessQueue[funcImgId - this.imageProcessQueueLoc] = [data, mng]
-            console.debug(`Added ${funcImgId} to queue ${funcImgId - this.imageProcessQueueLoc}`)
+            // console.debug(`Added ${funcImgId} to queue loc ${funcImgId - this.imageProcessQueueLoc}`)
 
             while (this.imageProcessQueue.at(0)) {  // While next image exists
                 let [qdata, qmng] = this.imageProcessQueue.shift()
@@ -378,12 +382,12 @@ export class MarblesAppServer {
 
                 // qmng.bufferToPNG()
                 // let retList = await this.usernameList.addPage(qdata, qmng.bufferToPNG(qmng.buffer, true, false))
-                let retList = this.usernameList.addPage(qdata, pngBuffer, mng.imageSize, captureDt)
+                let retList = this.usernameList.addPage(qdata, pngBuffer, mng.bufferSize, captureDt)
                 if (retList.length == 0)
                     this.emptyListPages += 1
                 console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}`)
                 
-                if (this.emptyListPages >= EMPTY_PAGE_COMPLETE) {
+                if (this.emptyListPages >= EMPTY_PAGE_COMPLETE && this.usernameList.length > 5) {
                     console.log(`${this.emptyListPages} empty frames; dumping queue & moving to COMPLETE state.`)
                     this.serverStatus.state = SERVER_STATE_ENUM.COMPLETE
                     this.spinDown()
@@ -784,7 +788,7 @@ export class MarblesAppServer {
         return this.debugRun(filename, withLambda)
         .then( async ({mng, data}) => {
             // TODO: Fix resync
-            let retList = await this.usernameList.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false), mng.imageSize, Date.now())
+            let retList = await this.usernameList.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false), mng.bufferSize, Date.now())
             return {list: retList, debug:true}
         })
         

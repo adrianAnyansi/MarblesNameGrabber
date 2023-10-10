@@ -24,7 +24,7 @@ class Username {
         this.verifyAmount = 0           // verified by human
         this.fullImgIdxList = []        // images of this user
 
-        this.aliases = set() // set of usernames that are similar
+        this.aliases = new Set() // set of usernames that are similar
     }
 }
 
@@ -91,7 +91,7 @@ export class UsernameTracker {
         this.fullImageList = []     // All images in order
 
         this.unverifiedImgs = []    // List of usernames unsuccessfully read
-        this.unverifiedUsers = set()   // Users yet to be verified
+        this.unverifiedUsers = new Set()   // Users yet to be verified
 
         this.lastPage = []      // Users on the last page
     }
@@ -114,12 +114,13 @@ export class UsernameTracker {
 
         if (!userObj) {
             userObj = new Username(username, confidence, index, capture_dt)
+            userObj.aliases.add(username)
             this.hash.set(username, userObj)
             this.usersInOrder[index] = userObj
         } else { // add alias
             userObj.aliases.add(username)
             this.hash.set(username, userObj)
-            // if confidence higher, change main name
+            // if confidence higher, update userObj
             if (confidence > userObj.confidence ) {
                 userObj.confidence = confidence
                 userObj.name = username
@@ -195,19 +196,18 @@ export class UsernameTracker {
      */
     addPage (tesseractData, sharpOCRImg, img_size, capture_dt) {
         const retList = []  // List of names to return for state info
-        // const curr_ts = Date.now()
         
         const heightPadding = 10; // TODO: Turn into pct
         if (!tesseractData.lines) return retList
         
         const validLines = tesseractData.lines.filter( line => line.text.length > 2)
-        if (validLines.length < this.MIN_PAGE_CHECK) {
+        if (validLines.length <= this.MIN_PAGE_CHECK) {
             console.warn(`Discard, not enough usernames found. ${validLines.length}`)
             return retList
         }
 
-        const trueImgHeight = this.OCR_SCALE_RATIO * img_size.h; // sharp.scale is not reflected in this buffer.
-        const trueImgWidth = this.OCR_SCALE_RATIO * img_size.w; // sharp.scale is not reflected in this buffer.
+        const trueImgHeight = Math.floor(this.OCR_SCALE_RATIO * img_size.h); // sharp.scale is not reflected in this buffer.
+        const trueImgWidth = Math.floor(this.OCR_SCALE_RATIO * img_size.w); // sharp.scale is not reflected in this buffer.
         const pageData = []         // pageData #. {user:string, idx:int}
         const pageParsedInfo = []   // Current page username objects
 
@@ -219,11 +219,11 @@ export class UsernameTracker {
             // Determine pageData info: location where the username was read & save 
             const ycenter = (line.bbox.y1 - line.bbox.y0)/2 + line.bbox.y0 // get vertical center
             const division = Math.floor(ycenter / (this.USERNAME_BOX_CROP_PCT * trueImgHeight))   // check which division it lands in
-            pageData.push({username:username, division:division}) // set the current division
+            pageData.push({"username":username, "division":division}) // set the current division
 
             const validUsername = username.length > 2;
             if (validUsername) { // Re-calc confidence then add to hash+list
-                const conf = line.confidence
+                let conf = line.confidence
                 if (line.confidence == 0) { // line -> word -> symbol to recalc confidence
                     const symbolSum = line.words[0].symbols.reduce( (acc,b) => acc+b.confidence, 0)
                     conf = symbolSum / (2 * line.words[0].symbols.length)
@@ -231,18 +231,19 @@ export class UsernameTracker {
                 pageParsedInfo[division] = {'username':username, 'conf':conf, 'division':division, 'capture_dt':capture_dt, 'line':line}
                 
                 retList.push(`${username}, ${conf}`)
-            }
             
-            // Extract the image
-            const bbox = line.bbox
-            pageParsedInfo[division]['imgPromise'] = // set image buffer promise to be made after
-                sharpOCRImg.extract({  left: 0,
-                                    width: trueImgWidth,
-                                    top: Math.max(bbox.y0 - heightPadding, 0),
-                                    height: Math.min((bbox.y1+heightPadding) - bbox.y0, trueImgHeight)
-                })
-                .jpeg().toBuffer()
-                .catch( err => { console.warn(`Couldn't retrieve image buffer ${err}`)})
+            
+                // Extract the image
+                const bbox = line.bbox
+                pageParsedInfo[division]['imgPromise'] = // set image buffer promise to be made after
+                    sharpOCRImg.extract({  left: 0,
+                                        width: trueImgWidth,
+                                        top: Math.max(bbox.y0 - heightPadding, 0),
+                                        height: Math.min((bbox.y1+heightPadding) - bbox.y0, trueImgHeight)
+                    })
+                    .jpeg().toBuffer()
+                    .catch( err => { console.warn(`Couldn't retrieve image buffer ${err}`)})
+            }
             
         }
 
@@ -270,7 +271,7 @@ export class UsernameTracker {
 
             if (lowestMatch.name) {
                 const lineDivision = lineCheck['division']
-                console.warn(`Matched ${checkUsername}[${lineDivision}] to ${lowestMatch.name}[${lowestMatch.division}] prev`)
+                // console.warn(`Matched ${checkUsername}[${lineDivision}] to ${lowestMatch.name}[${lowestMatch.division}] prev`)
 
                 const divisionOffset = lowestMatch.division - lineDivision
                 linkUp[divisionOffset] = (linkUp[divisionOffset] ?? 0) + 1
@@ -284,27 +285,25 @@ export class UsernameTracker {
 
         let startIndex = this.usersInOrder.length   // Offset to full user list
 
-        if (linkAnswer) { // Stitch pages together
-            console.warn(`Matched lines by ${linkAnswer}. Joining pages.`)
-            startIndex -= linkAnswer
+        if (linkAnswer != null) { // Stitch pages together
+            console.warn(`Page Match lines by ${linkAnswer}. Joining pages.`)
+            startIndex -= (this.lastPage.at(-1).division+1 - linkAnswer)
         } else { // Add pages together
-            console.warn(`No match for ${pageData.at(0)} amongst `)
-            if (this.lastPage)
-                console.warn(`${this.lastPage.map( line => line.text )}`)
-            else
-                console.warn(`{empty list}`)
+            let result_text = (this.lastPage.length > 0) ? `${this.lastPage.map( line => line.username)}` : `{empty list}`
+            console.warn(`No page match for ${pageData.at(0).username} amongst ${result_text}`)
         }
 
         // Add users to list & Get image promises (including skipped divisions)
         for (let i=0; i<pageParsedInfo.length; i++) {
             const userInfo = pageParsedInfo.at(i)
             const nextImgIdx = this.fullImageList.push([]) - 1
+            const division = i
 
             let imgPromise = null
             if (userInfo == undefined) {    // add image from divission based on height/width
                 imgPromise = sharpOCRImg.extract({  left: 0,    width: trueImgWidth,
-                    top: i * this.USERNAME_BOX_CROP_PCT * trueImgHeight,
-                    height: i+1 * this.USERNAME_BOX_CROP_PCT * trueImgHeight
+                    top: Math.floor(i * this.USERNAME_BOX_CROP_PCT * trueImgHeight),
+                    height: Math.floor(i+1 * this.USERNAME_BOX_CROP_PCT * trueImgHeight)
                 })
                 .jpeg().toBuffer()
                 .catch( err => { console.warn(`Couldn't retrieve image buffer ${err}`)})
@@ -314,7 +313,7 @@ export class UsernameTracker {
             }
 
             imgPromise.then( imgBuffer => 
-                this.addImage(this.pageIdx, userInfo.division, imgBuffer, startIndex + userInfo.division, nextImgIdx)
+                this.addImage(this.pageIdx, division, imgBuffer, startIndex + division, nextImgIdx)
             )
         }
 
@@ -343,7 +342,7 @@ export class UsernameTracker {
             this.unverifiedImgs.push(imgBuffer)
         } else if (userObj.verifyAmount < 2) {  // add to unverified userObj
             userObj.fullImgIdxList.push(fullImgIdx)
-            this.unverifiedUsers.push(userObj)
+            this.unverifiedUsers.add(userObj)
         } else {
             userObj.fullImgIdxList.push(fullImgIdx) // Add to userObj
         }
@@ -369,8 +368,11 @@ export class UsernameTracker {
         this.pageIdx = 0
         this.hash.clear()
 
+        this.usersInOrder = []
+
         this.unverifiedImgs = []
-        this.unverifiedUsers = []
+        this.unverifiedUsers.clear()
+        
         this.fullImageList = []
     }
 
@@ -404,7 +406,7 @@ export class UsernameTracker {
             'full_img_list': this.fullImageList.length,
             'read_pages': this.pageIdx,
             'unverifed': {
-                'users': this.unverifiedUsers.length,
+                'users': this.unverifiedUsers.size,
                 'img': this.unverifiedImgs.length
             }
         }

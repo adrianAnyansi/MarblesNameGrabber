@@ -41,6 +41,7 @@ server.get(['/', '/website/*'], (req, res) => {
  */
 server.post(['/start', '/start/*'], (req, res) => {
     
+    console.log(`Recieved START command ${req.originalUrl}.`)
     let streamName = null
     if (req.originalUrl != '/start')
         streamName = req.originalUrl.replace('/start/', '')
@@ -54,6 +55,7 @@ server.post(['/start', '/start/*'], (req, res) => {
  * returns JSON indicating the result of stopping
  */
 server.post('/stop', (req, res) => {
+    console.log(`Recieved STOP command.`)
     res.json(app_server.stop())
 })
 
@@ -62,7 +64,7 @@ server.post('/stop', (req, res) => {
  */
 server.post('/clear', (req, res) => {
     // AUTH
-    console.log("Cleared userList and images.")
+    console.log("Recieved CLEAR command.")
     res.send(app_server.clear()) // TODO: Handle errors
 })
 

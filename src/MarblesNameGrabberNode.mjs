@@ -509,7 +509,7 @@ export class MarbleNameGrabberNode {
                         firstColorRangeMatch = colorRange
                         
                         // do flood-fill
-                        cacheColorMatch.get(colorRange).set(hashArr(px_rgba), redmean(colorRange[0], px_rgba))
+                        cacheColorMatch.get(colorRange).set(hashArr(px_rgba), redmean(colorRange[0], px_rgba)) // Flood fill set twice?
                         depthInit += 1
                         
                         const anti_y_lines = new Set(ANTI_LINE_OFF.map(y_line => y_line + y_start))
