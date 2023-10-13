@@ -597,9 +597,9 @@ export class MarblesAppServer {
             }
             // set timeout to clear this token
             // const timeoutMs = parseInt(res.data['expires_in']) * 1_000
-            const timeoutMs = 15* 24 * 60 * 60 * 1_000 // Capped to 24 days due to int overflow.
+            // const timeoutMs = 15* 24 * 60 * 60 * 1_000 // Capped to 24 days due to int overflow.
             // FIXME: Setup a new callback that triggers comparing Date.now instead
-            setTimeout(()=> {this.twitch_access_token = null}, timeoutMs)
+            // setTimeout(()=> {this.twitch_access_token = null}, timeoutMs)
             
             console.log("Retrieved Twitch Access Token")
             return this.twitch_access_token
@@ -641,6 +641,13 @@ export class MarblesAppServer {
                     this.last_game_name = new_game_name
                 }).catch( err => {
                     console.warn(`Failed to get Twitch-Monitor ${err}`)
+                    if (err.response) {
+                        if (err.response.status == 401) {
+                            this.twitch_access_token = null
+                            console.log("Refreshing Twitch Access Token")
+                            this.getTwitchToken()
+                        }
+                    }
                     // clearInterval(this.game_type_monitor_interval) // Don't clear monitor
                 })
             }, 1_000 * 3) // Check every 3 seconds
