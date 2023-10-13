@@ -1,6 +1,6 @@
 {
   "name": "marblesnamegrabber",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Scrapes Marbles on Stream Username",
   "main": "MarblesUserName_Server.js",
   "scripts": {

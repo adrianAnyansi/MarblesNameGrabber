@@ -1,11 +1,9 @@
 # TODO.md
 
 ## todo today
-Ok time to do the username length thingy.
-As soon as I fix CSS.
 
-
-
+Move best image to the beginning of the list
+    - some pages are getting stitched badly, this maybe a bug due to a mis-stitch (in this case, the stitch failed and added 9 overlap due to bitrate. Then when the correct usernames came along, the first incorrect image was still first in the list while the object was overwritten)
 
 Show marbles ingest date? (terrible for testing, would need to be manually updated) 
 

@@ -290,7 +290,7 @@ export class UsernameTracker {
             startIndex -= (this.lastPage.at(-1).division+1 - linkAnswer)
         } else { // Add pages together
             let result_text = (this.lastPage.length > 0) ? `${this.lastPage.map( line => line.username)}` : `{empty list}`
-            console.warn(`No page match for ${pageData.at(0).username} amongst ${result_text}`)
+            console.warn(`No page match for ${pageData.map( line => line.username)} amongst ${result_text}`)
         }
 
         // Add users to list & Get image promises (including skipped divisions)
@@ -312,8 +312,17 @@ export class UsernameTracker {
                 imgPromise = userInfo.imgPromise
             }
 
-            imgPromise.then( imgBuffer => 
+            imgPromise.then( imgBuffer => {
                 this.addImage(this.pageIdx, division, imgBuffer, startIndex + division, nextImgIdx)
+                if (userInfo) {
+                    const userObj = this.usersInOrder[startIndex+division]
+                    if (userObj && userObj.fullImgIdxList.length > 1 && userInfo.conf == userObj.confidence) {
+                        const swap = userObj.fullImgIdxList[0]
+                        userObj.fullImgIdxList[0] = userObj.fullImgIdxList.at(-1)
+                        userObj.fullImgIdxList[userObj.fullImgIdxList.length-1] = swap
+                    }
+                }
+              } // end of promise
             )
         }
 
@@ -403,7 +412,7 @@ export class UsernameTracker {
     status () {
         // Return status for server debug
         return {
-            'user_list': this.hash.size,
+            'user_list': this.usersInOrder.length,
             'full_img_list': this.fullImageList.length,
             'read_pages': this.pageIdx,
             'unverifed': {
