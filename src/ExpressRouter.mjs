@@ -52,6 +52,18 @@ server.post(['/start', '/start/*'], (req, res) => {
 
 })
 
+server.post(['/force'], (req, res) => {
+    
+    console.log(`Recieved FORCE command ${req.originalUrl}.`)
+    if (app_server.serverStatus.state != 'STOPPED') {
+        app_server.start()
+        app_server.serverStatus.state = "READING"
+        res.json({'res':"Forced into READING state"})
+    } else {
+        res.json({'res':"Already in READING state"})
+    }
+})
+
 /**
  * Stop image parser
  * returns JSON indicating the result of stopping

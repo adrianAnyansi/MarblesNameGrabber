@@ -161,6 +161,7 @@ const WHITE           = 0xFFFFFF
 const YELLOW          = 0xFFFF00
 const ORANGE          = 0xFFA500
 const MAHOGANY        = 0xC04000
+const MAHOGANY_DARK   = 0x902000
 const RED             = 0xFF0000
 
 const SUB_BLUE        = 0x7b96dc
@@ -172,7 +173,7 @@ const NO_MATCH_ALPHA = 0xFD
 const ANTI_MATCH_ALPHA = 0xFC
 
 const USERNAME_BG_MULTI = 0.650
-const PX_DIFF = 15
+const PX_DIFF = 10
 const PX_RANGE = 7
 
 
@@ -398,12 +399,14 @@ export class MarbleNameGrabberNode {
         (177 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (178 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (179 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
+        (182 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
     ]
     ANTI_LINES_PCT = [
-        (154 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
+        // (153 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         (156 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (184 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
+        // (185 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
 
+        (187 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         
         // (152 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
         // (153 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
@@ -412,6 +415,7 @@ export class MarbleNameGrabberNode {
         // (184 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
     ]
     USERNAME_LEFT_PADDING_PCT = 10 / MEASURE_RECT.w // Left padding in pixels @ 1920
+    // Left padding has a minimum of 10 due to the kerning of "11"
     USERNAME_RIGHT_MIN_PCT = 40 / MEASURE_RECT.w // Approx 3 alphanum chars @ 1920
 
     async isolateUserNames () {
@@ -457,54 +461,56 @@ export class MarbleNameGrabberNode {
             let failedMatchVertLines = 0;
             let firstColorRangeMatch = null
 
-            // Perform username length testing
-            // const peaksX = [] // Peaks that fit the method
-            // const compPx = (high_ch, low_ch) => {
-            //     let ch1A = high_ch * USERNAME_BG_MULTI
-            //     return (low_ch > ch1A-PX_DIFF && low_ch < ch1A+PX_DIFF)
-            // }
-            // const compPxs = (high_px, low_px) => {
-            //     for (let i in [0,1,2])
-            //         if (!compPx(high_px[i], low_px[i])) return false
-            //     return true
-            // }
-            // // Move R->L checking pixel values for the peak
-            // // NOTE: Take closest if peaksX is empty
-            // let edgeCheck_y = 0
-            // while (edgeCheck_y < USERNAME_BOX_HEIGHT) {
-            //     const px_vals = [] // list of px_vals being compared
-            //     let m_x = this.bufferSize.w-1
-            //     while (m_x >= 0) {
-            //         px_vals.unshift(this.getPixel(m_x, y_start+edgeCheck_y))
-            //         if (px_vals.length >= PX_RANGE) {
-            //             if (compPxs(px_vals.at(0), px_vals.at(-1))) {
-            //                 console.warn(`Found ${m_x} @ ${y_start} `)
-            //                 peaksX.push(Math.round(m_x-px_vals.length/2))
-            //                 this.setPixel(Math.round(m_x+PX_RANGE/2), y_start+edgeCheck_y, toRGBA(RED))
-            //                 // let y_search = 0
-            //                 // while (y_search < USERNAME_BOX_HEIGHT) { // Move down while checking for status
-            //                 //     let rg_px = this.getPixel(m_x+PX_RANGE-1, y_start+y_search)
-            //                 //     let lt_px = this.getPixel(m_x, y_start+y_search)
-            //                 //     if (compPxs(lt_px, rg_px))
-            //                 //         this.setPixel(Math.round(m_x+PX_RANGE/2), y_start+y_search, toRGBA(RED))
-            //                 //     y_search++
-            //                 // }
-            //                 // px_vals.pop()
-            //             }
-            //             px_vals.pop()
-            //         }
-            //         m_x -= 1
-            //     }
-            //     edgeCheck_y += 1
-            // }
+        //     // Perform username length testing
+        //     const peaksX = [] // Peaks that fit the method
+        //     const compPx = (high_ch, low_ch) => {
+        //         let ch1A = high_ch * USERNAME_BG_MULTI
+        //         return (low_ch > ch1A-PX_DIFF && low_ch < ch1A+PX_DIFF)
+        //     }
+        //     const compPxs = (high_px, low_px) => {
+        //         for (let i in [0,1,2])
+        //             if (!compPx(high_px[i], low_px[i])) return false
+        //         return true
+        //     }
+        //     // Move R->L checking pixel values for the peak
+        //     // NOTE: Take closest if peaksX is empty
+        //     // let edgeCheck_y = 0
+        //     // while (edgeCheck_y < USERNAME_BOX_HEIGHT) {
+        //     for (let edgeCheck_y of ANTI_LINE_OFF) {
+        //         const px_vals = [] // list of px_vals being compared
+        //         let m_x = this.bufferSize.w-1
+        //         while (m_x >= 0) {
+        //             px_vals.unshift(this.getPixel(m_x, y_start+edgeCheck_y))
+        //             if (px_vals.length >= PX_RANGE) {
+        //                 if (compPxs(px_vals.at(0), px_vals.at(-1))) {
+        //                     console.warn(`Found X:${m_x} @ Y:${y_start} `)
+        //                     peaksX.push(Math.round(m_x-px_vals.length/2))
+        //                     this.setPixel(Math.round(m_x+PX_RANGE/2), y_start+edgeCheck_y, toRGBA(RED))
+        //                     // let y_search = 0
+        //                     // while (y_search < USERNAME_BOX_HEIGHT) { // Move down while checking for status
+        //                     //     let rg_px = this.getPixel(m_x+PX_RANGE-1, y_start+y_search)
+        //                     //     let lt_px = this.getPixel(m_x, y_start+y_search)
+        //                     //     if (compPxs(lt_px, rg_px))
+        //                     //         this.setPixel(Math.round(m_x+PX_RANGE/2), y_start+y_search, toRGBA(RED))
+        //                     //     y_search++
+        //                     // }
+        //                     // px_vals.pop()
+        //                 }
+        //                 px_vals.pop()
+        //             }
+        //             m_x -= 1
+        //         }
+        //         edgeCheck_y += 1
+        //     }
             
-            // x_start = -1 // Disable username searching
+        //     x_start = -1 // Disable username searching
 
             while (x_start >= 0) {   // RIGHT->LEFT search
                 let foundMatch = false;
 
                 // verify anti-line, matches here stop iteration
                 for (const check_px_off of ANTI_LINE_OFF) {
+                    if (y_start+check_px_off >= this.bufferSize.h) continue
                     let px_rgba = this.getPixel(x_start, y_start+check_px_off)
                     if (this.debug) this.setPixel(x_start, y_start+check_px_off, toRGBA(YELLOW))
 
@@ -659,8 +665,11 @@ export class MarbleNameGrabberNode {
             
             px_rgba[3] = matchPxUNColorBool ? MATCH_ALPHA : NO_MATCH_ALPHA
             if (this.debug) {
-                px_rgba = toRGBA(MAHOGANY, px_rgba[3]) // brown* for flood-fill // TODO: Blend pixel instead?
-                // px_rgba = toRGBA(PX)
+                if (matchPxUNColorBool)
+                    px_rgba = toRGBA(MAHOGANY, px_rgba[3])
+                else
+                    px_rgba = toRGBA(MAHOGANY_DARK, px_rgba[3])
+                    // brown* for flood-fill // TODO: Blend pixel instead?
             }
             this.setPixel(cx, cy, px_rgba)
 

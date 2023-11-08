@@ -1,6 +1,21 @@
 # TODO.md
 
+
 ## todo today
+
+I was considering checking for the twitch chat so I know when to perform the overlap checking- however due to the !play timeout restrictions; it's possible for an early name to scroll off (names last about 2.5-6s) which will completely mess up the overlap code.
+    Since overlaps include text, mouse cursor and SNAKEY; I think it's completely impossible to accurately detect and remove overlaps. I think it's best to program as if overlap is always possible; and just program to handle overlap instead.
+
+Here are the mitigation strategies, which I will not implement at the same time.
+    1. If the mouse cursor is detected, remove it from username.
+    2. Increase FPS (improves chances of a good frame & overlap detection)
+
+
+NOTE: Tracking a username number is actually useless since the usernames showing doesn't match when added.
+
+Upgrade the username ingest by looking at the !play indicator at the end (but only when reaching the last 200)
+
+Redo the username 
 
 Move best image to the beginning of the list
     - some pages are getting stitched badly, this maybe a bug due to a mis-stitch (in this case, the stitch failed and added 9 overlap due to bitrate. Then when the correct usernames came along, the first incorrect image was still first in the list while the object was overwritten)
@@ -13,6 +28,51 @@ Server startup
     3/10 didn't start up, manual start -> stop -> start 
         Twitch monitor worked on 29/9, maybe there were errors with Twitch?. 
         Marbles bot worked; so I updated with the game_id to hopefully fix that issue.
+
+
+## Goals
+
+Ok I've been a little scatterbrained and missed a deadline. TBF life got in the way.
+Lets bulletproof what exactly I want to do in terms getting things running.
+
+1. Get a narrow list of coordinates that corresponds to Waiting To Start
+2. Feed that into the program to do the check
+3. Move Lambda code into main repo now that I don't need a new repo build
+
+Optional:
+4. I need to improve the color check -> move to separate function
+    1. Plan is to use a rotation -> 3D rectangle to compare to the location
+    However I dont want to write a lot of complex math to do this so I might not do a whole bunch...
+4. Maybe consider writing a program for individual letter font recognition?
+
+So the UI changed so I have to come back to this. I've brainstormed some improvements; but I need to plan properly cause I spent a day doing stuff that didn't directly help.
+
+I'm chronicalling the current issues & solutions to these issues.
+
+- Username Start
+Due to the UI change; the program can no longer detect when the game is loaded and usernames are available.
+    - Waiting for Start & Subscriber tags will be checked. After making a program to check the pixels, I can easily check both as long as both parts are not covered.
+    - Need a force-start for situations where this doesn't work as intended. Needs to be GET possible so I can do it via mobile (but I don't have OAuth ew)
+
+- Name parsing
+Getting the right pixels from the username
+    - The parsing must be improved, because the text baseline has been lowered, the anti-line must be lowered but the line must exist to cut-off bad issues. I can either increase the image or cut-off the last text.
+    - 2nd, the pixel sampling and range should be improved, as with the transparent background change, false flags are being made.
+    Also these samples were made when the flood-fill was not made; flood-fill captures the text well, but its too broad.
+
+- Name Recognition
+This represents the ability to find a username on screen, and accurately get the text from it's pixels.
+    - Transparent background. However this becomes practically invisible when the bitrate is affected by things in the background- Also new UI has reduced its effectiveness. I can go back and try to verify it with more data but it's not considered a solveable problem.
+    - Lastly to point out, there is no other solution to this problem. Since it's possible to be on a black background (where the transparent background difference is invisible); this only mitigates a significant portion of usernames. 
+    - Using the text position (baseline) helps, but does not eliminate the issue.
+    - Due to J being extremely close to the left side; I need a minimum of 6 pixels between letters (11 is specifically 9 pixels distance) which eliminates that solution.
+
+- Letter Recognition
+    The sampling is much better at this than initially; but for future OCR projects
+
+- Name verification
+This verifies that the text on screen is a username.
+    - !PLAY can be used to separate actual usernames and fake users shown on screen. However this only covers the situation where a username is on screen; in the right position but not an actual username which is a rare situation. It can also be negated by setting some overlap rules.
 
 ## todo later
 - Do the full page by image for the debug admin
@@ -41,6 +101,9 @@ Server
 Server stability
     Caching levenDistance answers (for user queries)? 
     // Don't think this is necessary due to the lambda removing a lot of the processing from the server
+
+
+
 
 ## Bugs
 

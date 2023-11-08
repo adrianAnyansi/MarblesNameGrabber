@@ -303,3 +303,20 @@ export class Heap {
         throw EvalError('Method not yet implemented')
     }
 }
+
+/**
+ * Rotates a 3D point using a rotation Matrix
+ * @param {*} rotMatrix 
+ * @param {*} pointMatrix 
+ */
+export function rotPoint (rotMatrix, pointMatrix) {
+
+    const resPoint = [0, 0, 0]
+    for (let i in rotMatrix[0]) {
+        for (let j in pointMatrix) {
+            resPoint[i] += rotMatrix[i][j] * pointMatrix[j]
+        }
+    }
+
+    return resPoint
+}
