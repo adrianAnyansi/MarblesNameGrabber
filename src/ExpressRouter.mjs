@@ -52,7 +52,7 @@ server.post(['/start', '/start/*'], (req, res) => {
 
 })
 
-server.post(['/force'], (req, res) => {
+server.all(['/force'], (req, res) => {
     
     console.log(`Recieved FORCE command ${req.originalUrl}.`)
     if (app_server.serverStatus.state != 'STOPPED') {

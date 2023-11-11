@@ -365,6 +365,8 @@ export class MarblesAppServer {
                 let retList = this.usernameList.addPage(qdata, pngBuffer, mng.bufferSize, captureDt)
                 if (retList.length == 0)
                     this.emptyListPages += 1
+                else
+                    this.emptyListPages = 0
                 console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}`)
                 
                 if (this.emptyListPages >= EMPTY_PAGE_COMPLETE && this.usernameList.length > 5) {

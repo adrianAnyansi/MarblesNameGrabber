@@ -77,6 +77,11 @@ const COLORSPACE_OBJ = {
 // Utility functions
 // ==========================================
 
+/**
+ * Helper function to hash arrays to strings for Set
+ * @param {*} arr 
+ * @returns 
+ */
 function hashArr(arr) {
     return `${arr?.[0]},${arr?.[1]},${arr?.[2]}`
 }
@@ -85,6 +90,13 @@ function toHex(rgba) {
     return (rgba[0] << 8*2) + (rgba[1] << 8*1) + rgba[2]
 }
 
+/**
+ * Returns a UintArray using a valid hexadecimal number
+ * Alpha is set to 255 by default. Extra digits after 0xFFFFFF are ignored
+ * @param {Uint8Array[3]} hexColor 
+ * @param {Number} alpha 
+ * @returns {Uint8Array[3]}
+ */
 function toRGBA (hexColor, alpha=0xFF) {
     const mask = 0xFF
     return new Uint8Array([(hexColor >> 8*2) & mask,
@@ -164,7 +176,6 @@ function calcMinColorDistance (colorList) {
 }
 
 // Define color space
-
 const colorSampling = {
     SUB_BLUE: [0x7b96dc, 0x6c97f5, 0x7495fa, 0x7495fa, 0x8789ec, 0x7294ec, 0x7298e6, 0x799aff, 0x7b95f7, 0x7897fa,
                 0x846ed9, 0x577ac9, 0x809ae7, 0x8e95d4, toHex([87, 164, 255]), toHex([158, 180, 251]), toHex([111, 128, 209]),
@@ -642,8 +653,8 @@ export class MarbleNameGrabberNode {
                         this.setPixel(x_start, y_start+check_px_off, toRGBA(VIP_PINK))
                 }
                 
-                
-                if (x_start > (this.bufferSize.w - USERNAME_RIGHT_MIN)) foundMatch = true // continue if not past 3 characters
+                // continue if not past 3 characters
+                if (x_start > (this.bufferSize.w - USERNAME_RIGHT_MIN)) foundMatch = true
 
                 // If no match on all check lines
                 if (!foundMatch)  failedMatchVertLines += 1
@@ -673,7 +684,6 @@ export class MarbleNameGrabberNode {
 
         let breathIterCount = 0
         const offsetCoord = [[0,1], [1,1], [1,0], [1,-1], [0,-1], [-1,-1], [-1,0], [-1,1]]
-        // const offsetCoord = [[0,1], [0,-1], [-1,-1], [-1,0], [-1,1]] // there is 100% unchecked expansion towards the right
         const [matchColor, matchRange] = colorKey
         const floodFillQueue = [] // [x,y,exp]
 
@@ -721,20 +731,18 @@ export class MarbleNameGrabberNode {
             const EXP_FALLOFF = 3
             const avgCh = parseInt( 0xFF - ((0xFF - chOffset)**EXP_FALLOFF) / 0xFF**(EXP_FALLOFF-1) ) // log fall-off
             const bw_rgba = [avgCh, avgCh, avgCh, 0xFF]
-            
-            // px_rgba = matchUserColor ? toRGBA(bw_rgba, MATCH_ALPHA) : toRGBA(bw_rgba, NO_MATCH_ALPHA)
-            // px_rgba = bw_rgba
 
             this.setBinPixel(cx, cy, bw_rgba) // set in binBuffer
             
-            px_rgba[3] = matchPxUNColorBool ? MATCH_ALPHA : NO_MATCH_ALPHA
             if (this.debug) {
-                if (matchPxUNColorBool)
-                    px_rgba = toRGBA(MAHOGANY, px_rgba[3])
-                else
-                    px_rgba = toRGBA(MAHOGANY_DARK, px_rgba[3])
+                px_rgba = toRGBA(matchPxUNColorBool ? MAHOGANY : MAHOGANY_DARK)
+                // if (matchPxUNColorBool)
+                //     px_rgba = toRGBA(MAHOGANY, px_rgba[3])
+                // else
+                //     px_rgba = toRGBA(MAHOGANY_DARK, px_rgba[3])
                     // brown* for flood-fill // TODO: Blend pixel instead?
             }
+            px_rgba[3] = matchPxUNColorBool ? MATCH_ALPHA : NO_MATCH_ALPHA
             this.setPixel(cx, cy, px_rgba)
 
             if ( coord[2] > 0 || matchPxUNColorBool ) {
@@ -753,7 +761,6 @@ export class MarbleNameGrabberNode {
 
         let breathIterCount = 0
         const offsetCoord = [[0,1], [1,1], [1,0], [1,-1], [0,-1], [-1,-1], [-1,0], [-1,1]]
-        // const [matchColor, matchRange] = colorKey
         const floodFillQueue = [] // [x,y,exp]
 
         floodFillQueue.push( ...offsetCoord.map( ([tx,ty]) => [x+tx, y+ty, -1]))
@@ -776,20 +783,17 @@ export class MarbleNameGrabberNode {
 
             breathIterCount += 1
 
-            
             this.setBinPixel(cx, cy, toRGBA(WHITE)) // remove pixel from binBuffer
             if (this.debug)
-                px_rgba = toRGBA(YELLOW, ANTI_MATCH_ALPHA)
-            else
-                px_rgba[3] = ANTI_MATCH_ALPHA
+                px_rgba = toRGBA(YELLOW)
+            
+            px_rgba[3] = ANTI_MATCH_ALPHA
             this.setPixel(cx, cy, px_rgba)
 
             floodFillQueue.push( ...offsetCoord.map( ([tx,ty]) => [cx+tx, cy+ty, -1]))
-
         }
 
         return breathIterCount
-
     }
 
     /**
@@ -845,20 +849,20 @@ export class MarbleNameGrabberNode {
         const minMatch = 0.9
         let matchCount = 0
         let totalCount = 0
-        let failSet = new Set()
-        const setStr = () => {
-            let str = ''
-            for (let px of failSet) str += `${px}, `
-            return str.trim()
-        }
+        // let failSet = new Set()
+        // const setStr = () => {
+        //     let str = ''
+        //     for (let px of failSet) str += `${px}, `
+        //     return str.trim()
+        // }
 
         for (const px_loc of START_NAME_LOCS) {
             const px_val = MarbleNameGrabberNode.getPixelStatic(px_loc[0], px_loc[1], data, info)
             totalCount += 1
             if (COLORSPACE_OBJ.WHITE.check(px_val)) 
                 matchCount += 1
-            else
-                failSet.add(`${px_val}`)
+            // else
+            //     failSet.add(`${px_val}`)
 
             if ((totalCount - matchCount) / START_NAME_LOCS.length > (1-minMatch)) {
                 // console.log(`FAILED: ${setStr()}`)
