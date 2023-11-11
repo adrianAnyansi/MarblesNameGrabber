@@ -308,7 +308,7 @@ export class Heap {
  * Rotates a 3D point using a rotation Matrix
  * @param {*} rotMatrix 
  * @param {*} pointMatrix 
- */
+ */ 
 export function rotPoint (rotMatrix, pointMatrix) {
 
     const resPoint = [0, 0, 0]

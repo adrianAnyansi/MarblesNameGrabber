@@ -481,6 +481,8 @@ export class MarblesAppServer {
         
         let mng = new MarbleNameGrabberNode(filename, true)
 
+        console.log(`WaitingForStart was ${await mng.checkWaitingForStartImg()}`)
+
         if (withLambda) {
             await mng.buildBuffer().catch( err => {console.error(`Buffer build errored! ${err}`); throw err})
             mng.orig_buffer = mng.buffer
@@ -490,7 +492,7 @@ export class MarblesAppServer {
             .then( ({data, info, jobId}) => {console.debug(`Lambda complete job-${jobId}`); return {mng: mng, data: data}})
             .catch( err => {console.error(`Lambda errored! ${err}`); throw err})
         }
-        
+        // ELSE
         await this.setupWorkerPool(1)
         
         return mng.buildBuffer()
@@ -603,6 +605,9 @@ export class MarblesAppServer {
             
             console.log("Retrieved Twitch Access Token")
             return this.twitch_access_token
+        })
+        .catch( err => {
+            console.error(`Something went wrong...? Can't setup Twitch token. ${err}`)
         })
     }
 

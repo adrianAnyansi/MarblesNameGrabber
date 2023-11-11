@@ -6,6 +6,8 @@ Removes canvas elements and uses sharp instead
 
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
+import { rotPoint } from './DataStructureModule.mjs'
+import fs from 'fs'
 
 const MEASURE_RECT = { x: 0, y:0, w: 1920, h: 1080} // All values were measured against 1080p video
 const NAME_RECT = {
@@ -14,6 +16,57 @@ const NAME_RECT = {
     w: (1504-957)/1920,
     h: (1080-154)/1080
 }
+
+export class ColorSpace {
+    /**
+     * 
+     * @param {Array[Number]} min 
+     * @param {Array[Number]} max 
+     * @param {Array[Number]} center 
+     * @param {Array[Number]} rot 
+     */
+    constructor(min, max, center, rot) {
+        this.min = min
+        this.max = max
+        this.center = center
+        this.rot = rot
+    }
+    
+    /**
+     * Helper function to import from json object
+     * @param {*} jsonObj 
+     */
+    static Import(jsonObj) {
+        let retObj = new ColorSpace(jsonObj.min, jsonObj.max, jsonObj.center, jsonObj.rot)
+        return retObj
+    }
+
+    /**
+     * Checks if sent point is within the colorSpace
+     * NOTE: alpha is discarded
+     * @param {*} point 
+     */
+    check (point) {
+        const t_point = [0,0,0]
+        for (const idx in t_point)
+            t_point[idx] = point[idx] - this.center[idx]
+
+        const r_point = rotPoint(this.rot, t_point)
+        
+        for (const idx in this.min) {
+            if (r_point[idx] < this.min[idx]) return false
+            if (r_point[idx] > this.max[idx]) return false
+        }
+        return true
+    }
+}
+
+// External programming things
+// TODO: Make this async if possible
+const START_NAME_LOCS = JSON.parse(fs.readFileSync("data/startpixels.json", 'utf8'))
+const COLORSPACE_JSON = JSON.parse(fs.readFileSync("data/colorspace.json", 'utf8'))
+
+const WHITE_COLORSPACE = ColorSpace.Import(COLORSPACE_JSON.WHITE)
 
 function hashArr(arr) {
     return `${arr?.[0]},${arr?.[1]},${arr?.[2]}`
@@ -728,10 +781,9 @@ export class MarbleNameGrabberNode {
 
     }
 
-    
-    // Identify
     /**
      * Returns true if matches the px of Marbles pre-race screen
+     * DEPRECATED; UI changed
      * @returns {Boolean}
      */
     async checkValidMarblesNamesImg() {
@@ -766,6 +818,44 @@ export class MarbleNameGrabberNode {
             return true
         }
         return false
+    }
+
+    /**
+     * Returns true if the white "Waiting for Start" is visible
+     */
+    async checkWaitingForStartImg() {
+
+        // get buffer of specific area
+        const {data, info} = await sharp(this.imageLike).raw().toBuffer( { resolveWithObject: true })
+
+        // const waitingForStartBox = this.normalizeRect(RECT.WAITING_FOR_RECT, info.width, info.height)
+
+        // Now check all pixels in range with that colorspace
+        const minMatch = 0.9
+        let matchCount = 0
+        let totalCount = 0
+        let failSet = new Set()
+        const setStr = () => {
+            let str = ''
+            for (let px of failSet) str += `${px}, `
+            return str.trim()
+        }
+
+        for (const px_loc of START_NAME_LOCS) {
+            const px_val = MarbleNameGrabberNode.getPixelStatic(px_loc[0], px_loc[1], data, info)
+            totalCount += 1
+            if (WHITE_COLORSPACE.check(px_val)) 
+                matchCount += 1
+            else
+                failSet.add(`${px_val}`)
+
+            if ((totalCount - matchCount) / START_NAME_LOCS.length > (1-minMatch)) {
+                console.log(`FAILED: ${setStr()}`)
+                return false
+            }
+        }
+        console.log(`FAILED: ${setStr()}`)
+        return true
     }
 
     /**

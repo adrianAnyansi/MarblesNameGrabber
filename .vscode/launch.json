@@ -5,9 +5,17 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "MinBoundingBox",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}\\data\\min3DBoundingBox.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
             "type": "node",
             "request": "launch",
-            "name": "Launch Program",
+            "name": "Launch Server",
             "skipFiles": [
                 "<node_internals>/**"
             ],
