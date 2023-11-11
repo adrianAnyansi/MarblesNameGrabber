@@ -19,11 +19,11 @@ const NAME_RECT = {
 
 export class ColorSpace {
     /**
-     * 
-     * @param {Array[Number]} min 
-     * @param {Array[Number]} max 
-     * @param {Array[Number]} center 
-     * @param {Array[Number]} rot 
+     * Create a new ColorSpace object
+     * @param {[Number]} min 
+     * @param {[Number]} max 
+     * @param {[Number]} center 
+     * @param {[Number]} rot 
      */
     constructor(min, max, center, rot) {
         this.min = min
@@ -47,9 +47,11 @@ export class ColorSpace {
      * @param {*} point 
      */
     check (point) {
-        const t_point = [0,0,0]
-        for (const idx in t_point)
-            t_point[idx] = point[idx] - this.center[idx]
+        const t_point = point.slice(0,3)
+
+        // const t_point = [0,0,0]
+        // for (const idx in t_point)
+        //     t_point[idx] = point[idx] - this.center[idx]
 
         const r_point = rotPoint(this.rot, t_point)
         
@@ -66,7 +68,14 @@ export class ColorSpace {
 const START_NAME_LOCS = JSON.parse(fs.readFileSync("data/startpixels.json", 'utf8'))
 const COLORSPACE_JSON = JSON.parse(fs.readFileSync("data/colorspace.json", 'utf8'))
 
-const WHITE_COLORSPACE = ColorSpace.Import(COLORSPACE_JSON.WHITE)
+const COLORSPACE_OBJ = {
+    WHITE: ColorSpace.Import(COLORSPACE_JSON.WHITE),
+    BLUE: ColorSpace.Import(COLORSPACE_JSON.BLUE)
+}
+
+// ==========================================
+// Utility functions
+// ==========================================
 
 function hashArr(arr) {
     return `${arr?.[0]},${arr?.[1]},${arr?.[2]}`
@@ -153,6 +162,8 @@ function calcMinColorDistance (colorList) {
 
     return [retRGBA, Math.max(...RGBA_LIST.map( c => redmean(retRGBA, c)))]
 }
+
+// Define color space
 
 const colorSampling = {
     SUB_BLUE: [0x7b96dc, 0x6c97f5, 0x7495fa, 0x7495fa, 0x8789ec, 0x7294ec, 0x7298e6, 0x799aff, 0x7b95f7, 0x7897fa,
@@ -844,17 +855,17 @@ export class MarbleNameGrabberNode {
         for (const px_loc of START_NAME_LOCS) {
             const px_val = MarbleNameGrabberNode.getPixelStatic(px_loc[0], px_loc[1], data, info)
             totalCount += 1
-            if (WHITE_COLORSPACE.check(px_val)) 
+            if (COLORSPACE_OBJ.WHITE.check(px_val)) 
                 matchCount += 1
             else
                 failSet.add(`${px_val}`)
 
             if ((totalCount - matchCount) / START_NAME_LOCS.length > (1-minMatch)) {
-                console.log(`FAILED: ${setStr()}`)
+                // console.log(`FAILED: ${setStr()}`)
                 return false
             }
         }
-        console.log(`FAILED: ${setStr()}`)
+        // console.log(`FAILED: ${setStr()}`)
         return true
     }
 

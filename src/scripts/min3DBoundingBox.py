@@ -1,8 +1,9 @@
 import numpy as np
 from scipy.spatial import ConvexHull
 from scipy.spatial.transform import Rotation
+import json
 
-demosBool = False
+demosBool = True
 
 def getDesmosPoints(vals):
     if type(vals[0]) != np.ndarray:
@@ -77,9 +78,33 @@ def approxMinBoundingBox(points):
 
     covariance_matrix /= (len(points))
     # covariance_matrix = np.cov(points, rowvar=0)
+    # cov_matr2 = np.cov(points, y=None, rowvar=0, bias=1)
 
-    eign_val, eign_vec = np.linalg.eig(covariance_matrix)
+    # eign_val, eign_vec = np.linalg.eig(covariance_matrix)
+    _, eign_vec = np.linalg.eigh(covariance_matrix)
     print(f"Eigen vectors: {getDesmosPoints(eign_vec)}")
+
+    # Transformation matrix format
+    def try_to_normalize(v):
+        n = np.linalg.norm(v)
+        if n < np.finfo(float).resolution:
+            raise ZeroDivisionError
+        return v / n
+
+    r = try_to_normalize(eign_vec[:, 0])
+    u = try_to_normalize(eign_vec[:, 1])
+    f = try_to_normalize(eign_vec[:, 2])
+
+    rot2 = np.array((r, u, f)).T
+    rot_points = np.asarray([rot2.dot(p) for p in points])
+    obb_min = np.min(rot_points, axis=0)
+    obb_max = np.max(rot_points, axis=0)
+
+    rot_center = rot2.dot(point_mean)
+    # print(f"Rot points: {getDesmosPoints([p-rot_center for p in rot_points])}")
+
+    return (obb_min, obb_max, point_mean, rot2)
+
 
     # Take one vector, translate to axis
     x_axis = [1, 0, 0]
@@ -108,7 +133,7 @@ def approxMinBoundingBox(points):
 
 
 # Read file
-filename = 'data/white_samples.txt'
+filename = 'data/blue_samples.txt'
 file_text_lines = open(filename).readlines()
 
 # Example usage:
@@ -134,18 +159,29 @@ if __name__ == "__main__":
         # (10,0,10), (5,0,5), (5,5,5), (10,5,10), (2,0,7)
     # ])
 
+    # print(f"Points: {getDesmosPoints(points)}")
+
     min_bbox = approxMinBoundingBox(points)
 
     # min_bbox = minimum_bounding_box(points)
     min_coords, max_coords, center, rotation = min_bbox
     print("Smallest Rotated Bounding Box Parameters:")
-    # print(f"Volume: {np.prod(max_coords - min_coords):.3f}")
+    print(f"Volume: {np.prod(max_coords - min_coords):.3f}")
+
     print("Minimum Coordinates:", getDesmosPoints(min_coords))
     print("Maximum Coordinates:", getDesmosPoints(max_coords))
     print("Center:", getDesmosPoints(center))
     print("Rotation Matrix:")
-    print(getDesmosPoints(rotation.as_matrix()))
-    # print(rotation.as_matrix())
+    print(getDesmosPoints(rotation))
+    # print(getDesmosPoints(rotation.as_matrix()))
+
+    obj = {
+        "min": list(min_coords),
+        "max": list(max_coords),
+        "center": list(center),
+        "rot": [list (m) for m in rotation]
+    }
+    print(f"JSON output: {json.dumps(obj)}")
 
 
 while (True):
@@ -156,9 +192,10 @@ while (True):
         print("Invalid input! Restart \n")
         continue
     
-    test_point = np.array(point_arr)
-    t_point = point_arr - center
-    vals = rotation.apply(t_point)
+    test_points = np.array(point_arr)
+    # t_point = point_arr - center
+    vals = rotation.dot(test_points)
+    # vals -= rotation.dot(center)
 
     for i in range(3):
         if (vals[i] >= min_coords[i]):

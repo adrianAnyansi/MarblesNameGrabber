@@ -307,7 +307,7 @@ export class MarblesAppServer {
         let mng = new MarbleNameGrabberNode(imageLike, false)
 
         if (this.serverStatus.state == SERVER_STATE_ENUM.WAITING) {
-            const validMarblesImgBool = await mng.checkValidMarblesNamesImg()
+            const validMarblesImgBool = await mng.checkWaitingForStartImg()
             if (validMarblesImgBool) {
                 console.log("Found Marbles Pre-Race header, starting read")
                 this.serverStatus.state = SERVER_STATE_ENUM.READING

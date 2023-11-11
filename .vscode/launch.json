@@ -5,22 +5,22 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "MinBoundingBox",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}\\data\\min3DBoundingBox.py",
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
             "type": "node",
             "request": "launch",
-            "name": "Launch Server",
+            "name": "Run Server",
             "skipFiles": [
                 "<node_internals>/**"
             ],
             "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}\\src\\ExpressRouter.mjs"
+        },
+        {
+            "name": "P:MinBoundingBox",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}\\src\\scripts\\min3DBoundingBox.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
         }
     ]
 }
