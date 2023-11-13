@@ -486,11 +486,13 @@ export class MarblesAppServer {
         console.log(`WaitingForStart was ${await mng.checkWaitingForStartImg()}`)
 
         if (withLambda) {
+            console.log("Using lambda debug")
+            await this.warmupLambda(1)
             await mng.buildBuffer().catch( err => {console.error(`Buffer build errored! ${err}`); throw err})
             mng.orig_buffer = mng.buffer
 
             return mng.dumpInternalBuffer()
-            .then( ({buffer, imgMetadata, info}) => this.sendImgToLambda(buffer, imgMetadata, info, 'test', true))
+            .then( ({buffer, imgMetadata, info}) => this.sendImgToLambda(buffer, imgMetadata, info, 'test', false))
             .then( ({data, info, jobId}) => {console.debug(`Lambda complete job-${jobId}`); return {mng: mng, data: data}})
             .catch( err => {console.error(`Lambda errored! ${err}`); throw err})
         }

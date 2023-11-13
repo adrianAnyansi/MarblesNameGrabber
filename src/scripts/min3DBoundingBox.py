@@ -77,7 +77,7 @@ def approxMinBoundingBox(points):
         covariance_matrix += np.outer(point_minus, point_minus)
 
     covariance_matrix /= (len(points))
-    # covariance_matrix = np.cov(points, rowvar=0)
+    covariance_matrix2 = np.cov(points, rowvar=0)
     # cov_matr2 = np.cov(points, y=None, rowvar=0, bias=1)
 
     # eign_val, eign_vec = np.linalg.eig(covariance_matrix)

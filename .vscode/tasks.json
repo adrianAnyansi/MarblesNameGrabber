@@ -11,6 +11,11 @@
 			"label": "Run Artillery Load Test [:4000]",
 			"type": "shell",
 			"command": "artillery run ./load_test_config.yml"
+		},
+		{
+			"label": "Build lambda deployment",
+			"type": "shell",
+			"command": "Compress-Archive -Path ./lambda/node_modules/, ./lambda/index.mjs, ./src/MarblesNameGrabberNode.mjs, ./src/DataStructureModule.mjs, ./data/ -DestinationPath MarblesNameLambdaDeploy.zip -Force"
 		}
 	]
 }
