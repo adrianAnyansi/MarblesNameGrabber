@@ -26,6 +26,7 @@ const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s'
                 // "https://www.twitch.tv/videos/1895894790?t=06h39m40s"
                 // "https://www.twitch.tv/videos/1914386426?t=1h6m3s"
                 // start/videos/1938079879?t=4h55m20s       // no chat box; 29/9
+                // /videos/2134416841?t=6h7m3s
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
 let defaultStreamURL = LIVE_URL
 // const streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']
@@ -56,6 +57,9 @@ const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
 const USE_LAMBDA = false
 const NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
 
+// TODO: Get value from streamlink config
+// Needs to handle both linux for prod and windows for dev
+const FFMPEG_LOC = String.raw`C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe` // NOTE: should work on all streamlink installations
 
 export class MarblesAppServer {
     
@@ -74,11 +78,12 @@ export class MarblesAppServer {
         this.debugTesseract = false;
         this.debugProcess = false;
         this.debugLambda = false;
-        this.debugVODDump = false;
+        this.debugVODDump = true; // TODO: Change
+        this.debugMonitor = false;
 
         // Processors & Commands
         this.streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']   // Streamlink shell cmd
-        this.ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=${ffmpegFPS}`, 'pipe:1']
+        this.ffmpegCmd = [FFMPEG_LOC, '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=${ffmpegFPS}`, 'pipe:1']
         this.streamlinkProcess = null   // Node process for streamlink
         this.ffmpegProcess = null       // Node process for ffmpeg
         this.pngChunkBufferArr = []     // Maintained PNG buffer over iterations
@@ -110,7 +115,8 @@ export class MarblesAppServer {
         this.imageProcessId = 0          // Current id for image
 
         // Start up the Twitch game monitor
-        this.setupTwitchMonitor()
+        if (this.debugMonitor)
+            this.setupTwitchMonitor()
     }
 
     // ---------------
@@ -242,8 +248,8 @@ export class MarblesAppServer {
 
         })
 
-        this.streamlinkProcess.on('error', () => {
-            console.warn("An unknown error occurred while writing Streamlink process.")
+        this.streamlinkProcess.on('error', (err) => {
+            console.warn("An unknown error occurred while writing Streamlink process." + err)
         })
         this.ffmpegProcess.on('error', () => {
             console.warn("An unknown error occurred while writing FFMpeg process.")
@@ -499,14 +505,26 @@ export class MarblesAppServer {
         // ELSE
         await this.setupWorkerPool(1)
         
+        let debugStart = performance.now();
+
         return mng.buildBuffer()
         .catch( err => {
             console.warn("Buffer was not created successfully, skipping")
             throw err
         })
-        .then(  () => mng.isolateUserNames() )
-        .then(  buffer => this.scheduleTextRecogn(buffer)    )
-        .then(  tsData => { return {mng: mng, data: tsData.data} })
+        .then(  () => {
+            console.log(`Built buffer in ${performance.now() - debugStart}ms`)
+            debugStart = performance.now();
+            return mng.isolateUserNames()
+        })
+        .then(  buffer => {
+            console.log(`Binarized in ${performance.now() - debugStart}ms`)
+            debugStart = performance.now();
+            return this.scheduleTextRecogn(buffer)})
+        .then(  tsData => { 
+            console.log(`Recognized in ${performance.now() - debugStart}ms`)
+            return {mng: mng, data: tsData.data} 
+        })
         .catch(
             err => {
                 console.error(`Debug: An unknown error occurred ${err}`)

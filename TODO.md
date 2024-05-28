@@ -1,39 +1,50 @@
 # TODO.md
 
-## todo today
+## THE BIG REFACTOR
+So the numbers are in. Rust is x10 times faster with a simple rotation matrix & cube collision. 
+On my desktop this runs in Node at ~36ms, but I can put a lot more calculation into the background extraction, blah blah blah.
 
-Move lambda code into main repo folder
-Update lambda deployment so I have something running today without worry
-Start sampling & testing with new overlap code. 
-Review colorCache code & formalize the check so I can switch things
+Again the main goal for Rust
+1. Improve performance & therefore no. of frames calculated
+2. Learn Rust in preparation for the League Minimap project
 
----
+However this is part of a bigger project to completely production ready this project since its much harder than I initially expected.
 
-## Goals
+However the current focus is getting things running, I anticipate this to take:
+2 weeks for Rust rewrite & testing (I'm familiar with the algorithm now, it's mostly getting Rust down and testing improvements + classes)
+1 week for S3 change
+1 week for Tesseract/streamlink separation (and building a Python/etc server)
 
-1. Get a narrow list of coordinates that corresponds to Waiting To Start
-2. Feed that into the program to do the check
-3. Move Lambda code into main repo now that I don't need a new repo build
+2 weeks for name/website improvements
+Assuming I work on this everyday.
 
-Optional
-5. Maybe consider writing a program for individual letter font recognition?
-    That can be used for other programs / clout?
+However first comes PixelHunter testing & using the same current algorithm for (whatever the time to mitigate? is), then I can start on this huge project- or maybe put it on hold while I get back to Project Hoard.
 
-    - 2nd, the pixel sampling and range should be improved, as with the transparent background change, false flags are being made.
-    Also these samples were made when the flood-fill was not made; flood-fill captures the text well, but its too broad.
+### Goals
+1. Rewrite the parser in Rust for performance & accuracy
+    1.a Read the !play position to check for existance
+        (use a secondary check for overlap)
+    1.b Check for the line at the end for bounds (maybe look at the tops if no overlap)
+    1.c Do improved colour match for the whole region
+    1.d By matching the playercount, its possible to identify when names start
+    1.e Create testing so accuracy can be done automatically
+2. Test if native tesseract (Windows/Linux?) is faster performance wise (naive shows 321ms vs 1273ms)
+3. Move recognition into S3, or send zip file (zip might not be possible cause of base64 limit, that's 2 phases of encoding+)?
+4. Separate the streamlink ingestor to prevent crashing when the server has issues
+5. Allow a temporal check now that S3 images contain previous images for overlap testing
+6. With higher framerate & performance, checking when names appear/disappear is possible
+7. Improve server feedback performance to the user
+    7.a Improve the logic for user pinging
+        (I can get the name search slightly faster by searching from name, doesnt matter much though)
+    7.b Admin page (also I can use S3 for images instead of my server)
+
+### Misc notes
+- Change output from streamlink from png, I know its loseless but the compression might cause more issues
+
+## todo TODAY
+
 
 ## todo later
-- Do the full page by image for the debug admin
-
-Website
-    Verify new_img logic
-    Verify Logic
-        Retrieve - Get request+id+name?
-            New_img / old_img
-            1. What is this username?
-                Input + Button (you must type input from nothing to prevent dummies)
-        Send back to server
-
 Server
     Logging improvement for response times
     Reduce memory stuff (memory)
@@ -51,19 +62,42 @@ Server stability
     // Don't think this is necessary due to the lambda removing a lot of the processing from the server
 
 
+
+# Notes
+## Computer text recogn
+No longer considering doing a individual letter recogn program...
+Not only is this very long and tiring; apparently OCRs are designed on computer fonts which was my main concern.
+
+I just can't give so much time to re-inventing something like this for a miniscule time improvement; it would need to be a least x4 improvement and even then, thats just to get more frames in the muncher. The time lost makes a menial change to the overall accuracy (but need to test that first)
+
+## Website
+Verify image logic isn't going to happen, also with the new tech it's going to be fairly accurate in the fact it can handle aliases.
+I just wish I had better text recogn to check when letters are covered by something
+
+The other thing is judging by how people use it, I doubt anyone will crowd source the capctha. 
+
+
 ## Bugs
 
-## Thoughts
-The list transition took significantly less time than expected. Writing some notes to talk about next steps.
 
-# General Server Notes
+# Long thoughts
+## General Server Notes
 Here I'm putting general improvements for the server & other notes.
 
-- Show marbles ingest date? (terrible for testing, would need to be manually updated) 
-- Manually updated status bar on marbles site? (Seems overkill, it's supposed to be a hands-off system)
+- Show marbles ingest date?
+    - link this to twitch monitor trigger
+    - needs just a manual link for updating (add timezone)
+- Manual status bar is out of scope, I don't intend to actively manage this website constantly
+    - However it will be good for outages, but on restarts it will reset so needs to be written to file
 - Stop status if connected during stop but no update? - (I can handle this traffic, just greatly reduce the update time?)
 
 # Username reading notes
+
+I don't want to throw out my notes but a lot has changed during this time; new tech, new theories etc.
+I'll prob write this AFTER I do Rust updates but a programmatic test will show how necessary this solutions are. This was initially written when I tested images 1-by-1, and because of obscuring & video compression there's no way EVERY frame can get 100% name accuracy.
+All that matters is 100% accuracy over every alias, every NEAR match and the WHOLE event.
+
+# OLD USERNAME NOTES
 
 Ok lets talk about what prevents the list from being 100% accurate. 
 1. Tesseract's inability to 100% determine the right characters, even when text is fairly* clear.
@@ -115,9 +149,9 @@ I think any other significant improvements would be to computationally intensive
 
 ---
 
-## Server setup notes
-// I installed a bunch of other things- but didn't save the other commands.
-// I added PM2, nginx and a few other things. Should probably save the bash history
+# Server setup notes
+I installed a bunch of other things- but didn't save the other commands.
+I added PM2, nginx and a few other things. Should probably save the bash history
 ---
     sudo apt update
     sudo apt install streamlink
@@ -128,66 +162,3 @@ I think any other significant improvements would be to computationally intensive
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
     source ~/.bashrc
     nvm install v18.17.1
-
-# MVP - Able to run on my local machine
-
-## Text binarization 
-0. Output each name boundary to an object; so another function can handle it
-1. Flood-fill, mark valid px with a:254; on edges mark as a:253, other is a:0
-2. create new buffer, copy px to gray scale while boosting values to black(max)
-    debug: write buffer to text
-    a. Add samples for mod, vip & streamer colors
-
-## Buffer to OCR pipeline
-3. Test tesseract with bin image
-    tweak: for better output
-4. Test tesseract with buffer
-5. Link img process to tesseract path
-6. Test run with vod output + timing
-
-## Run as server
-7. Build server components + memory database
-8. Create child process for streamlink
-9. Build routes
-10. Test server to run independently
-
-11. Start building webpage and UI
-12. Attach server to 
-
-
-
-# VOD  NOTES streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m35s" best
-
-39:42 Game loads, names immediately start populating, half way down the page (chat covers ~10 names)
-39:45 Name list is full [Quarktos] 
-39:48 Name begins to scroll [peepoJuice] (Quarktos is 17th)
-39:49 Stop
-39:50 Stop2 [SimkinPhd] (peepoJuice 6th)
-39:54 Stop [BigZacEnergy] (17th)
-39:55 Stop [dwarvendynamite] (6th)
-39:59 Stop [flex_mentalo] (17th)
-40:01 [JamesFnX] (6th)
-40:04 [deltahedget0] (17th)
-40:06 [Simbossa] (6th)
-40:09 [rumham11] (17th) (ok you get it)
-40:11 [jotabyte]
-40:15 [Piemanlowa]
-40:16 [The_Wollyhops]
-40:20 [osnap]
-40:22 [lawaccount1337]
-40:25 [Goontek]
-40:27 [alyssasketches]
-40:30 [zarahAP]
-40:32 [bagamuffin]
-40:35 [AtomicNumber79]
-40:37 [sung251]
-40:41 [lbs0219]
-40:43 [VinceAyne]
-40:46 [Alex_Made_An_Account]
-40:49 [Mr_GoonAndWatch]
-40:51 [syhren]
-40:53 [LenninG]
-40:55 [RonDongler]
-40:58 [Zw1ggy]
-(not continuing, this will take 2 more minutes)
-42:34 The last name is on screen.
