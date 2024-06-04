@@ -10,12 +10,6 @@ import { rotPoint } from './DataStructureModule.mjs'
 import fs from 'fs'
 
 const MEASURE_RECT = { x: 0, y:0, w: 1920, h: 1080} // All values were measured against 1080p video
-const NAME_RECT = {
-    x: 957/1920,
-    y: 152/1080,
-    w: (1504-957)/1920,
-    h: (1080-154)/1080
-}
 
 export class ColorSpace {
     /**
@@ -251,17 +245,105 @@ const USERNAME_BG_MULTI = 0.650
 const PX_DIFF = 10
 const PX_RANGE = 7
 
+/**
+ * @typedef RectObj
+ * @property {number} x
+ * @property {number} y
+ */
+
+/** Class for managing resolution & targetting */
+class PixelMeasure {
+    constructor(basisWidth, basisHeight) {
+        this.basisWidth = basisWidth;
+        this.basisHeight = basisHeight;
+        this.map = new Map();
+    }
+
+    /** measured at width */
+    static MEASURE_WIDTH = 1920;
+    /** measured at height */
+    static MEASURE_HEIGHT = 1080;
+
+    /** round integers to certain values */
+    static castToInt(val, round, floor, ceil) {
+        if (round)
+            return Math.round(val);
+        else if (floor)
+            return Math.floor(val);
+        else if (ceil)
+            return Math.ceil(val);
+        else
+            return val
+    }
+
+    /** Return x unit calculated  
+     * @param {number} x_pixels horizontal pixels
+     * @return {number}
+    */
+    getHorizUnits (x_pixels, round=false, floor=false, ceil=false) {
+        return PixelMeasure.castToInt(
+            x_pixels / PixelMeasure.MEASURE_WIDTH * this.basisWidth,
+        round, floor, ceil);
+    }
+    
+    /** Return y unit calculated  
+     * @param {number} y_pixels vertical pixels
+     * @return {number}
+    */
+    getVerticalUnits (y_pixel_coord, round=false, floor=false, ceil=false) {
+        return PixelMeasure.castToInt(
+            y_pixel_coord / PixelMeasure.MEASURE_HEIGHT * this.basisHeight,
+            round, floor, ceil);
+    }
+
+    getRect (x_px, y_px, width_px, height_px) {
+        return {
+            x: this.getHorizUnits(x_px),
+            w: this.getHorizUnits(width_px),
+            y: this.getVerticalUnits(y_px),
+            h: this.getVerticalUnits(height_px),
+        }
+    }
+
+    /**
+     * Return rectangle normalized from measured pixels
+     * @param {RectObj} rect 
+     * @return {RectObj}
+     */
+    normalizeRect(rect) {
+        return this.getRect(rect.x, rect.y, rect.w, rect.h);
+    }
+
+}
 
 // CLASS
 
 export class MarbleNameGrabberNode {
 
-    nameRect = {
-        x: 957/1920,
-        y: 152/1080,
-        w: (1504-957)/1920, // NOTE: Could increase padding here
-        h: (1070-152)/1080
+    // RES_BASIS = new PixelMeasure(1920, 1080); // TODO: Remove
+    /** @type {RectLike} rectangle for cropped usernames */
+    static nameCropRect = {
+        x: 1652-264,
+        y: 125,
+        w: 267,
+        h: 955,
     }
+    
+    /** Pixels to check right-to-left, giving up after X pixels without a match */
+    static USERNAME_MAX_LETTER_CHECK = 10;
+    /** Number of pixels minimum to check (around 3 letters) */
+    static USERNAME_MIN_CHECK = 40;
+    /** Username height in vertical pixels */
+    static USERNAME_HEIGHT = 40;
+
+    // Vertical Pixels from the top of the username box
+    static CHECK_LINES = [
+        3, 5, 7, 9, 11,12, 14, 15, 16, 20, 22, 24, 28, 30, 32
+    ]
+    /** Lines to ignore (check for non letter colours) to indicate end of line */ 
+    static ANTI_LINES = [
+        2, 37
+    ]
     
     DEBUG_NAME_RAW_FILE    = 'testing/name_crop.png'
     DEBUG_NAME_RECOGN_FILE = 'testing/name_match.png'
@@ -269,17 +351,24 @@ export class MarbleNameGrabberNode {
 
     constructor(imageLike=null, debug=false, imgOptions={}) {
         // Get references, etc
+        /** @type {ImageLike} image being read */
+        this.imageLike = imageLike
+        /** @type {Bounds} {w,h} for rect of original image */
+        this.imageSize = null
 
-        this.imageLike = imageLike // image being read
-        this.imageSize = null   // {w,h} for rect of original image
+        /** @type {Buffer} buffer used to write the orig buffer before edits because PROD makes little edits, only DEBUG makes a full-copy at isolateUserNames */
+        this.orig_buffer = null
+        /** @type {Buffer} buffer of raw pixel data */
+        this.buffer = null
+        /** @type {Buffer} binarized buffer of black text on a white background */
+        this.binBuffer = null
+        /** @type {Bounds} {w,h} for rect of the cropped image */
+        this.bufferSize = null
 
-        this.orig_buffer = null // buffer used to write the orig buffer before edits 
-                                // because PROD makes little edits, only DEBUG makes a full-copy at isolateUserNames
-        this.buffer = null      // buffer of raw pixel data
-        this.binBuffer = null   // binarized buffer of black text on a white background
-        this.bufferSize = null      // {w,h} for rect of the cropped image
+        /** basis to scale pixels to based on image metadata */
+        this.RES_BASIS = null
 
-        // debug will write intermediate to file for debugging
+        /** @type {Booelan} debug flag will write intermediate to file for debugging */
         this.debug = debug
 
     }
@@ -299,6 +388,7 @@ export class MarbleNameGrabberNode {
         if (!this.debug) this.orig_buffer = this.buffer
         this.binBuffer = Buffer.alloc(info.size, new Uint8Array(toRGBA(WHITE)))
 
+        // Resolve an arbitary promise
         return Promise.resolve()
     }
 
@@ -307,21 +397,25 @@ export class MarbleNameGrabberNode {
 
         if (this.buffer) return this.buffer
         
-        let sharpImg = sharp(this.imageLike)
+        const sharpImg = sharp(this.imageLike)
         this.buffer = null // delete previous buffer
         this.bufferSize = null
         this.imageSize = null
 
         return sharpImg.metadata()
+            // build  when metadata is retrieved
             .then( imgMetadata => {
                 // console.debug("Got metadata")
                 this.imageSize = {w: imgMetadata.width, h: imgMetadata.height}
-                let normNameRect = this.normalizeRect(this.nameRect, imgMetadata.width, imgMetadata.height)
+                this.RES_BASIS = new PixelMeasure(imgMetadata.width, imgMetadata.height);
+                // const normNameRect = this.normalizeRect(this.nameRect, imgMetadata.width, imgMetadata.height)
+                const normNameRect = this.RES_BASIS.normalizeRect(MarbleNameGrabberNode.nameCropRect);
                 let sharpImgCrop = sharpImg.extract({left: normNameRect.x, top: normNameRect.y,
                         width: normNameRect.w, height: normNameRect.h })
                 
                 return sharpImgCrop.raw().toBuffer({ resolveWithObject: true })
             })
+            // Build cropped buffer
             .then( ({data, info}) => {
                 if (data) {
                     this.bufferSize = {w: info.width, h:info.height, channels: info.channels, premultiplied: info.premultiplied, size: info.size }
@@ -460,39 +554,6 @@ export class MarbleNameGrabberNode {
         Ignore anything that matches BLACK or user colors
     */
 
-    // percent of 1080p height
-    USERNAME_BOX_HEIGHT_PCT  = ((185+1) - 152) / MEASURE_RECT.h;
-    CHECK_LINES_PCT = [
-        (160 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (161 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (162 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (163 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (166 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (170 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (173 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (176 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (177 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (178 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (179 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (182 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-    ]
-    ANTI_LINES_PCT = [
-        // (153 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        (156 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        // (185 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-
-        (187 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        
-        // (152 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        // (153 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        // (182 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        // (183 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-        // (184 - this.nameRect.y * MEASURE_RECT.h) / MEASURE_RECT.h,
-    ]
-    USERNAME_LEFT_PADDING_PCT = 10 / MEASURE_RECT.w // Left padding in pixels @ 1920
-    // Left padding has a minimum of 10 due to the kerning of "11"
-    USERNAME_RIGHT_MIN_PCT = 40 / MEASURE_RECT.w // Approx 3 alphanum chars @ 1920
-
     async isolateUserNames () {
         // First, ensure buffer exists
         await this.buildBuffer()
@@ -503,107 +564,73 @@ export class MarbleNameGrabberNode {
                 this.buffer.copy(this.orig_buffer)
             }
             this.bufferToFile(this.DEBUG_NAME_RAW_FILE, this.orig_buffer, false)
-            
-            // await this.bufferToFile(this.DEBUG_NAME_RAW_FILE, this.buffer, false)
         }
 
         // Setup variables for buffer iteration
 
+        /** @type {number} y_coord */
         let y_start = 0;
         
-        const USERNAME_LEFT_PADDING = parseInt(this.USERNAME_LEFT_PADDING_PCT * this.imageSize.w)   // Max amount of pixels until giving up searching for a username
-        const USERNAME_RIGHT_MIN = parseInt(this.USERNAME_RIGHT_MIN_PCT * this.imageSize.w)         // Amount to check for valid username colors
-        const USERNAME_BOX_HEIGHT = parseInt(this.USERNAME_BOX_HEIGHT_PCT * this.imageSize.h)       // max height of the username
-        
+        /** Pixels to check right-to-left, giving up after X pixels without a match */
+        const USERNAME_LEFT_PADDING = this.RES_BASIS.getHorizUnits(
+            MarbleNameGrabberNode.USERNAME_MAX_LETTER_CHECK)
+        /** Number of pixels minimum to check (around 3 letters) */
+        const USERNAME_RIGHT_MIN = this.RES_BASIS.getHorizUnits(
+            MarbleNameGrabberNode.USERNAME_MIN_CHECK)
+        /** Username height in converted pixels */
+        const USERNAME_BOX_HEIGHT = this.RES_BASIS.getVerticalUnits(
+            MarbleNameGrabberNode.USERNAME_HEIGHT)
+
         // Normalize y_offsets into pixel lengths
-        const CHECK_LINE_OFF = this.CHECK_LINES_PCT.map( check_offset => parseInt(check_offset * this.imageSize.h))
-        const ANTI_LINE_OFF = this.ANTI_LINES_PCT.map( check_offset => parseInt(check_offset * this.imageSize.h))
+        const CHECK_LINE_OFF = MarbleNameGrabberNode.CHECK_LINES.map( 
+            check_offset => this.RES_BASIS.getVerticalUnits(check_offset))
+        const ANTI_LINE_OFF = MarbleNameGrabberNode.ANTI_LINES.map( 
+            check_offset => this.RES_BASIS.getVerticalUnits(check_offset))
 
-        // const USERNAME_COLOR_ARR = Array.from(this.USERNAME_COLORS, color => toRGBA(color))
         const USERNAME_COLOR_RANGE_ARR = Object.values(userColors)
-        // const COLOR_DIFF = 60; // max
-
-        // this.setPixel(0,0, toRGBA(this.STREAMER_RED))
-        // let rgba_test = this.getPixel(0,0)
-        // y_start = Infinity
-
-        let depthInit = 0       // Flood-fill debug stats
+        
+        /** @type {number} flood-fill depth stat */
+        let depthInit = 0
+        /** @type {number} flood fill stat */
         let floodFillUse = 0
 
         // Begin iterating through the buffer
-        while ( (y_start+USERNAME_BOX_HEIGHT) <= this.bufferSize.h ) {     // Per vertical line
+        // ------------------------------------------------------------------------------------
+
+        while ( y_start <= this.bufferSize.h ) {     // Per vertical line
+            /** x_coord, starts from right edge */
             let x_start = this.bufferSize.w-1;
+            /** @type {number} number of full vertical pixel lines that have not matched  */
             let failedMatchVertLines = 0;
+            /** @type {color} first matched color in range */
             let firstColorRangeMatch = null
 
-        //     // Perform username length testing
-        //     const peaksX = [] // Peaks that fit the method
-        //     const compPx = (high_ch, low_ch) => {
-        //         let ch1A = high_ch * USERNAME_BG_MULTI
-        //         return (low_ch > ch1A-PX_DIFF && low_ch < ch1A+PX_DIFF)
-        //     }
-        //     const compPxs = (high_px, low_px) => {
-        //         for (let i in [0,1,2])
-        //             if (!compPx(high_px[i], low_px[i])) return false
-        //         return true
-        //     }
-        //     // Move R->L checking pixel values for the peak
-        //     // NOTE: Take closest if peaksX is empty
-        //     // let edgeCheck_y = 0
-        //     // while (edgeCheck_y < USERNAME_BOX_HEIGHT) {
-        //     for (let edgeCheck_y of ANTI_LINE_OFF) {
-        //         const px_vals = [] // list of px_vals being compared
-        //         let m_x = this.bufferSize.w-1
-        //         while (m_x >= 0) {
-        //             px_vals.unshift(this.getPixel(m_x, y_start+edgeCheck_y))
-        //             if (px_vals.length >= PX_RANGE) {
-        //                 if (compPxs(px_vals.at(0), px_vals.at(-1))) {
-        //                     console.warn(`Found X:${m_x} @ Y:${y_start} `)
-        //                     peaksX.push(Math.round(m_x-px_vals.length/2))
-        //                     this.setPixel(Math.round(m_x+PX_RANGE/2), y_start+edgeCheck_y, toRGBA(RED))
-        //                     // let y_search = 0
-        //                     // while (y_search < USERNAME_BOX_HEIGHT) { // Move down while checking for status
-        //                     //     let rg_px = this.getPixel(m_x+PX_RANGE-1, y_start+y_search)
-        //                     //     let lt_px = this.getPixel(m_x, y_start+y_search)
-        //                     //     if (compPxs(lt_px, rg_px))
-        //                     //         this.setPixel(Math.round(m_x+PX_RANGE/2), y_start+y_search, toRGBA(RED))
-        //                     //     y_search++
-        //                     // }
-        //                     // px_vals.pop()
-        //                 }
-        //                 px_vals.pop()
-        //             }
-        //             m_x -= 1
-        //         }
-        //         edgeCheck_y += 1
-        //     }
-            
-        //     x_start = -1 // Disable username searching
-
             while (x_start >= 0) {   // RIGHT->LEFT search
+                /** @type {Boolean} color match found on this line */
                 let foundMatch = false;
 
                 // verify anti-line, matches here stop iteration
-                for (const check_px_off of ANTI_LINE_OFF) {
-                    if (y_start+check_px_off >= this.bufferSize.h) continue
-                    let px_rgba = this.getPixel(x_start, y_start+check_px_off)
-                    if (this.debug) this.setPixel(x_start, y_start+check_px_off, toRGBA(YELLOW))
+                for (const anti_line_off of ANTI_LINE_OFF) {
+                    if (y_start+anti_line_off >= this.bufferSize.h) break // out of buffer
+
+                    const px_rgba = this.getPixel(x_start, y_start+anti_line_off)
+                    if (this.debug) this.setPixel(x_start, y_start+anti_line_off, toRGBA(YELLOW))
 
                     if (px_rgba[3] < 0xFF) continue // this has been visited, and due to anti-flood-fill I can ignore this
                     if ( USERNAME_COLOR_RANGE_ARR.some( ([color, range])  => redmean(color, px_rgba) < range) ) {
-                        // do not continue iterating
                         failedMatchVertLines = Infinity
-                        if (this.debug) this.setPixel(x_start, y_start+check_px_off, toRGBA(ORANGE))
-                        break
+                        if (this.debug) this.setPixel(x_start, y_start+anti_line_off, toRGBA(ORANGE))
+                        break // do not continue iterating
                     }
                 }
 
-                // check pixel on each y_band
+                // check pixel on each vertical pixel
                 for (const check_px_off of CHECK_LINE_OFF) {
+                    if (y_start+check_px_off >= this.bufferSize.h) break // out of buffer
                     
                     if (failedMatchVertLines == Infinity) break // break-flag due to anti-line
 
-                    let px_rgba = this.getPixel(x_start, y_start+check_px_off)
+                    const px_rgba = this.getPixel(x_start, y_start+check_px_off)
 
                     if (px_rgba[3] < 0xFF) { // previously visited
                         if (px_rgba[3] == MATCH_ALPHA) {
@@ -619,19 +646,22 @@ export class MarbleNameGrabberNode {
                     // let colorRange = cacheCheck?.[0] ?? USERNAME_COLOR_RANGE_ARR.find( ([color, range])  => redmean(color, px_rgba) < range )
                     // const colorCacheMap = cacheCheck?.[1] ?? null
 
+                    /** matched color (if any) */
                     const colorRange = USERNAME_COLOR_RANGE_ARR.find( (colorRange)  => {
-                        let [color, range] = colorRange
+                        const [color, range] = colorRange
                         const cacheMap = cacheColorMatch.get(colorRange)
                         if (!cacheMap.has(hashArr(px_rgba)) )
                             cacheMap.set(hashArr(px_rgba), redmean(color, px_rgba))
                         
-                        let cacheRedMean = cacheMap.get(hashArr(px_rgba))
+                        const cacheRedMean = cacheMap.get(hashArr(px_rgba))
                         return cacheRedMean < range 
                     })
 
                     if ( colorRange != undefined) {
-
-                        if (x_start > (this.bufferSize.w - USERNAME_RIGHT_MIN) && firstColorRangeMatch && colorRange != firstColorRangeMatch) {  // color switched while iterating the line
+                        // color switched while iterating the line
+                        if (x_start > (this.bufferSize.w - USERNAME_RIGHT_MIN) 
+                            && firstColorRangeMatch 
+                            && colorRange != firstColorRangeMatch) {  
                             // console.warn(`Color match redone at ${y_start+check_px_off}`)
                             if (this.debug) this.setPixel(x_start, y_start+check_px_off, toRGBA(MOD_GREEN))
                             continue

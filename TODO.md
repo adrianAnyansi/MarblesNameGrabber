@@ -41,8 +41,18 @@ However first comes PixelHunter testing & using the same current algorithm for (
 ### Misc notes
 - Change output from streamlink from png, I know its loseless but the compression might cause more issues
 
-## todo TODAY
 
+## We're mitigating
+(Need a better title for this)
+
+What is needed to get marbles site running?
+Fixing the names box
+Fixing the colors (if those have changed)
+Fixing start recognition
+
+## todo TODAY
+start recognition is easy,
+putting that in debug for testing
 
 ## todo later
 Server
