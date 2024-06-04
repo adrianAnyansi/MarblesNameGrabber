@@ -12,6 +12,7 @@ import { createWorker, createScheduler } from 'tesseract.js'
 import { humanReadableTimeDiff } from './DataStructureModule.mjs'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
 // import { setInterval } from 'node:timers'
+import { setTimeout } from 'node:timers/promises'
 
 // server state
 const SERVER_STATE_ENUM = {
@@ -31,7 +32,7 @@ const LIVE_URL = 'https://www.twitch.tv/barbarousking'
 let defaultStreamURL = LIVE_URL
 // const streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']
 
-let ffmpegFPS = '2'
+let ffmpegFPS = '3'
 // const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=fps=${ffmpegFPS}`, 'pipe:1']
 
 const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
@@ -78,8 +79,8 @@ export class MarblesAppServer {
         this.debugTesseract = false;
         this.debugProcess = false;
         this.debugLambda = false;
-        this.debugVODDump = true; // TODO: Change
-        this.debugMonitor = false;
+        this.debugVODDump = false;
+        this.enableMonitor = false;
 
         // Processors & Commands
         this.streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']   // Streamlink shell cmd
@@ -115,7 +116,7 @@ export class MarblesAppServer {
         this.imageProcessId = 0          // Current id for image
 
         // Start up the Twitch game monitor
-        if (this.debugMonitor)
+        if (this.enableMonitor)
             this.setupTwitchMonitor()
     }
 
@@ -295,7 +296,6 @@ export class MarblesAppServer {
      * @returns 
      */
     async parseImgFile(imageLike) {
-
         if (this.serverStatus.state == SERVER_STATE_ENUM.COMPLETE) {
             console.debug(`In COMPLETE/STOP state, ignoring.`)
             return
@@ -304,10 +304,14 @@ export class MarblesAppServer {
         this.serverStatus.imgs_downloaded += 1
 
         if (this.debugVODDump) {
+            console.debug(`Stream is dumped to location ${VOD_DUMP_LOC}`)
+            fs.mkdir(`${VOD_DUMP_LOC}`, {recursive: true})
             fs.writeFile(`${VOD_DUMP_LOC}${this.serverStatus.imgs_downloaded}.png`, imageLike)
             return
         }
 
+        // TODO: Log when image enters this function and when it exits
+        // Therefore keeping track of the delay from live
         let captureDt = Date.now()
         
         let mng = new MarbleNameGrabberNode(imageLike, false)
@@ -343,16 +347,14 @@ export class MarblesAppServer {
             tesseractPromise = mng.isolateUserNames()
             .then( buffer =>  this.scheduleTextRecogn(buffer) )
         } else {
-            // const {buffer, imgMetadata, info} = await mng.dumpInternalBuffer()
             tesseractPromise = mng.dumpInternalBuffer()
             .then ( ({buffer, imgMetadata, info}) => 
                 this.sendImgToLambda(buffer, imgMetadata, info, `lid:${this.serverStatus.imgs_downloaded}`, false)
             )
             this.lambdaQueue += 1
-            // tesseractPromise = this.sendImgToLambda(buffer, imgMetadata, info, `lid:${this.serverStatus.imgs_downloaded}`, false)
         }
         
-        tesseractPromise.then( ({data, info}) => {      // add result to nameBuffer
+        return tesseractPromise.then( ({data, info}) => {      // add result to nameBuffer
             
             if (this.uselambda)
                 this.lambdaQueue -= 1
@@ -376,15 +378,16 @@ export class MarblesAppServer {
                 console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}`)
                 
                 if (this.emptyListPages >= EMPTY_PAGE_COMPLETE && this.usernameList.length > 5) {
-                    console.log(`${this.emptyListPages} empty frames; dumping queue & moving to COMPLETE state.`)
+                    console.log(`${this.emptyListPages} empty frames @ ${funcImgId}; 
+                        dumping queue ${this.imageProcessQueue} & moving to COMPLETE state.`)
                     this.serverStatus.state = SERVER_STATE_ENUM.COMPLETE
                     this.spinDown()
                     return
                 }
             }
         }).catch ( err => {
-            console.warn(`Error occurred during imageParse ${err}, execution exited`)
-            // Since this is continous, this info is discarded
+            console.warn(`Error occurred during imageParse ${err};${err.stack}, execution exited`)
+            // Since this is continous, this info/image is discarded
         })
     }
 
@@ -501,6 +504,7 @@ export class MarblesAppServer {
             .then( ({buffer, imgMetadata, info}) => this.sendImgToLambda(buffer, imgMetadata, info, 'test', false))
             .then( ({data, info, jobId}) => {console.debug(`Lambda complete job-${jobId}`); return {mng: mng, data: data}})
             .catch( err => {console.error(`Lambda errored! ${err}`); throw err})
+            // NOTE: This doesn't return early
         }
         // ELSE
         await this.setupWorkerPool(1)
@@ -685,8 +689,13 @@ export class MarblesAppServer {
      * Setup worker pool
      * @param {String} channel
      */
-    start (channel) {
+    start (channel, vodDumpFlag=false) {
         let retText = 'Already started'
+
+        if (vodDumpFlag) {
+            console.log(`Setting vodDump to ${vodDumpFlag}`)
+            this.debugVODDump = vodDumpFlag
+        }
 
         if (this.streamlinkProcess == null) {
             this.usernameList.clear()
@@ -717,6 +726,8 @@ export class MarblesAppServer {
             resp_text = "Stopped image parser"
             this.serverStatus.state = SERVER_STATE_ENUM.STOPPED
         }
+
+        this.debugVODDump = false;
 
         return {"state": this.serverStatus.state, "text": resp_text}
     }
@@ -773,6 +784,7 @@ export class MarblesAppServer {
             return {'userObj': userObj, 'match': 1 }
         } else {
             // return best matches [levenDist, userObj]
+            // TODO: Weigh based on input name length (long names are lenient, short vice versa)
             let users = this.usernameList.find(reqUsername, 7, false)
             
             let levDist = users.at(0) ? users.at(0)[0] : Infinity
@@ -801,7 +813,8 @@ export class MarblesAppServer {
         return Object.fromEntries(this.usernameList.hash)
     }
 
-    debug (filename, withLambda) {
+    debug (filename, withLambda, waitTest=false, raceTest=false) {
+        // TODO: Add waitTest & raceTest separately as params
 
         return this.debugRun(filename, withLambda)
         .then( async ({mng, data}) => {
@@ -811,6 +824,91 @@ export class MarblesAppServer {
         })
         
         // ELSE RAISE ERROR
+    }
+
+    async runTest (folderName, withLambda) {
+        // let namesFile = null
+        // get all image files in order for vod_folder
+        const fileList = await fs.readdir(folderName);
+        // gotta windows* sort
+        fileList.sort( (fileA, fileB) => {
+            return parseInt(fileA.split('.')[0], 10) - parseInt(fileB.split('.')[0], 10)})
+        // NaN files are ignored
+
+        let nameFileContents = null
+        if (fileList == null) 
+            throw new Error("Invalid folder, contents are empty/DNE")
+
+        console.log(`Running test! ${folderName}`)
+        const st = performance.now();
+        await this.setupWorkerPool(NUM_LIVE_WORKERS*2)
+
+        const promiseList = []
+        let ignoreFrames = 60;
+
+        for (const fileName of fileList) {
+            if (fileName.endsWith('txt')) {
+                nameFileContents = fs.readFile(path.resolve(folderName, fileName),  { encoding: 'utf8' })
+                continue
+            }
+            if (ignoreFrames-- > 0) continue;
+            // if (ignoreFrames < -50) continue;
+            // send each image file to parse
+            const file = await fs.readFile(path.resolve(folderName, fileName))
+            promiseList.push(this.parseImgFile(file)) // filename works but I want to read
+            console.debug(`Parsing image file ${fileName}`)
+            await setTimeout(50); // forcing sleep so my computer doesn't explode
+            // break;
+        }
+
+        // TODO: Need to check for bad joins
+
+        // Once complete, go through the names list and check against server accuracy
+        Promise.all(promiseList)
+        .then(async () => {
+            const ed = performance.now();
+            if (!nameFileContents) return;
+            const nameList = await nameFileContents.then(content => content.split('\r\n'))
+            console.debug(`Namelist: ${nameList.length}`)
+
+            let totalScore = 0;
+            const scoreArr = [];
+            const notFound = [];
+            let nameListIdx = 0;
+            for (const name of nameList) {
+                let list = this.find(name);
+                let bestDistScore = list[0][0]
+                scoreArr.push(bestDistScore);
+                totalScore += bestDistScore;
+                if (bestDistScore > 7) {
+                    notFound.push(`[${nameListIdx}]${name}`)
+                }
+                nameListIdx++;
+            }
+
+            scoreArr.sort();
+            const median = scoreArr[parseInt(scoreArr.length/2)];
+            
+            const map = new Map()
+            let nonPerfectAvg = 0;
+            let nonPerfectCount = 0;
+            for (const score of scoreArr) {
+                map.set(score, map.get(score)+1 ?? 0);
+                if (score > 1) {
+                    nonPerfectCount++;
+                    nonPerfectAvg += score
+                }
+            }
+
+            console.debug(`All scores: ${Array.from(map.entries()).map(([key, val]) => `${[key]}=${val}`).join('\n')} `)
+            console.debug(`Final score: ${totalScore}, mean: ${totalScore/nameList.length}`)
+            console.debug(`median: ${median}, avg-non-perfect ${nonPerfectAvg/nonPerfectCount}`)
+            console.debug(`Not found list [${notFound.length}]: \n${notFound.join(', ')}`)
+            console.debug(`Completed test in ${((ed-st)/(60*1000)).toFixed(3)}m`)
+        })
+        
+
+        return {test:"mission complete!"}
     }
 }
 

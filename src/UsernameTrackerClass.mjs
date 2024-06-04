@@ -290,7 +290,7 @@ export class UsernameTracker {
             startIndex -= (this.lastPage.at(-1).division+1 - linkAnswer)
         } else { // Add pages together
             let result_text = (this.lastPage.length > 0) ? `${this.lastPage.map( line => line.username)}` : `{empty list}`
-            console.warn(`No page match for ${pageData.map( line => line.username)} amongst ${result_text}`)
+            console.warn(`No page match for CURR:${pageData.map( line => line.username)} AMONGST LAST:${result_text}`)
         }
 
         // Add users to list & Get image promises (including skipped divisions)

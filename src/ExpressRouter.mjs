@@ -48,7 +48,8 @@ server.post(['/start', '/start/*'], (req, res) => {
     if (req.originalUrl != '/start')
         streamName = req.originalUrl.replace('/start/', '')
     
-    res.json(app_server.start(streamName))
+    let vodDumpFlag = req.query?.vodDump ? true : false;
+    res.json(app_server.start(streamName, vodDumpFlag))
 
 })
 
@@ -144,6 +145,19 @@ server.post('/debug', async (req, res) => {
     }
 })
 
+server.post('/test', async (req, res) => {
+
+    let folderName = req.query?.folder
+    let withLambda = (req.query?.withlambda) ? true : false
+
+    try {
+        let json_resp = await app_server.runTest(folderName, withLambda)
+        res.send(json_resp)
+    } catch (err) {
+        res.status(400).send(`An unknown error occured. ${err}`)
+    }
+})
+
 
 server.listen(PORT, (socket) => {
     let server_env = (env == 'development') ? 'DEV' : 'PROD'
@@ -152,5 +166,7 @@ server.listen(PORT, (socket) => {
     if (env != 'development') {
         app_server.use_lambda = true
         console.log("[PROD] server, default to lambda functions")
+        app_server.enableMonitor = true
+        console.log("[PROD] server, default to twitch monitor on")
     }
 })
