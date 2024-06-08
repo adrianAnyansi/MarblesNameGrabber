@@ -341,7 +341,8 @@ export class MarblesAppServer {
         
         // Perform tesseract 
         let tesseractPromise = null
-        let pngBuffer = mng.bufferToPNG(mng.buffer, true, false)
+        /** scaled color buffer from original */
+        const OCRColorNameBuffer = mng.bufferToPNG(mng.buffer, true, false)
 
         if (!this.uselambda) {
             tesseractPromise = mng.isolateUserNames()
@@ -366,11 +367,13 @@ export class MarblesAppServer {
 
             while (this.imageProcessQueue.at(0)) {  // While next image exists
                 let [qdata, qmng] = this.imageProcessQueue.shift()
+                if (this.serverStatus.state == SERVER_STATE_ENUM.COMPLETE) {
+                    console.warn(`Dumping image ${funcImgId}`)
+                    break
+                }
                 this.imageProcessQueueLoc++
 
-                // qmng.bufferToPNG()
-                // let retList = await this.usernameList.addPage(qdata, qmng.bufferToPNG(qmng.buffer, true, false))
-                let retList = this.usernameList.addPage(qdata, pngBuffer, mng.bufferSize, captureDt)
+                let retList = this.usernameList.addPage(qdata, OCRColorNameBuffer, mng.bufferSize, captureDt)
                 if (retList.length == 0)
                     this.emptyListPages += 1
                 else
@@ -531,7 +534,7 @@ export class MarblesAppServer {
         })
         .catch(
             err => {
-                console.error(`Debug: An unknown error occurred ${err}`)
+                console.error(`Debug: An unknown error occurred ${err}.${err.stack}`)
                 throw err
             }
         )
@@ -908,7 +911,7 @@ export class MarblesAppServer {
         })
         
 
-        return {test:"mission complete!"}
+        return {test:"testing ongoing!"}
     }
 }
 

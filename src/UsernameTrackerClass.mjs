@@ -6,6 +6,8 @@
 
 import sharp from "sharp"
 import { LimitedList } from "./DataStructureModule.mjs"
+import { PixelMeasure } from "./UtilModule.js"
+import { MarbleNameGrabberNode } from "./MarblesNameGrabberNode.mjs"
 
 class Username {
     /**
@@ -44,7 +46,7 @@ class UserImage {
     }
 }
 
-
+// TODO: Maybe put this in class
 const DEFINED_ADJC_SETS = [
     ['o', 'O', '0', 'n'],               // o & rounded set
     ['i', 't', 'r', 'n'],               // r set (flick on r is hard to capture)
@@ -190,11 +192,11 @@ export class UsernameTracker {
      * Add a page of usernames (including scrubbing to check which line is which)
      * While this function is async, it's not expected to be run as such.
      * @param {Object} tesseractData // contains .lines & .bbox of tesseract info
-     * @param {sharp} sharpOCRImg  Sharp imagelike of cropped Tesseract image
-     * @param {Object} img_size    Image_size to bypass metadata issues
+     * @param {sharp} sharpOCRImg  Sharp imagelike, Cropped Username image BUT scaled to OCR size
+     * @param {import("./UtilModule").RectObj} orig_img_size Image_size of the original cropped image to bypass metadata issues
      * @returns {Array[String]} retList
      */
-    addPage (tesseractData, sharpOCRImg, img_size, capture_dt) {
+    addPage (tesseractData, sharpOCRImg, orig_img_size, capture_dt) {
         const retList = []  // List of names to return for state info
         
         const heightPadding = 10; // TODO: Turn into pct
@@ -206,19 +208,39 @@ export class UsernameTracker {
             return retList
         }
 
-        const trueImgHeight = Math.floor(this.OCR_SCALE_RATIO * img_size.h); // sharp.scale is not reflected in this buffer.
-        const trueImgWidth = Math.floor(this.OCR_SCALE_RATIO * img_size.w); // sharp.scale is not reflected in this buffer.
-        const pageData = []         // pageData #. {user:string, idx:int}
-        const pageParsedInfo = []   // Current page username objects
+        // TODO: Use current image width/height to get the orignal basis
+        // const RES_BASIS = new PixelMeasure(1920, 1080); 
+        const OCR_SCALE_RATIO = MarbleNameGrabberNode.OCR_WIDTH / MarbleNameGrabberNode.NAME_CROP_RECT.w;
+        /** This will be the trueUsernameHeight thanks to res_basis */
+        const OCR_RES_BASIS = new PixelMeasure(
+            PixelMeasure.MEASURE_WIDTH * OCR_SCALE_RATIO, 
+            PixelMeasure.MEASURE_HEIGHT * OCR_SCALE_RATIO
+        );
+        const USERNAME_OCR_BOX_HEIGHT = OCR_RES_BASIS.getVerticalUnits(
+            MarbleNameGrabberNode.USERNAME_HEIGHT, {floor:true});
+        const OCR_IMG_HEIGHT = OCR_RES_BASIS.getVerticalUnits(orig_img_size.h, {floor:true});
+        const OCR_IMG_WIDTH = OCR_RES_BASIS.getHorizUnits(orig_img_size.w, {floor:true})
 
-        // 27 lines per image is expected
+        /** height of the OCR binarized buffer */
+        const ocrImgHeight = Math.floor(OCR_SCALE_RATIO * orig_img_size.h); // sharp.scale is not reflected in this buffer.
+        /** width of the OCR binarized buffer */
+        const ocrImgWidth = Math.floor(OCR_SCALE_RATIO * orig_img_size.w); // sharp.scale is not reflected in this buffer.
+        /** @type {Object[string, int]} pageData #. {user:string, idx:int} */
+        const pageData = []
+        /** @type {Object[]} Current page username objects */
+        const pageParsedInfo = []
+
+        // 2X lines per image is expected - UI changed
         for (let line of tesseractData.lines) {
             const username = line.text.trim()
             if (username == '') continue    // Ignore empty lines
 
             // Determine pageData info: location where the username was read & save 
-            const ycenter = (line.bbox.y1 - line.bbox.y0)/2 + line.bbox.y0 // get vertical center
-            const division = Math.floor(ycenter / (this.USERNAME_BOX_CROP_PCT * trueImgHeight))   // check which division it lands in
+            /** Get vertical center of username box */
+            const username_box_center = (line.bbox.y1 - line.bbox.y0)/2 + line.bbox.y0
+            /** Division in OCR Image bounds that matches the user lines */
+            // let old_division = Math.floor(username_box_center / (this.USERNAME_BOX_CROP_PCT * ocrImgHeight))  
+            const division = Math.floor(username_box_center / (USERNAME_OCR_BOX_HEIGHT))  
             pageData.push({"username":username, "division":division}) // set the current division
 
             const validUsername = username.length > 2;
@@ -228,31 +250,37 @@ export class UsernameTracker {
                     const symbolSum = line.words[0].symbols.reduce( (acc,b) => acc+b.confidence, 0)
                     conf = symbolSum / (2 * line.words[0].symbols.length)
                 }
-                pageParsedInfo[division] = {'username':username, 'conf':conf, 'division':division, 'capture_dt':capture_dt, 'line':line}
+                pageParsedInfo[division] = {'username':username, 'conf':conf, 
+                    'division':division, 'capture_dt':capture_dt, 
+                    'line':line}
                 
                 retList.push(`${username}, ${conf}`)
-            
             
                 // Extract the image
                 const bbox = line.bbox
                 pageParsedInfo[division]['imgPromise'] = // set image buffer promise to be made after
                     sharpOCRImg.extract({  left: 0,
-                                        width: trueImgWidth,
+                                        width: OCR_IMG_WIDTH,
                                         top: Math.max(bbox.y0 - heightPadding, 0),
-                                        height: Math.min((bbox.y1+heightPadding) - bbox.y0, trueImgHeight)
+                                        height: Math.min((bbox.y1+heightPadding) - bbox.y0, OCR_IMG_HEIGHT)
                     })
                     .jpeg().toBuffer()
                     .catch( err => { console.warn(`Couldn't retrieve image buffer ${err}`)})
             }
-            
+            // NOTE: Ditch name if invalid? I assume that the incomplete text cant be matched to alias to help here
         }
 
         // take the first line, try to match to previous page
-        const MIN_MATCH = 6     // best-match within leven distance of #
-        const LINK_AMOUNT = 3   // number of links required before joining pages
-        const linkUp = {}       // where currPage points to prev page
-        let pageDataLineIdx = 0     // Current line idx being checked
-        let linkAnswer = null       // final answer of link offset to previous page
+        /** best-match within leven distance of # */
+        const MIN_MATCH = 6;
+        /** number of links required before joining pages */
+        const LINK_AMOUNT = 3
+        /** where currPage points to prev page */
+        const linkUp = {}
+        /** Current line idx being checked */
+        let pageDataLineIdx = 0
+        /** final answer of link offset to previous page */
+        let linkAnswer = null
         
         // NOTE: Push this to async maybe
         // Match at least LINK_AMOUNT until the pages line up
@@ -290,7 +318,7 @@ export class UsernameTracker {
             startIndex -= (this.lastPage.at(-1).division+1 - linkAnswer)
         } else { // Add pages together
             let result_text = (this.lastPage.length > 0) ? `${this.lastPage.map( line => line.username)}` : `{empty list}`
-            console.warn(`No page match for CURR:${pageData.map( line => line.username)} AMONGST LAST:${result_text}`)
+            console.error(`No page match for \nCURR:\t${pageData.map( line => line.username)} \nLAST:\t${result_text}`)
         }
 
         // Add users to list & Get image promises (including skipped divisions)
@@ -299,11 +327,15 @@ export class UsernameTracker {
             const nextImgIdx = this.fullImageList.push([]) - 1
             const division = i
 
+            /** sharp extracted username image */
             let imgPromise = null
-            if (userInfo == undefined) {    // add image from divission based on height/width
-                imgPromise = sharpOCRImg.extract({  left: 0,    width: trueImgWidth,
-                    top: Math.floor(i * this.USERNAME_BOX_CROP_PCT * trueImgHeight),
-                    height: Math.floor(i+1 * this.USERNAME_BOX_CROP_PCT * trueImgHeight)
+            // add image (even if no text was found) from divission based on height/width
+            if (userInfo == undefined) {
+                imgPromise = sharpOCRImg.extract({  left: 0,    width: OCR_IMG_WIDTH,
+                    // top_old: Math.floor(i * this.USERNAME_BOX_CROP_PCT * ocrImgHeight),
+                    // height_old: Math.floor(i+1 * this.USERNAME_BOX_CROP_PCT * ocrImgHeight),
+                    top: Math.floor(i * USERNAME_OCR_BOX_HEIGHT),
+                    height: Math.floor(i+1 * USERNAME_OCR_BOX_HEIGHT)
                 })
                 .jpeg().toBuffer()
                 .catch( err => { console.warn(`Couldn't retrieve image buffer ${err}`)})
@@ -312,6 +344,7 @@ export class UsernameTracker {
                 imgPromise = userInfo.imgPromise
             }
 
+            // add image to usernameTracker object
             imgPromise.then( imgBuffer => {
                 this.addImage(this.pageIdx, division, imgBuffer, startIndex + division, nextImgIdx)
                 if (userInfo) {
@@ -357,6 +390,7 @@ export class UsernameTracker {
         }
     }
     
+    /** DEPRECATED */
     addImageOld(username, imgBuffer, fullImgIdx) {
         const newImg = new UserImage(this.pageIdx, imgBuffer, null)
         this.fullImageList[fullImgIdx] = newImg

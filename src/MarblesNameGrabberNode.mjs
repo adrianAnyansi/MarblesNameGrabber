@@ -7,9 +7,8 @@ Removes canvas elements and uses sharp instead
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
 import { rotPoint } from './DataStructureModule.mjs'
+import { PixelMeasure, Color } from './UtilModule.js'
 import fs from 'fs'
-
-const MEASURE_RECT = { x: 0, y:0, w: 1920, h: 1080} // All values were measured against 1080p video
 
 export class ColorSpace {
     /**
@@ -71,33 +70,7 @@ const COLORSPACE_OBJ = {
 // Utility functions
 // ==========================================
 
-/**
- * Helper function to hash arrays to strings for Set
- * @param {*} arr 
- * @returns 
- */
-function hashArr(arr) {
-    return `${arr?.[0]},${arr?.[1]},${arr?.[2]}`
-}
 
-function toHex(rgba) {
-    return (rgba[0] << 8*2) + (rgba[1] << 8*1) + rgba[2]
-}
-
-/**
- * Returns a UintArray using a valid hexadecimal number
- * Alpha is set to 255 by default. Extra digits after 0xFFFFFF are ignored
- * @param {Uint8Array[3]} hexColor 
- * @param {Number} alpha 
- * @returns {Uint8Array[3]}
- */
-function toRGBA (hexColor, alpha=0xFF) {
-    const mask = 0xFF
-    return new Uint8Array([(hexColor >> 8*2) & mask,
-            (hexColor >> 8*1) & mask, 
-            hexColor & mask,
-            alpha])
-}
 
 // https://stackoverflow.com/questions/4754506/color-similarity-distance-in-rgba-color-space
 // NOTE: SO on pre-multiplied alpha, but note my colours are all 100% alpha
@@ -114,13 +87,6 @@ function redmean (rgba, rgba2) {
     return Math.sqrt(redComp+greenComp+blueComp)
 }
 
-function sqrColorDistance (rgba, rgba2) {
-    let ans = 0
-    for (let idx in rgba)
-        ans += (rgba[0]-rgba2[0]) ** 2
-    return ans
-}
-
 /**
  * 
  * @param {*} colorList 
@@ -135,7 +101,7 @@ function calcMinColorDistance (colorList) {
     const ranges = [redRange, blueRange, greenRange]
     const midOfRange = range => parseInt((range[1] - range[0])/2) + range[0]
 
-    const RGBA_LIST = colorList.map( c => toRGBA(c))
+    const RGBA_LIST = colorList.map( c => Color.toRGBA(c))
 1
     while (ranges.some(range => range[0] < range[1])) {
         
@@ -172,13 +138,13 @@ function calcMinColorDistance (colorList) {
 // Define color space
 const colorSampling = {
     SUB_BLUE: [0x7b96dc, 0x6c97f5, 0x7495fa, 0x7495fa, 0x8789ec, 0x7294ec, 0x7298e6, 0x799aff, 0x7b95f7, 0x7897fa,
-                0x846ed9, 0x577ac9, 0x809ae7, 0x8e95d4, toHex([87, 164, 255]), toHex([158, 180, 251]), toHex([111, 128, 209]),
-                toHex([139, 145, 242]), toHex([136, 123, 185]), 
+                0x846ed9, 0x577ac9, 0x809ae7, 0x8e95d4, Color.toHex([87, 164, 255]), Color.toHex([158, 180, 251]), 
+                Color.toHex([111, 128, 209]), Color.toHex([139, 145, 242]), Color.toHex([136, 123, 185]), 
                 // 0xA2ACCC, 0x818CDE, 0x7C95E4, 0x5696FB, 0x619AF6
             ],
     UNSUB_WHITE: [0xfffefb, 0xfef8f5, 0xfcf6f3, 0xd0c9c7, 0xcfc8c5, 0xece5e2, 0xd1cbc8, 0xbdbdb9,  0xc9c2c0, 0xc3bdba,
                     0xFFFEFF, 0xFFFFFF, 0xE5E5E7, 0xFFFFFD, 0xFFFAF7,
-                toHex([216, 216, 216]), 
+                    Color.toHex([216, 216, 216]), 
             ],
     // VIP_PINK: [0xE824B8, 0x9D126D, 0xDD20C2, 0xEC22C4, 0xe999cf],
     VIP_PINK: [0xfc92d8, 0xe795d1, 0xff8ddb, 0xfa8bd6, 0xff8ed4, 0xeb8ccc, 0xf494d5, 0xef9bcc, 0xf88fd3, 0xda79c2, 0xea95cb],
@@ -192,7 +158,6 @@ const userColors = {}
 for (let color in colorSampling) {
     userColors[color] = calcMinColorDistance(colorSampling[color])
 }
-// userColors[SUB_BLUE][1] += 20
 
 const cacheColorMatch = new Map(Object.values(userColors).map(color => [color, new Map()]))
 
@@ -222,112 +187,21 @@ const PRE_RACE_RECT_GRAY = {
     h: (145-105)/1080
 }
 
-
-// Setting some default colours  
-const BLACK           = 0x000000
-const DARKGRAY        = 0x555555
-const WHITE           = 0xFFFFFF
-const YELLOW          = 0xFFFF00
-const ORANGE          = 0xFFA500
-const MAHOGANY        = 0xC04000
-const MAHOGANY_DARK   = 0x902000
-const RED             = 0xFF0000
-
-const SUB_BLUE        = 0x7b96dc
-const MOD_GREEN       = 0x00FF00
-const VIP_PINK        = 0xFF00FF
-
-const MATCH_ALPHA = 0xFE
-const NO_MATCH_ALPHA = 0xFD
-const ANTI_MATCH_ALPHA = 0xFC
-
-const USERNAME_BG_MULTI = 0.650
-const PX_DIFF = 10
-const PX_RANGE = 7
-
-/**
- * @typedef RectObj
- * @property {number} x
- * @property {number} y
- */
-
-/** Class for managing resolution & targetting */
-class PixelMeasure {
-    constructor(basisWidth, basisHeight) {
-        this.basisWidth = basisWidth;
-        this.basisHeight = basisHeight;
-        this.map = new Map();
-    }
-
-    /** measured at width */
-    static MEASURE_WIDTH = 1920;
-    /** measured at height */
-    static MEASURE_HEIGHT = 1080;
-
-    /** round integers to certain values */
-    static castToInt(val, round, floor, ceil) {
-        if (round)
-            return Math.round(val);
-        else if (floor)
-            return Math.floor(val);
-        else if (ceil)
-            return Math.ceil(val);
-        else
-            return val
-    }
-
-    /** Return x unit calculated  
-     * @param {number} x_pixels horizontal pixels
-     * @return {number}
-    */
-    getHorizUnits (x_pixels, round=false, floor=false, ceil=false) {
-        return PixelMeasure.castToInt(
-            x_pixels / PixelMeasure.MEASURE_WIDTH * this.basisWidth,
-        round, floor, ceil);
-    }
-    
-    /** Return y unit calculated  
-     * @param {number} y_pixels vertical pixels
-     * @return {number}
-    */
-    getVerticalUnits (y_pixel_coord, round=false, floor=false, ceil=false) {
-        return PixelMeasure.castToInt(
-            y_pixel_coord / PixelMeasure.MEASURE_HEIGHT * this.basisHeight,
-            round, floor, ceil);
-    }
-
-    getRect (x_px, y_px, width_px, height_px) {
-        return {
-            x: this.getHorizUnits(x_px),
-            w: this.getHorizUnits(width_px),
-            y: this.getVerticalUnits(y_px),
-            h: this.getVerticalUnits(height_px),
-        }
-    }
-
-    /**
-     * Return rectangle normalized from measured pixels
-     * @param {RectObj} rect 
-     * @return {RectObj}
-     */
-    normalizeRect(rect) {
-        return this.getRect(rect.x, rect.y, rect.w, rect.h);
-    }
-
-}
-
 // CLASS
-
+/**
+ * Main class for cutting and parsing Username iamges from the Marbles UI
+ */
 export class MarbleNameGrabberNode {
 
-    // RES_BASIS = new PixelMeasure(1920, 1080); // TODO: Remove
-    /** @type {RectLike} rectangle for cropped usernames */
-    static nameCropRect = {
+    /** @type {import('./UtilModule.js').RectObj} rectangle for cropped usernames */
+    static NAME_CROP_RECT = {
         x: 1652-264,
         y: 125,
         w: 267,
         h: 955,
     }
+    /** @type {Number} Width that the image is scaled to (in pixels) for best pixel density */
+    static OCR_WIDTH = 1000;
     
     /** Pixels to check right-to-left, giving up after X pixels without a match */
     static USERNAME_MAX_LETTER_CHECK = 10;
@@ -353,19 +227,19 @@ export class MarbleNameGrabberNode {
         // Get references, etc
         /** @type {ImageLike} image being read */
         this.imageLike = imageLike
-        /** @type {Bounds} {w,h} for rect of original image */
+        /** @type {import('./UtilModule.js').RectBounds} {w,h} for rect of original image */
         this.imageSize = null
 
         /** @type {Buffer} buffer used to write the orig buffer before edits because PROD makes little edits, only DEBUG makes a full-copy at isolateUserNames */
         this.orig_buffer = null
-        /** @type {Buffer} buffer of raw pixel data */
+        /** @type {Buffer} cropped buffer of raw name pixel data */
         this.buffer = null
         /** @type {Buffer} binarized buffer of black text on a white background */
         this.binBuffer = null
-        /** @type {Bounds} {w,h} for rect of the cropped image */
+        /** @type {import('./UtilModule.js').RectBounds} {w,h} for rect of the cropped image */
         this.bufferSize = null
 
-        /** basis to scale pixels to based on image metadata */
+        /** @type {PixelMeasure} basis to scale pixels to based on image metadata */
         this.RES_BASIS = null
 
         /** @type {Booelan} debug flag will write intermediate to file for debugging */
@@ -386,7 +260,7 @@ export class MarbleNameGrabberNode {
 
         this.buffer = bufferCrop
         if (!this.debug) this.orig_buffer = this.buffer
-        this.binBuffer = Buffer.alloc(info.size, new Uint8Array(toRGBA(WHITE)))
+        this.binBuffer = Buffer.alloc(info.size, new Uint8Array(Color.WHITE))
 
         // Resolve an arbitary promise
         return Promise.resolve()
@@ -409,7 +283,7 @@ export class MarbleNameGrabberNode {
                 this.imageSize = {w: imgMetadata.width, h: imgMetadata.height}
                 this.RES_BASIS = new PixelMeasure(imgMetadata.width, imgMetadata.height);
                 // const normNameRect = this.normalizeRect(this.nameRect, imgMetadata.width, imgMetadata.height)
-                const normNameRect = this.RES_BASIS.normalizeRect(MarbleNameGrabberNode.nameCropRect);
+                const normNameRect = this.RES_BASIS.normalizeRect(MarbleNameGrabberNode.NAME_CROP_RECT);
                 let sharpImgCrop = sharpImg.extract({left: normNameRect.x, top: normNameRect.y,
                         width: normNameRect.w, height: normNameRect.h })
                 
@@ -422,7 +296,7 @@ export class MarbleNameGrabberNode {
                     
                     this.buffer = data
                     if (!this.debug) this.orig_buffer = this.buffer
-                    this.binBuffer = Buffer.alloc(info.size, new Uint8Array(toRGBA(WHITE)))
+                    this.binBuffer = Buffer.alloc(info.size, new Uint8Array(Color.WHITE))
                 }
                 return this.buffer
             })
@@ -455,15 +329,14 @@ export class MarbleNameGrabberNode {
 
     toPixelOffset (x_coord, y_coord) {
         // Get the pixel_offset to a location
-        let pixel_offset = (y_coord * this.bufferSize.w + x_coord) * this.bufferSize.channels;
-        return pixel_offset
+        return (y_coord * this.bufferSize.w + x_coord) * this.bufferSize.channels;
     }
 
+    /**
+     * @returns {[Number, Number, Number, Number]} 
+     * Returns pixel rgba value from cropped buffer */
     getPixel (x,y) {
-        // Return pixel colour as [R,G,B,A] value
-
-        let px_off = this.toPixelOffset(x,y)
-
+        const px_off = this.toPixelOffset(x,y)
         const rgba = this.buffer.readUInt32LE(px_off)
         const int8mask = 0xFF
 
@@ -614,12 +487,12 @@ export class MarbleNameGrabberNode {
                     if (y_start+anti_line_off >= this.bufferSize.h) break // out of buffer
 
                     const px_rgba = this.getPixel(x_start, y_start+anti_line_off)
-                    if (this.debug) this.setPixel(x_start, y_start+anti_line_off, toRGBA(YELLOW))
+                    if (this.debug) this.setPixel(x_start, y_start+anti_line_off, Color.YELLOW)
 
-                    if (px_rgba[3] < 0xFF) continue // this has been visited, and due to anti-flood-fill I can ignore this
+                    if (px_rgba[3] < Color.DEFAULT_ALPHA) continue // this has been visited, and due to anti-flood-fill I can ignore this
                     if ( USERNAME_COLOR_RANGE_ARR.some( ([color, range])  => redmean(color, px_rgba) < range) ) {
                         failedMatchVertLines = Infinity
-                        if (this.debug) this.setPixel(x_start, y_start+anti_line_off, toRGBA(ORANGE))
+                        if (this.debug) this.setPixel(x_start, y_start+anti_line_off, Color.ORANGE)
                         break // do not continue iterating
                     }
                 }
@@ -633,7 +506,7 @@ export class MarbleNameGrabberNode {
                     const px_rgba = this.getPixel(x_start, y_start+check_px_off)
 
                     if (px_rgba[3] < 0xFF) { // previously visited
-                        if (px_rgba[3] == MATCH_ALPHA) {
+                        if (px_rgba[3] == Color.MATCH_ALPHA) {
                             failedMatchVertLines = 0
                             foundMatch = true
                         }
@@ -650,10 +523,10 @@ export class MarbleNameGrabberNode {
                     const colorRange = USERNAME_COLOR_RANGE_ARR.find( (colorRange)  => {
                         const [color, range] = colorRange
                         const cacheMap = cacheColorMatch.get(colorRange)
-                        if (!cacheMap.has(hashArr(px_rgba)) )
-                            cacheMap.set(hashArr(px_rgba), redmean(color, px_rgba))
+                        if (!cacheMap.has(Color.hashRGB(px_rgba)) )
+                            cacheMap.set(Color.hashRGB(px_rgba), redmean(color, px_rgba))
                         
-                        const cacheRedMean = cacheMap.get(hashArr(px_rgba))
+                        const cacheRedMean = cacheMap.get(Color.hashRGB(px_rgba))
                         return cacheRedMean < range 
                     })
 
@@ -663,7 +536,7 @@ export class MarbleNameGrabberNode {
                             && firstColorRangeMatch 
                             && colorRange != firstColorRangeMatch) {  
                             // console.warn(`Color match redone at ${y_start+check_px_off}`)
-                            if (this.debug) this.setPixel(x_start, y_start+check_px_off, toRGBA(MOD_GREEN))
+                            if (this.debug) this.setPixel(x_start, y_start+check_px_off, Color.BRIGHT_GREEN)
                             continue
                         }
 
@@ -672,7 +545,7 @@ export class MarbleNameGrabberNode {
                         firstColorRangeMatch = colorRange
                         
                         // do flood-fill
-                        cacheColorMatch.get(colorRange).set(hashArr(px_rgba), redmean(colorRange[0], px_rgba)) // Flood fill set twice?
+                        cacheColorMatch.get(colorRange).set(Color.hashRGB(px_rgba), redmean(colorRange[0], px_rgba)) // Flood fill set twice?
                         depthInit += 1
                         
                         const anti_y_lines = new Set(ANTI_LINE_OFF.map(y_line => y_line + y_start))
@@ -680,7 +553,7 @@ export class MarbleNameGrabberNode {
                                                 colorRange, cacheColorMatch.get(colorRange),
                                                 anti_y_lines, 2)
                     } else if (this.debug) 
-                        this.setPixel(x_start, y_start+check_px_off, toRGBA(VIP_PINK))
+                        this.setPixel(x_start, y_start+check_px_off, Color.HOT_PINK)
                 }
                 
                 // continue if not past 3 characters
@@ -721,10 +594,10 @@ export class MarbleNameGrabberNode {
 
         // We know x,y matches, set alpha and overwrite main
         let fst_px_rgba = this.getPixel(x,y)
-        if (this.debug) fst_px_rgba = toRGBA(RED)
-        fst_px_rgba[3] = MATCH_ALPHA
+        if (this.debug) fst_px_rgba = Color.RED.slice(0)
+        fst_px_rgba[3] = Color.MATCH_ALPHA
         
-        this.setBinPixel(x,y, toRGBA(BLACK))
+        this.setBinPixel(x,y, Color.BLACK)
         this.setPixel(x,y, fst_px_rgba)
 
         while (floodFillQueue.length > 0) {
@@ -733,13 +606,13 @@ export class MarbleNameGrabberNode {
             if (cx < 0 || cx >= this.bufferSize.w || cy < 0 || cy >= this.bufferSize.h) continue
             
             let px_rgba = this.getPixel(cx, cy)
-            if (px_rgba[3] != 0xFF) continue    // already visited
+            if (px_rgba[3] != Color.DEFAULT_ALPHA) continue    // already visited
 
             breathIterCount += 1
 
             let redMeanValue = null
             // let redMeanValue = redmean(matchColor, px_rgba)
-            const arrHashValue = hashArr(px_rgba)
+            const arrHashValue = Color.hashRGB(px_rgba)
             if (colorCache.has(arrHashValue)) {
                 // console.debug('Cache Hit!')
                 redMeanValue = colorCache.get(arrHashValue)
@@ -765,14 +638,9 @@ export class MarbleNameGrabberNode {
             this.setBinPixel(cx, cy, bw_rgba) // set in binBuffer
             
             if (this.debug) {
-                px_rgba = toRGBA(matchPxUNColorBool ? MAHOGANY : MAHOGANY_DARK)
-                // if (matchPxUNColorBool)
-                //     px_rgba = toRGBA(MAHOGANY, px_rgba[3])
-                // else
-                //     px_rgba = toRGBA(MAHOGANY_DARK, px_rgba[3])
-                    // brown* for flood-fill // TODO: Blend pixel instead?
+                px_rgba = (matchPxUNColorBool ? Color.MAHOGANY : Color.MAHOGANY_DARK).slice()
             }
-            px_rgba[3] = matchPxUNColorBool ? MATCH_ALPHA : NO_MATCH_ALPHA
+            px_rgba[3] = matchPxUNColorBool ? Color.MATCH_ALPHA : Color.NO_MATCH_ALPHA
             this.setPixel(cx, cy, px_rgba)
 
             if ( coord[2] > 0 || matchPxUNColorBool ) {
@@ -797,10 +665,10 @@ export class MarbleNameGrabberNode {
 
         // We know x,y matches, set alpha and overwrite main
         let fst_px_rgba = this.getPixel(x,y)
-        if (this.debug) fst_px_rgba = toRGBA(ORANGE)
-        fst_px_rgba[3] = ANTI_MATCH_ALPHA
+        if (this.debug) fst_px_rgba = Color.ORANGE
+        fst_px_rgba[3] = Color.ANTI_MATCH_ALPHA
         
-        this.setBinPixel(x,y, toRGBA(WHITE))
+        this.setBinPixel(x,y, Color.WHITE)
         this.setPixel(x,y, fst_px_rgba)
 
         while (floodFillQueue.length > 0) {
@@ -809,15 +677,16 @@ export class MarbleNameGrabberNode {
             if (cx < 0 || cx >= this.bufferSize.w || cy < 0 || cy >= this.bufferSize.h) continue
             
             let px_rgba = this.getPixel(cx, cy)
-            if (px_rgba[3] <= ANTI_MATCH_ALPHA || px_rgba[3] == 0xFF) continue    // already visited by anti-fill
+            // NOTE: This checks == to DEFAULT_ALPHA
+            if (px_rgba[3] <= Color.ANTI_MATCH_ALPHA || px_rgba[3] == 0xFF) continue    // already visited by anti-fill
 
             breathIterCount += 1
 
-            this.setBinPixel(cx, cy, toRGBA(WHITE)) // remove pixel from binBuffer
+            this.setBinPixel(cx, cy, Color.WHITE) // remove pixel from binBuffer
             if (this.debug)
-                px_rgba = toRGBA(YELLOW)
+                px_rgba = Color.YELLOW.slice()
             
-            px_rgba[3] = ANTI_MATCH_ALPHA
+            px_rgba[3] = Color.ANTI_MATCH_ALPHA
             this.setPixel(cx, cy, px_rgba)
 
             floodFillQueue.push( ...offsetCoord.map( ([tx,ty]) => [cx+tx, cy+ty, -1]))
@@ -919,7 +788,7 @@ export class MarbleNameGrabberNode {
                     premultiplied: this.bufferSize.premultiplied}
         })
         if (scaleForOCR) {
-            bufferPromise = bufferPromise.resize({width:1000, kernel:'mitchell'})
+            bufferPromise = bufferPromise.resize({width:MarbleNameGrabberNode.OCR_WIDTH, kernel:'mitchell'})
                                         .blur(1)
                                         .withMetadata({density: 300})
         }
