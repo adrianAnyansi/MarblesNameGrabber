@@ -317,7 +317,8 @@ export class MarblesAppServer {
         let mng = new MarbleNameGrabberNode(imageLike, false)
 
         if (this.serverStatus.state == SERVER_STATE_ENUM.WAITING) {
-            const validMarblesImgBool = await mng.checkWaitingForStartImg()
+            const validMarblesImgBool = await mng.checkImageAtLocation(
+                MarbleNameGrabberNode.START_BUTTON_TEMPLATE, 0.9)
             if (validMarblesImgBool) {
                 console.log("Found Marbles Pre-Race header, starting read")
                 this.serverStatus.state = SERVER_STATE_ENUM.READING
@@ -495,7 +496,12 @@ export class MarblesAppServer {
         
         let mng = new MarbleNameGrabberNode(filename, true)
 
-        console.log(`WaitingForStart was ${await mng.checkWaitingForStartImg()}`)
+        let m = await mng.checkImageAtLocation(
+            MarbleNameGrabberNode.START_BUTTON_TEMPLATE
+        ).catch( err => {
+            console.log(err)
+        })
+        console.log(`WaitingForStart was ${m}`)
 
         if (withLambda) {
             console.log("Using lambda debug")

@@ -7,7 +7,7 @@ Removes canvas elements and uses sharp instead
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
 import { rotPoint } from './DataStructureModule.mjs'
-import { PixelMeasure, Color } from './UtilModule.js'
+import { PixelMeasure, Color, BufferView, ImageTemplate } from './UtilModule.js'
 import fs from 'fs'
 
 export class ColorSpace {
@@ -57,7 +57,6 @@ export class ColorSpace {
 }
 
 // External programming things
-// TODO: Make this async if possible
 const START_NAME_LOCS = JSON.parse(fs.readFileSync("data/startpixels.json", 'utf8'))
 const COLORSPACE_JSON = JSON.parse(fs.readFileSync("data/colorspace.json", 'utf8'))
 
@@ -186,6 +185,8 @@ const PRE_RACE_RECT_GRAY = {
     w: (1196-1135)/1920,
     h: (145-105)/1080
 }
+
+
 
 // CLASS
 /**
@@ -594,7 +595,7 @@ export class MarbleNameGrabberNode {
 
         // We know x,y matches, set alpha and overwrite main
         let fst_px_rgba = this.getPixel(x,y)
-        if (this.debug) fst_px_rgba = Color.RED.slice(0)
+        if (this.debug) Color.copyTo(fst_px_rgba, Color.RED)
         fst_px_rgba[3] = Color.MATCH_ALPHA
         
         this.setBinPixel(x,y, Color.BLACK)
@@ -638,7 +639,7 @@ export class MarbleNameGrabberNode {
             this.setBinPixel(cx, cy, bw_rgba) // set in binBuffer
             
             if (this.debug) {
-                px_rgba = (matchPxUNColorBool ? Color.MAHOGANY : Color.MAHOGANY_DARK).slice()
+                Color.copyTo(px_rgba, (matchPxUNColorBool ? Color.MAHOGANY : Color.MAHOGANY_DARK))
             }
             px_rgba[3] = matchPxUNColorBool ? Color.MATCH_ALPHA : Color.NO_MATCH_ALPHA
             this.setPixel(cx, cy, px_rgba)
@@ -684,7 +685,7 @@ export class MarbleNameGrabberNode {
 
             this.setBinPixel(cx, cy, Color.WHITE) // remove pixel from binBuffer
             if (this.debug)
-                px_rgba = Color.YELLOW.slice()
+                Color.copyTo(px_rgba, Color.YELLOW)
             
             px_rgba[3] = Color.ANTI_MATCH_ALPHA
             this.setPixel(cx, cy, px_rgba)
@@ -770,6 +771,85 @@ export class MarbleNameGrabberNode {
         }
         // console.log(`FAILED: ${setStr()}`)
         return true
+    }
+
+    
+    static PRE_RACE_START = {x:1136, y:220, w:103, h:46};
+    static START_BUTTON_TEMPLATE = new ImageTemplate(
+        'data/start_btn.png', 
+        // 'testing/vod_dump/110.png',
+        MarbleNameGrabberNode.PRE_RACE_START);
+
+    /**
+     * Check if image at a specific location
+     * @param {import('./UtilModule.js').RectObj} rectObj
+     * @param {ImageTemplate} imgTemplate
+     * @param {Number} PASS_PCT
+     */
+    async checkImageAtLocation(imgTemplate, PASS_PCT=0.7) {
+        /** Helper object for accessing image rect */
+        const rectObj = imgTemplate.rectObj;
+        /** Running total of compared pixels. Ignores pixels with alpha < threshold */
+        let imgPxTotal = rectObj.w * rectObj.h;
+        /** total of all pixels */
+        const fixedTotal = imgPxTotal;
+        
+        const magicNum = Math.trunc(fixedTotal / 13);
+        const ALPHA_THRESHOLD = 200;
+        const CHANNEL_MEAN_THRESHOLD = 20;
+        const MAX_PX_COMPARE = 0.3;
+        const MIN_PX_COMPARE = 0.05;
+        const visitedSet = new Set();
+
+        // cut the same image out from the main buffer to keep same x/y
+        const cropBufferView = await BufferView.Build(this.imageLike, rectObj)
+        // Get bufferView
+        /** @type {BufferView} */
+        const imgView = await imgTemplate.getBufferView();
+
+        const incrCurrPxCounter = () => {currPx = (currPx + magicNum) % fixedTotal};
+        
+        /** Pixels that have been compared */
+        let checkedPxTotal = 0;
+        /** pixels that matched */
+        let pxMatchCount = 0
+        /** current pixel being tested */
+        let currPx = 0;
+        // Loop maximum of certain pct
+        while (checkedPxTotal < imgPxTotal * MAX_PX_COMPARE) {
+            if (visitedSet.has(currPx)) {
+                incrCurrPxCounter();
+                continue;
+            }
+            visitedSet.add(currPx);
+
+            const [x, y] = imgView.getCoord(currPx)
+            const rgba = imgView.getPixel(x,y);
+            
+            if (rgba[3] < ALPHA_THRESHOLD) {
+                imgPxTotal -= 1; // ignore pixel from total
+            } else {
+                checkedPxTotal += 1;
+                const c_rgba = cropBufferView.getPixel(x, y)
+
+                // compare color values
+                let ch_mean = Color.compareMean(rgba, c_rgba);
+                if (ch_mean <= CHANNEL_MEAN_THRESHOLD) {
+                    pxMatchCount += 1
+                }
+            }
+
+            console.debug(`Compare pct was ${pxMatchCount / checkedPxTotal}%`)
+            if (checkedPxTotal > imgPxTotal * MIN_PX_COMPARE &&
+                pxMatchCount / checkedPxTotal > PASS_PCT) {
+                    console.debug(`Compare pct was ${pxMatchCount / checkedPxTotal}%`)
+                    return true
+                }
+            
+            incrCurrPxCounter();
+        }
+        console.debug(`Compare pct was ${pxMatchCount / checkedPxTotal}%`)
+        return false;
     }
 
     /**

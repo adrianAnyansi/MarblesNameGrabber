@@ -1,7 +1,16 @@
 
 // Utility class for color & measurements over here
 
+import sharp from 'sharp'
+import {Buffer} from 'node:buffer'
+
+/** Color utility class */
 export class Color {
+
+    /**
+     * @typedef RGBA
+     * @type {Uint8Array[]}
+     */
     static BLACK           = Color.toRGBA(0x000000);
     static DARKGRAY        = Color.toRGBA(0x555555);
     static WHITE           = Color.toRGBA(0xFFFFFF);
@@ -87,6 +96,19 @@ export class Color {
         rgba1[0] = rgba2[0]
         rgba1[1] = rgba2[1]
         rgba1[2] = rgba2[2]
+    }
+
+    /**
+     * Function that takes two values and returns the mean of all color channel
+     * @param {RGBA} rgba1 
+     * @param {RGBA} rgba2 
+     */
+    static compareMean(rgba1, rgba2) {
+        const r_diff = Math.abs(rgba1[0] - rgba2[0])
+        const g_diff = Math.abs(rgba1[1] - rgba2[1])
+        const b_diff = Math.abs(rgba1[2] - rgba2[2])
+
+        return (r_diff+g_diff+b_diff) / 3;
     }
 }
 
@@ -180,7 +202,8 @@ export class BufferView {
      * 
      * @param {Buffer} buffer 
      * @param {number} width 
-     * @param {number} height 
+     * @param {number} height
+     * @param {number} channels
      */
     constructor(buffer, width, height, channels) {
         /** @prop {Buffer} buffer */
@@ -193,6 +216,39 @@ export class BufferView {
         this.channels = channels;
     }
 
+    /**
+     * Builds a full BufferView from imgLike (filename/buffer)
+     * Helper function
+     * @param {*} imgLike 
+     * @returns {Promise<BufferView>} bufferView containing cropped* image
+     */
+    static async Build(imgLike, cropRect=null) {
+        let sharpImg = sharp(imgLike)
+
+        if (cropRect) {
+            sharpImg = sharpImg.extract({left: cropRect.x, top:cropRect.y, 
+                width:cropRect.w, height:cropRect.h})
+        }
+
+        return sharpImg
+            .raw() // raw pixel data
+            .toBuffer({resolveWithObject: true}) // to ArrayBuffer + metadata
+            .then( ({data, info}) => {
+                if (data) {
+                    let bufferView = new BufferView(data, info.width, info.height, info.channels);
+                    return bufferView
+                }
+            })
+            .catch( err => {
+                console.warn(`Unable to make BufferView; err${err}:${err.stack}`)
+                throw err
+            })
+    }
+
+    get size() {
+        return this.buffer.byteLength;
+    }
+
 
     /**
      * Static get RGBA value of pixel at particular location
@@ -200,13 +256,13 @@ export class BufferView {
      * @param {Number} y
      * @returns {Uint8Array[Number, Number, Number, Number]} RGBA
      */
-    static getPixel (x, y) {
-        const px_off = BufferView.toPixelOffset(x, y)
+    getPixel (x, y) {
+        const px_off = this.toPixelOffset(x, y)
         if (this.channels == 4) 
-            return BufferView.getRGBAPixel(px_off)
+            return this.getRGBAPixel(px_off)
     }
 
-    static getRGBAPixel(px_off) {
+    getRGBAPixel(px_off) {
         const rgba = this.buffer.readUInt32LE(px_off);
         const int8mask = 0xFF;
         return new Uint8ClampedArray([
@@ -223,16 +279,51 @@ export class BufferView {
      * @param {Number} y
      * @returns {Number} px_offset
      */
-    static toPixelOffset (x_coord, y_coord) {
+    toPixelOffset (x_coord, y_coord) {
         return (y_coord * this.width + x_coord) * this.channels;
     }
 
-    static setPixel(x, y, rgba) {
+    /**
+     * Get coord array from pixel offset
+     * @param {*} px 
+     */
+    getPx(px) {
+        return this.getRGBAPixel(px * this.channels)
+    }
+
+    /**
+     * Get pixels from top-left corner
+     * @param {*} px 
+     * @returns {[Number, Number]}
+     */
+    getCoord(px) {
+        return [
+            px % this.width,
+            Math.trunc(px / this.width)
+        ]
+    }
+
+    setPixel(x, y, rgba) {
         const px_off = BufferView.toPixelOffset(x,y)
         this.buffer.writeUInt8(rgba[0], px_off+0)
         this.buffer.writeUInt8(rgba[1], px_off+1)
         this.buffer.writeUInt8(rgba[2], px_off+2)
         if (rgba[3])
             this.buffer.writeUInt8(rgba[3], px_off+3)
+    }
+}
+
+/** Helper class for Image Comparisons */
+export class ImageTemplate {
+
+    constructor(imageLike, rectObj) {
+        this.imageLike = imageLike;
+        this.rectObj = rectObj;
+        this.bufferView = null;
+        this.bufferViewPromise = BufferView.Build(imageLike)
+    }
+
+    async getBufferView() {
+        return this.bufferViewPromise
     }
 }
