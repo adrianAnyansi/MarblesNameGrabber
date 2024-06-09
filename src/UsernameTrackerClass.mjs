@@ -6,7 +6,7 @@
 
 import sharp from "sharp"
 import { LimitedList } from "./DataStructureModule.mjs"
-import { PixelMeasure } from "./UtilModule.js"
+import { PixelMeasure } from "./UtilModule.mjs"
 import { MarbleNameGrabberNode } from "./MarblesNameGrabberNode.mjs"
 
 class Username {
@@ -193,7 +193,7 @@ export class UsernameTracker {
      * While this function is async, it's not expected to be run as such.
      * @param {Object} tesseractData // contains .lines & .bbox of tesseract info
      * @param {sharp} sharpOCRImg  Sharp imagelike, Cropped Username image BUT scaled to OCR size
-     * @param {import("./UtilModule").RectObj} orig_img_size Image_size of the original cropped image to bypass metadata issues
+     * @param {import("./UtilModule.mjs").RectObj} orig_img_size Image_size of the original cropped image to bypass metadata issues
      * @returns {Array[String]} retList
      */
     addPage (tesseractData, sharpOCRImg, orig_img_size, capture_dt) {

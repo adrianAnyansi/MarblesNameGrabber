@@ -7,7 +7,7 @@ Removes canvas elements and uses sharp instead
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
 import { rotPoint } from './DataStructureModule.mjs'
-import { PixelMeasure, Color, BufferView, ImageTemplate } from './UtilModule.js'
+import { PixelMeasure, Color, BufferView, ImageTemplate, toPct } from './UtilModule.mjs'
 import fs from 'fs'
 
 export class ColorSpace {
@@ -194,7 +194,7 @@ const PRE_RACE_RECT_GRAY = {
  */
 export class MarbleNameGrabberNode {
 
-    /** @type {import('./UtilModule.js').RectObj} rectangle for cropped usernames */
+    /** @type {import('./UtilModule.mjs').RectObj} rectangle for cropped usernames */
     static NAME_CROP_RECT = {
         x: 1652-264,
         y: 125,
@@ -228,7 +228,7 @@ export class MarbleNameGrabberNode {
         // Get references, etc
         /** @type {ImageLike} image being read */
         this.imageLike = imageLike
-        /** @type {import('./UtilModule.js').RectBounds} {w,h} for rect of original image */
+        /** @type {import('./UtilModule.mjs').RectBounds} {w,h} for rect of original image */
         this.imageSize = null
 
         /** @type {Buffer} buffer used to write the orig buffer before edits because PROD makes little edits, only DEBUG makes a full-copy at isolateUserNames */
@@ -237,7 +237,7 @@ export class MarbleNameGrabberNode {
         this.buffer = null
         /** @type {Buffer} binarized buffer of black text on a white background */
         this.binBuffer = null
-        /** @type {import('./UtilModule.js').RectBounds} {w,h} for rect of the cropped image */
+        /** @type {import('./UtilModule.mjs').RectBounds} {w,h} for rect of the cropped image */
         this.bufferSize = null
 
         /** @type {PixelMeasure} basis to scale pixels to based on image metadata */
@@ -782,7 +782,7 @@ export class MarbleNameGrabberNode {
 
     /**
      * Check if image at a specific location
-     * @param {import('./UtilModule.js').RectObj} rectObj
+     * @param {import('./UtilModule.mjs').RectObj} rectObj
      * @param {ImageTemplate} imgTemplate
      * @param {Number} PASS_PCT
      */
@@ -839,16 +839,16 @@ export class MarbleNameGrabberNode {
                 }
             }
 
-            console.debug(`Compare pct was ${pxMatchCount / checkedPxTotal}%`)
+            // console.debug(`Compare pct was ${pxMatchCount / checkedPxTotal}%`)
             if (checkedPxTotal > imgPxTotal * MIN_PX_COMPARE &&
                 pxMatchCount / checkedPxTotal > PASS_PCT) {
-                    console.debug(`Compare pct was ${pxMatchCount / checkedPxTotal}%`)
+                    console.debug(`Compare pct was ${toPct(pxMatchCount / checkedPxTotal)}`)
                     return true
                 }
             
             incrCurrPxCounter();
         }
-        console.debug(`Compare pct was ${pxMatchCount / checkedPxTotal}%`)
+        console.debug(`Compare pct was ${toPct(pxMatchCount / checkedPxTotal)}`)
         return false;
     }
 

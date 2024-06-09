@@ -13,6 +13,7 @@ import { humanReadableTimeDiff } from './DataStructureModule.mjs'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
 // import { setInterval } from 'node:timers'
 import { setTimeout } from 'node:timers/promises'
+import { Timestamp } from './UtilModule.mjs'
 
 // server state
 const SERVER_STATE_ENUM = {
@@ -32,7 +33,7 @@ const LIVE_URL = 'https://www.twitch.tv/barbarousking'
 let defaultStreamURL = LIVE_URL
 // const streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']
 
-let ffmpegFPS = '3'
+let ffmpegFPS = '2'
 // const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=fps=${ffmpegFPS}`, 'pipe:1']
 
 const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
@@ -312,13 +313,14 @@ export class MarblesAppServer {
 
         // TODO: Log when image enters this function and when it exits
         // Therefore keeping track of the delay from live
-        let captureDt = Date.now()
+        /** ts of when image first entered the queue */
+        const captureDt = Date.now()
         
         let mng = new MarbleNameGrabberNode(imageLike, false)
 
         if (this.serverStatus.state == SERVER_STATE_ENUM.WAITING) {
             const validMarblesImgBool = await mng.checkImageAtLocation(
-                MarbleNameGrabberNode.START_BUTTON_TEMPLATE, 0.9)
+                MarbleNameGrabberNode.START_BUTTON_TEMPLATE, 0.85)
             if (validMarblesImgBool) {
                 console.log("Found Marbles Pre-Race header, starting read")
                 this.serverStatus.state = SERVER_STATE_ENUM.READING
@@ -379,7 +381,9 @@ export class MarblesAppServer {
                     this.emptyListPages += 1
                 else
                     this.emptyListPages = 0
-                console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}`)
+
+                const processTS = Date.now() - captureDt;
+                console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}. Lag-time: ${Timestamp.msToHUnits(processTS, false)}`)
                 
                 if (this.emptyListPages >= EMPTY_PAGE_COMPLETE && this.usernameList.length > 5) {
                     console.log(`${this.emptyListPages} empty frames @ ${funcImgId}; 
