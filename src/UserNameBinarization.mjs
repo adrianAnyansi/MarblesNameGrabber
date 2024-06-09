@@ -6,8 +6,8 @@ Removes canvas elements and uses sharp instead
 
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
-import { rotPoint } from './DataStructureModule.mjs'
-import { PixelMeasure, Color, BufferView, ImageTemplate, toPct } from './UtilModule.mjs'
+import { rotPoint, toPct } from './DataStructureModule.mjs'
+import { PixelMeasure, Color, BufferView, ImageTemplate } from './UtilModule.mjs'
 import fs from 'fs'
 
 export class ColorSpace {
@@ -192,7 +192,7 @@ const PRE_RACE_RECT_GRAY = {
 /**
  * Main class for cutting and parsing Username iamges from the Marbles UI
  */
-export class MarbleNameGrabberNode {
+export class UserNameBinarization {
 
     /** @type {import('./UtilModule.mjs').RectObj} rectangle for cropped usernames */
     static NAME_CROP_RECT = {
@@ -284,7 +284,7 @@ export class MarbleNameGrabberNode {
                 this.imageSize = {w: imgMetadata.width, h: imgMetadata.height}
                 this.RES_BASIS = new PixelMeasure(imgMetadata.width, imgMetadata.height);
                 // const normNameRect = this.normalizeRect(this.nameRect, imgMetadata.width, imgMetadata.height)
-                const normNameRect = this.RES_BASIS.normalizeRect(MarbleNameGrabberNode.NAME_CROP_RECT);
+                const normNameRect = this.RES_BASIS.normalizeRect(UserNameBinarization.NAME_CROP_RECT);
                 let sharpImgCrop = sharpImg.extract({left: normNameRect.x, top: normNameRect.y,
                         width: normNameRect.w, height: normNameRect.h })
                 
@@ -358,7 +358,7 @@ export class MarbleNameGrabberNode {
      * @returns {[Number, Number, Number, Number]} RGBA
      */
     static getPixelStatic (x, y, buffer, info) {
-        const px_off = MarbleNameGrabberNode.toPixelOffsetStatic(x, y, info)
+        const px_off = UserNameBinarization.toPixelOffsetStatic(x, y, info)
         const rgba = buffer.readUInt32LE(px_off)
         const int8mask = 0xFF
 
@@ -383,7 +383,7 @@ export class MarbleNameGrabberNode {
     }
 
     static setPixel(x, y, rgba, buffer, info) {
-        const px_off = MarbleNameGrabberNode.toPixelOffsetStatic(x,y, info)
+        const px_off = UserNameBinarization.toPixelOffsetStatic(x,y, info)
         buffer.writeUInt8(rgba[0], px_off+0)
         buffer.writeUInt8(rgba[1], px_off+1)
         buffer.writeUInt8(rgba[2], px_off+2)
@@ -447,18 +447,18 @@ export class MarbleNameGrabberNode {
         
         /** Pixels to check right-to-left, giving up after X pixels without a match */
         const USERNAME_LEFT_PADDING = this.RES_BASIS.getHorizUnits(
-            MarbleNameGrabberNode.USERNAME_MAX_LETTER_CHECK)
+            UserNameBinarization.USERNAME_MAX_LETTER_CHECK)
         /** Number of pixels minimum to check (around 3 letters) */
         const USERNAME_RIGHT_MIN = this.RES_BASIS.getHorizUnits(
-            MarbleNameGrabberNode.USERNAME_MIN_CHECK)
+            UserNameBinarization.USERNAME_MIN_CHECK)
         /** Username height in converted pixels */
         const USERNAME_BOX_HEIGHT = this.RES_BASIS.getVerticalUnits(
-            MarbleNameGrabberNode.USERNAME_HEIGHT)
+            UserNameBinarization.USERNAME_HEIGHT)
 
         // Normalize y_offsets into pixel lengths
-        const CHECK_LINE_OFF = MarbleNameGrabberNode.CHECK_LINES.map( 
+        const CHECK_LINE_OFF = UserNameBinarization.CHECK_LINES.map( 
             check_offset => this.RES_BASIS.getVerticalUnits(check_offset))
-        const ANTI_LINE_OFF = MarbleNameGrabberNode.ANTI_LINES.map( 
+        const ANTI_LINE_OFF = UserNameBinarization.ANTI_LINES.map( 
             check_offset => this.RES_BASIS.getVerticalUnits(check_offset))
 
         const USERNAME_COLOR_RANGE_ARR = Object.values(userColors)
@@ -721,7 +721,7 @@ export class MarbleNameGrabberNode {
             for (let i=0; i<rect.w; i+=iw) {
                 for (let j=0; j<rect.h; j+=ih) {
                     testTotal += 1
-                    if ( redmean(MarbleNameGrabberNode.getPixelStatic(rect.x+i, rect.y+j, data, info), colorRange[0]) < colorRange[1] ) {
+                    if ( redmean(UserNameBinarization.getPixelStatic(rect.x+i, rect.y+j, data, info), colorRange[0]) < colorRange[1] ) {
                         testResult += 1
                     }
                 }
@@ -757,7 +757,7 @@ export class MarbleNameGrabberNode {
         // }
 
         for (const px_loc of START_NAME_LOCS) {
-            const px_val = MarbleNameGrabberNode.getPixelStatic(px_loc[0], px_loc[1], data, info)
+            const px_val = UserNameBinarization.getPixelStatic(px_loc[0], px_loc[1], data, info)
             totalCount += 1
             if (COLORSPACE_OBJ.WHITE.check(px_val)) 
                 matchCount += 1
@@ -778,7 +778,7 @@ export class MarbleNameGrabberNode {
     static START_BUTTON_TEMPLATE = new ImageTemplate(
         'data/start_btn.png', 
         // 'testing/vod_dump/110.png',
-        MarbleNameGrabberNode.PRE_RACE_START);
+        UserNameBinarization.PRE_RACE_START);
 
     /**
      * Check if image at a specific location
@@ -868,7 +868,7 @@ export class MarbleNameGrabberNode {
                     premultiplied: this.bufferSize.premultiplied}
         })
         if (scaleForOCR) {
-            bufferPromise = bufferPromise.resize({width:MarbleNameGrabberNode.OCR_WIDTH, kernel:'mitchell'})
+            bufferPromise = bufferPromise.resize({width:UserNameBinarization.OCR_WIDTH, kernel:'mitchell'})
                                         .blur(1)
                                         .withMetadata({density: 300})
         }

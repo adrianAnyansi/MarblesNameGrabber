@@ -328,49 +328,6 @@ export class ImageTemplate {
     }
 }
 
-export class Timestamp {
-
-    /**
-     * Convert milliseconds to human-readable text
-     * Multi=true prints 2m22s5934ms
-     * Multi=false prints 2.532m using the highest unit
-     * decimalPlaces only works with multiUnit being false
-     * @param {int} ms 
-     * @returns 
-     */
-    static msToHUnits(ms, multiUnit=true, decimalPlaces=2) {
-
-        let currVal = ms
-        // let fracVal = ms
-        let composedStr = ``
-        const timeSequence = new Map(Object.entries({
-            "ms": 1_000,
-            "s": 60,
-            "m": 60,
-            "h": 60,
-            "d": 24,
-            "w": 7
-        }))
-        let currUnit = timeSequence['ms']
-        let lastUnit = timeSequence['ms']
-
-
-        for ( const [unit_text,unit_div] of timeSequence) {
-            currUnit = unit_text
-            if (currVal < unit_div) break;
-
-            const unit_val = Math.trunc(currVal%unit_div)
-            currVal /= unit_div;
-            composedStr += unit_val == 0 ? '' : `${unit_val}${unit_text}`
-            lastUnit = unit_text
-        }
-
-        return multiUnit ? 
-            `${Math.trunc(currVal)}${currUnit}`+composedStr :
-            currVal.toFixed(decimalPlaces)+currUnit
-
-    }
-}
 
 // console.log(
 // Timestamp.msToHUnits(2000),

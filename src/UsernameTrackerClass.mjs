@@ -7,7 +7,7 @@
 import sharp from "sharp"
 import { LimitedList } from "./DataStructureModule.mjs"
 import { PixelMeasure } from "./UtilModule.mjs"
-import { MarbleNameGrabberNode } from "./MarblesNameGrabberNode.mjs"
+import { UserNameBinarization } from "./UserNameBinarization.mjs"
 
 class Username {
     /**
@@ -210,14 +210,14 @@ export class UsernameTracker {
 
         // TODO: Use current image width/height to get the orignal basis
         // const RES_BASIS = new PixelMeasure(1920, 1080); 
-        const OCR_SCALE_RATIO = MarbleNameGrabberNode.OCR_WIDTH / MarbleNameGrabberNode.NAME_CROP_RECT.w;
+        const OCR_SCALE_RATIO = UserNameBinarization.OCR_WIDTH / UserNameBinarization.NAME_CROP_RECT.w;
         /** This will be the trueUsernameHeight thanks to res_basis */
         const OCR_RES_BASIS = new PixelMeasure(
             PixelMeasure.MEASURE_WIDTH * OCR_SCALE_RATIO, 
             PixelMeasure.MEASURE_HEIGHT * OCR_SCALE_RATIO
         );
         const USERNAME_OCR_BOX_HEIGHT = OCR_RES_BASIS.getVerticalUnits(
-            MarbleNameGrabberNode.USERNAME_HEIGHT, {floor:true});
+            UserNameBinarization.USERNAME_HEIGHT, {floor:true});
         const OCR_IMG_HEIGHT = OCR_RES_BASIS.getVerticalUnits(orig_img_size.h, {floor:true});
         const OCR_IMG_WIDTH = OCR_RES_BASIS.getHorizUnits(orig_img_size.w, {floor:true})
 

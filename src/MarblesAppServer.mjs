@@ -5,17 +5,16 @@ import { spawn } from 'node:child_process'
 import axios from 'axios'
 import fs from 'fs/promises'
 
-import {MarbleNameGrabberNode} from "./MarblesNameGrabberNode.mjs"
+import {UserNameBinarization} from "./UserNameBinarization.mjs"
 import {UsernameTracker} from './UsernameTrackerClass.mjs'
 
 import { createWorker, createScheduler } from 'tesseract.js'
-import { humanReadableTimeDiff } from './DataStructureModule.mjs'
+import { humanReadableTimeDiff, msToHUnits } from './DataStructureModule.mjs'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
 // import { setInterval } from 'node:timers'
 import { setTimeout } from 'node:timers/promises'
-import { Timestamp } from './UtilModule.mjs'
 
-// server state
+/** Server state */
 const SERVER_STATE_ENUM = {
     STOPPED: 'STOPPED', // Server has stopped reading or hasnt started reading
     WAITING: 'WAITING', // Server is waiting for the load screen
@@ -30,14 +29,9 @@ const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s'
                 // start/videos/1938079879?t=4h55m20s       // no chat box; 29/9
                 // /videos/2134416841?t=6h7m3s
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
-let defaultStreamURL = LIVE_URL
-// const streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']
-
-let ffmpegFPS = '2'
-// const ffmpegCmd = ['ffmpeg', '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=fps=${ffmpegFPS}`, 'pipe:1']
 
 const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
-const PNG_IEND_CHUNK = 0x49454E44
+const PNG_IEND_CHUNK = 0x49454E44   // End/Footer for PNG file
 
 const NUM_LIVE_WORKERS = 6 // Num Tesseract workers
 const WORKER_RECOGNIZE_PARAMS = {
@@ -46,7 +40,6 @@ const WORKER_RECOGNIZE_PARAMS = {
 const TEST_FILENAME = "testing/test.png"
 const LIVE_FILENAME = "testing/#.png"
 const VOD_DUMP_LOC = "testing/vod_dump/"
-const EMPTY_PAGE_COMPLETE = 5 * parseInt(ffmpegFPS)   // number of frames* without any valid names on them
 
 let TWITCH_ACCESS_TOKEN_BODY = null
 const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
@@ -59,12 +52,24 @@ const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
 const USE_LAMBDA = false
 const NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
 
-// TODO: Get value from streamlink config
-// Needs to handle both linux for prod and windows for dev
-const FFMPEG_LOC = String.raw`C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe` // NOTE: should work on all streamlink installations
-
 export class MarblesAppServer {
+
+    static ENV = 'dev' // set from router
+    static TESSERACT_LOC = String.raw`C:\Program Files\Tesseract-OCR\tesseract.exe`
     
+    // TODO: Get value from streamlink config
+    // Needs to handle both linux for prod and windows for dev
+    static FFMPEG_LOC = String.raw`C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe` // NOTE: should work on all streamlink installations
+    static STREAMLINK_LOC = 'streamlink' // on PATH
+
+    /** FPS to view stream */
+    static FFMPEG_FPS = '2'
+    /** number of frames/seconds without any valid names on them */
+    static EMPTY_PAGE_COMPLETE = 5 * parseInt(MarblesAppServer.FFMPEG_FPS)
+
+    
+    static DEFAULT_STEAM_URL = LIVE_URL
+
     constructor () {
         this.serverStatus = {
             state: SERVER_STATE_ENUM.STOPPED,   // current state
@@ -84,10 +89,11 @@ export class MarblesAppServer {
         this.enableMonitor = false;
 
         // Processors & Commands
-        this.streamlinkCmd = ['streamlink', defaultStreamURL, 'best', '--stdout']   // Streamlink shell cmd
-        this.ffmpegCmd = [FFMPEG_LOC, '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=${ffmpegFPS}`, 'pipe:1']
+        this.streamlinkCmd = [MarblesAppServer.STREAMLINK_LOC, MarblesAppServer.DEFAULT_STEAM_URL, 'best', '--stdout']   // Streamlink shell cmd
+        this.ffmpegCmd = [MarblesAppServer.FFMPEG_LOC, '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
         this.streamlinkProcess = null   // Node process for streamlink
         this.ffmpegProcess = null       // Node process for ffmpeg
+        this.tesseractLinkCmd = [MarblesAppServer.TESSERACT_LOC]
         this.pngChunkBufferArr = []     // Maintained PNG buffer over iterations
 
         // Tesseract variables
@@ -188,7 +194,7 @@ export class MarblesAppServer {
         if (twitch_channel)
             this.streamlinkCmd[1] = TWITCH_URL + twitch_channel
         else
-            this.streamlinkCmd[1] = defaultStreamURL
+            this.streamlinkCmd[1] = MarblesAppServer.DEFAULT_STEAM_URL
 
         console.debug(`Starting monitor in directory: ${process.cwd()}`)
         console.debug(`Watching stream url: ${this.streamlinkCmd[1]}`)
@@ -316,11 +322,11 @@ export class MarblesAppServer {
         /** ts of when image first entered the queue */
         const captureDt = Date.now()
         
-        let mng = new MarbleNameGrabberNode(imageLike, false)
+        let mng = new UserNameBinarization(imageLike, false)
 
         if (this.serverStatus.state == SERVER_STATE_ENUM.WAITING) {
             const validMarblesImgBool = await mng.checkImageAtLocation(
-                MarbleNameGrabberNode.START_BUTTON_TEMPLATE, 0.85)
+                UserNameBinarization.START_BUTTON_TEMPLATE, 0.85)
             if (validMarblesImgBool) {
                 console.log("Found Marbles Pre-Race header, starting read")
                 this.serverStatus.state = SERVER_STATE_ENUM.READING
@@ -383,7 +389,7 @@ export class MarblesAppServer {
                     this.emptyListPages = 0
 
                 const processTS = Date.now() - captureDt;
-                console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}. Lag-time: ${Timestamp.msToHUnits(processTS, false)}`)
+                console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}. Lag-time: ${msToHUnits(processTS, false)}`)
                 
                 if (this.emptyListPages >= EMPTY_PAGE_COMPLETE && this.usernameList.length > 5) {
                     console.log(`${this.emptyListPages} empty frames @ ${funcImgId}; 
@@ -498,10 +504,10 @@ export class MarblesAppServer {
         console.log(`Running debug! ${filename}`)
         console.log(`Working directory: ${path.resolve()}`)
         
-        let mng = new MarbleNameGrabberNode(filename, true)
+        let mng = new UserNameBinarization(filename, true)
 
         let m = await mng.checkImageAtLocation(
-            MarbleNameGrabberNode.START_BUTTON_TEMPLATE
+            UserNameBinarization.START_BUTTON_TEMPLATE
         ).catch( err => {
             console.log(err)
         })
@@ -770,9 +776,9 @@ export class MarblesAppServer {
         let streaming_time = 'X'
         if (this.serverStatus.started_stream_ts) {
             if (this.serverStatus.ended_stream_ts)
-                streaming_time = humanReadableTimeDiff(this.serverStatus.ended_stream_ts - this.serverStatus.started_stream_ts)
+                streaming_time = msToHUnits(this.serverStatus.ended_stream_ts - this.serverStatus.started_stream_ts)
             else
-                streaming_time = humanReadableTimeDiff(Date.now() - this.serverStatus.started_stream_ts)
+                streaming_time = msToHUnits(Date.now() - this.serverStatus.started_stream_ts)
         }
         
         
