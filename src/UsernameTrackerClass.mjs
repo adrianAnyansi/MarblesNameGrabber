@@ -318,7 +318,7 @@ export class UsernameTracker {
             startIndex -= (this.lastPage.at(-1).division+1 - linkAnswer)
         } else { // Add pages together
             let result_text = (this.lastPage.length > 0) ? `${this.lastPage.map( line => line.username)}` : `{empty list}`
-            console.error(`No page match for \nCURR:\t${pageData.map( line => line.username)} \nLAST:\t${result_text}`)
+            console.error(`No page match for \nLAST:\t${result_text}\nCURR:\t${pageData.map( line => line.username)} `)
         }
 
         // Add users to list & Get image promises (including skipped divisions)
@@ -422,6 +422,7 @@ export class UsernameTracker {
 
     getImage(username) {
         // Return this image associated with this user
+        
         if (this.hash.has(username)) {
             const userObj = this.hash.get(username)
             const imgObj = this.fullImageList[userObj.fullImgIdxList[0]] // Return random?
@@ -472,13 +473,16 @@ export class UsernameTracker {
         let currentMax = lowestRank
         performance.mark(this.PERFORMANCE_MARK_FIND)
 
-        for (const userObj of this.hash.values()) {
-            const testUsername = userObj.name
-            let dist = this.calcLevenDistance(searchUsername, testUsername, currentMax, lowerCasePenalty)
-            const userRankObj = [dist, userObj]
+        for (const userObj of this.usersInOrder) {
+            if (!userObj) continue
+            for (const userAlias of userObj.aliases) {
+                const testUsername = userAlias
+                let dist = this.calcLevenDistance(searchUsername, testUsername, currentMax, lowerCasePenalty)
+                const userRankObj = [dist, userObj]
 
-            if (usernameRanking.isFull()) currentMax = usernameRanking.sneak()[0]
-            if (dist < currentMax) usernameRanking.push(userRankObj)
+                if (usernameRanking.isFull()) currentMax = usernameRanking.sneak()[0]
+                if (dist < currentMax) usernameRanking.push(userRankObj)
+            }
         }
 
         // console.debug(`Find username ranking took ${performance.measure('username_mark', this.PERFORMANCE_MARK_FIND).duration.toFixed(2)}ms`)

@@ -13,6 +13,7 @@ import { humanReadableTimeDiff, msToHUnits } from './DataStructureModule.mjs'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
 // import { setInterval } from 'node:timers'
 import { setTimeout } from 'node:timers/promises'
+import { XMLParser } from 'fast-xml-parser'
 
 /** Server state */
 const SERVER_STATE_ENUM = {
@@ -33,7 +34,7 @@ const LIVE_URL = 'https://www.twitch.tv/barbarousking'
 const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
 const PNG_IEND_CHUNK = 0x49454E44   // End/Footer for PNG file
 
-const NUM_LIVE_WORKERS = 6 // Num Tesseract workers
+const NUM_LIVE_WORKERS = 12 // Num Tesseract workers
 const WORKER_RECOGNIZE_PARAMS = {
     blocks:true, hocr:false, text:false, tsv:false
 }
@@ -93,7 +94,16 @@ export class MarblesAppServer {
         this.ffmpegCmd = [MarblesAppServer.FFMPEG_LOC, '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
         this.streamlinkProcess = null   // Node process for streamlink
         this.ffmpegProcess = null       // Node process for ffmpeg
-        this.tesseractLinkCmd = [MarblesAppServer.TESSERACT_LOC]
+        this.tesseractLinkCmd = [MarblesAppServer.TESSERACT_LOC, 
+            // String.raw`C:\Users\Tobe\Documents\Github\MarblesNameGrabber\testing\name_bin.png`, '-', // stdin, stdout
+            "-", "-",
+            "--psm", "4",
+            "-l", "eng",
+            "-c", "preserve_interword_spaces=1",
+            "-c", "tessedit_char_whitelist=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQKRSTUVWXYZ_0123456789",
+            "-c", "hocr_char_boxes=1",
+            "hocr"
+        ]
         this.pngChunkBufferArr = []     // Maintained PNG buffer over iterations
 
         // Tesseract variables
@@ -165,6 +175,123 @@ export class MarblesAppServer {
         while (lambda_id < workers) {
             this.sendWarmupLambda(`warmup ${lambda_id++}`)
         }
+    }
+
+    static XML_PARSER = new XMLParser({ignoreAttributes:false});
+
+    /**
+     * @param {Buffer} imgBinBuffer
+     * @returns {Promise<>} tesseractData output
+     * Native tesseract process */
+    async nativeTesseractProcess(imgBinBuffer) {
+        // console.debug(`Running native Tesseract process`)
+        const tessProcess = spawn(this.tesseractLinkCmd[0], this.tesseractLinkCmd.slice(1),{
+            stdio: ["pipe", "pipe", "pipe"]
+        })          //stdin //stdout //stderr
+
+        tessProcess.stderr.on('data', (data) => {
+            const stringOut = data.toString()
+            console.error("Tesseract [ERR]:", stringOut)
+        })
+        
+        let resolve, reject;
+        const retPromise = new Promise((res, rej) => {
+            resolve = res;
+            reject = rej
+        });
+
+        
+        tessProcess.on('close', () => {
+            // console.warn(`Tesseract closed rn`)
+            reject()
+        })
+
+        let outputText = ""
+
+        tessProcess.stdout.on('data', (buffer) => {
+            outputText += buffer.toString();
+        });
+
+        tessProcess.stdout.on('end', () => {
+            // This should be the XML format HOCR
+            // Parsing into a usable line/bbox/symbol for the final text
+            const json_obj = MarblesAppServer.XML_PARSER.parse(outputText)
+            let tesseractData = {
+                lines: [],
+                xml: json_obj
+            }
+            // TODO: Throw error if malformed
+
+            function getXMLChildren(xmlNode_s) {
+                if (!xmlNode_s) return []
+                if (Array.isArray(xmlNode_s)) return xmlNode_s
+                return [xmlNode_s]
+            }
+            
+            for (const ocr_page of getXMLChildren(json_obj.html.body.div)) { // this is the page level
+                for (const ocr_carea of getXMLChildren(ocr_page?.div)) { // column level
+                    for (const ocr_par of getXMLChildren(ocr_carea?.p)) { // paragraph level
+                        for (const ocr_line of getXMLChildren(ocr_par?.span)) { // line level
+
+                            const currLine = {}
+                            tesseractData.lines.push(currLine)
+                            // For each line, pull the bounding box from title
+                            // TODO: Need to ensure that this is parsed when fields exist, this is naive
+                            const titleAttr = ocr_line["@_title"].split(';')
+                            const bbox_arr = titleAttr[0].split(' ')
+                            const bbox_rect = {
+                                x0: parseInt(bbox_arr[1], 10),
+                                y0: parseInt(bbox_arr[2], 10),
+                                x1: parseInt(bbox_arr[3], 10),
+                                y1: parseInt(bbox_arr[4], 10),
+                            }
+                            currLine.bbox = bbox_rect
+
+                            currLine.text = ""
+                            currLine.confidence = 0;
+                            currLine.char_conf_avg = 0;
+                            currLine.conf = []
+                            for (const ocr_word of getXMLChildren(ocr_line.span)) { // No curr instances of multiple words on 1 line
+                                currLine.confidence = parseInt(ocr_word["@_title"].split(';')[1].trim().split(' ')[1], 10)
+                                for (const ocr_cinfo of getXMLChildren(ocr_word.span)) {
+                                    currLine.text += ocr_cinfo["#text"]
+                                    // TODO: Also hardcoded attribute text values
+                                    const conf = parseInt(ocr_cinfo["@_title"].split(';')[1].trim().split(' ')[1], 10);
+                                    currLine.char_conf_avg += conf
+                                    currLine.conf.push(ocr_cinfo["#text"])
+                                }
+                                // NOTE: I am ignoring whitespace here. Could add this back if required
+                            }
+                            currLine.char_conf_avg /= currLine.conf.length * 1.3;
+                            if (currLine.confidence < currLine.char_conf_avg)
+                                currLine.confidence = currLine.char_conf_avg
+                        }
+                    }
+                }
+            }
+
+            // I don't know what's actually here so just say you got it
+            // console.warn(`Tesseract process complete; ${tesseractData}`)
+            resolve({
+                data: tesseractData, 
+                info:"TF is this object for idk"
+            })
+        })
+
+        tessProcess.on('error', err => {
+            console.warn(`Tesseract Err ${err}`)
+            reject()
+        })
+        
+        // put the binarized image to stdin
+        tessProcess.stdin.end(imgBinBuffer
+            // (err) => {
+            //     console.debug("Tesseract bin buffer has been written")
+            // }
+        );
+        // tessProcess.stdin.end()
+
+        return retPromise
     }
 
 // -------------------------
@@ -321,6 +448,7 @@ export class MarblesAppServer {
         // Therefore keeping track of the delay from live
         /** ts of when image first entered the queue */
         const captureDt = Date.now()
+        const perfCapture = performance.now()
         
         let mng = new UserNameBinarization(imageLike, false)
 
@@ -355,7 +483,11 @@ export class MarblesAppServer {
 
         if (!this.uselambda) {
             tesseractPromise = mng.isolateUserNames()
-            .then( buffer =>  this.scheduleTextRecogn(buffer) )
+            // .then( buffer =>  this.scheduleTextRecogn(buffer) )
+            .then( buffer =>  this.nativeTesseractProcess(buffer) )
+            .catch( err => {
+                console.error("Failure to parse image!!!")
+            })
         } else {
             tesseractPromise = mng.dumpInternalBuffer()
             .then ( ({buffer, imgMetadata, info}) => 
@@ -388,10 +520,10 @@ export class MarblesAppServer {
                 else
                     this.emptyListPages = 0
 
-                const processTS = Date.now() - captureDt;
+                const processTS = performance.now() - perfCapture;
                 console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}. Lag-time: ${msToHUnits(processTS, false)}`)
                 
-                if (this.emptyListPages >= EMPTY_PAGE_COMPLETE && this.usernameList.length > 5) {
+                if (this.emptyListPages >= MarblesAppServer.EMPTY_PAGE_COMPLETE && this.usernameList.length > 5) {
                     console.log(`${this.emptyListPages} empty frames @ ${funcImgId}; 
                         dumping queue ${this.imageProcessQueue} & moving to COMPLETE state.`)
                     this.serverStatus.state = SERVER_STATE_ENUM.COMPLETE
@@ -512,12 +644,14 @@ export class MarblesAppServer {
             console.log(err)
         })
         console.log(`WaitingForStart was ${m}`)
+        
+        const withNative = true
 
         if (withLambda) {
             console.log("Using lambda debug")
             await this.warmupLambda(1)
             await mng.buildBuffer().catch( err => {console.error(`Buffer build errored! ${err}`); throw err})
-            mng.orig_buffer = mng.buffer
+            mng.orig_buffer = mng.buffer // TODO: Is this being used?
 
             return mng.dumpInternalBuffer()
             .then( ({buffer, imgMetadata, info}) => this.sendImgToLambda(buffer, imgMetadata, info, 'test', false))
@@ -536,16 +670,19 @@ export class MarblesAppServer {
             throw err
         })
         .then(  () => {
-            console.log(`Built buffer in ${performance.now() - debugStart}ms`)
+            console.log(`Built buffer in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
             debugStart = performance.now();
             return mng.isolateUserNames()
         })
         .then(  buffer => {
-            console.log(`Binarized in ${performance.now() - debugStart}ms`)
+            console.log(`Binarized in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
             debugStart = performance.now();
+            if (withNative) {
+                return this.nativeTesseractProcess(buffer)
+            }
             return this.scheduleTextRecogn(buffer)})
         .then(  tsData => { 
-            console.log(`Recognized in ${performance.now() - debugStart}ms`)
+            console.log(`Recognized in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
             return {mng: mng, data: tsData.data} 
         })
         .catch(
@@ -829,10 +966,13 @@ export class MarblesAppServer {
     }
 
     list () {
-        return Object.fromEntries(this.usernameList.hash)
+        const userListConvert = this.usernameList.usersInOrder.map(username => {
+            username.aliasArray = Array.from(username.aliases)
+        })
+        return this.usernameList.usersInOrder
     }
 
-    debug (filename, withLambda, waitTest=false, raceTest=false) {
+    async debug (filename, withLambda, waitTest=false, raceTest=false) {
         // TODO: Add waitTest & raceTest separately as params
 
         return this.debugRun(filename, withLambda)
@@ -860,7 +1000,7 @@ export class MarblesAppServer {
 
         console.log(`Running test! ${folderName}`)
         const st = performance.now();
-        await this.setupWorkerPool(NUM_LIVE_WORKERS*2)
+        // await this.setupWorkerPool(NUM_LIVE_WORKERS*2)
 
         const promiseList = []
         let ignoreFrames = 60;
@@ -871,16 +1011,14 @@ export class MarblesAppServer {
                 continue
             }
             if (ignoreFrames-- > 0) continue;
-            // if (ignoreFrames < -50) continue;
+            // if (ignoreFrames < -100) continue;
+
             // send each image file to parse
             const file = await fs.readFile(path.resolve(folderName, fileName))
             promiseList.push(this.parseImgFile(file)) // filename works but I want to read
             console.debug(`Parsing image file ${fileName}`)
-            await setTimeout(50); // forcing sleep so my computer doesn't explode
-            // break;
+            await setTimeout(20); // forcing sleep so my computer doesn't explode
         }
-
-        // TODO: Need to check for bad joins
 
         // Once complete, go through the names list and check against server accuracy
         Promise.all(promiseList)
@@ -912,14 +1050,14 @@ export class MarblesAppServer {
             let nonPerfectAvg = 0;
             let nonPerfectCount = 0;
             for (const score of scoreArr) {
-                map.set(score, map.get(score)+1 ?? 0);
+                map.set(score, (map.get(score) || 0) + 1);
                 if (score > 1) {
                     nonPerfectCount++;
                     nonPerfectAvg += score
                 }
             }
 
-            console.debug(`All scores: ${Array.from(map.entries()).map(([key, val]) => `${[key]}=${val}`).join('\n')} `)
+            console.debug(`All scores: ${Array.from(map.entries()).sort().map(([key, val]) => `${[key]}=${val}`).join('\n')} `)
             console.debug(`Final score: ${totalScore}, mean: ${totalScore/nameList.length}`)
             console.debug(`median: ${median}, avg-non-perfect ${nonPerfectAvg/nonPerfectCount}`)
             console.debug(`Not found list [${notFound.length}]: \n${notFound.join(', ')}`)

@@ -55,15 +55,23 @@ However first comes PixelHunter testing & using the same current algorithm for (
 What is needed to get marbles site running?
 [x] Fixing the names box
 [x] Fixing the colors (if those have changed)
-[ ] Fixing start recognition
+[x] Fixing start recognition
+[ ] Native Tesseract in Lambda
 
+Native tesseract (also v5?)
+592.755499958992ms
+590.9905000329018ms
+579.6887000203133ms
+
+WASM
+1594.7734000086784ms
+1630.4746000170708ms
+1634.950100004673ms
+
+nearly x3 speedup
 ## todo TODAY
-
-Fix image pull
+Look at alias list (its not working at all)
 Debug userList (indexing problems)
-- currently its x2 times the size (excluding aliases, and I dont know why)
-
-Start working on new identify
 
 ## todo later
 Server

@@ -427,7 +427,11 @@ export class UserNameBinarization {
     Initution: Simply move from right->left looking for a big color gap
         Ignore anything that matches BLACK or user colors
     */
-
+    /**
+     * Performs the large task of separating background from names & isolating thresholds to
+     * create a binarized image for OCR.
+     * @returns Binarized PNG imatge
+     */
     async isolateUserNames () {
         // First, ensure buffer exists
         await this.buildBuffer()
