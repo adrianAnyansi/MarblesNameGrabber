@@ -69,9 +69,11 @@ WASM
 1634.950100004673ms
 
 nearly x3 speedup
+
+
 ## todo TODAY
-Look at alias list (its not working at all)
-Debug userList (indexing problems)
+Lambda work
+Deploy to server after
 
 ## todo later
 Server

@@ -8,6 +8,7 @@ import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
 import { rotPoint, toPct } from './DataStructureModule.mjs'
 import { PixelMeasure, Color, BufferView, ImageTemplate } from './UtilModule.mjs'
+import {resolve} from 'node:path'
 import fs from 'fs'
 
 export class ColorSpace {
@@ -57,8 +58,8 @@ export class ColorSpace {
 }
 
 // External programming things
-const START_NAME_LOCS = JSON.parse(fs.readFileSync("data/startpixels.json", 'utf8'))
-const COLORSPACE_JSON = JSON.parse(fs.readFileSync("data/colorspace.json", 'utf8'))
+const START_NAME_LOCS = JSON.parse(fs.readFileSync(resolve("data\\startpixels.json"), 'utf8'))
+const COLORSPACE_JSON = JSON.parse(fs.readFileSync(resolve("data\\colorspace.json"), 'utf8'))
 
 const COLORSPACE_OBJ = {
     WHITE: ColorSpace.Import(COLORSPACE_JSON.WHITE),
@@ -257,6 +258,7 @@ export class UserNameBinarization {
         this.imageSize = null
 
         this.imageSize = {w: imgMetadata.w, h: imgMetadata.h}
+        this.RES_BASIS = new PixelMeasure(imgMetadata.w, imgMetadata.h);
         this.bufferSize = {w: info.w, h:info.h, channels: info.channels, premultiplied: info.premultiplied, size: info.size }
 
         this.buffer = bufferCrop
@@ -780,7 +782,7 @@ export class UserNameBinarization {
     
     static PRE_RACE_START = {x:1136, y:220, w:103, h:46};
     static START_BUTTON_TEMPLATE = new ImageTemplate(
-        'data/start_btn.png', 
+        resolve('data/start_btn.png'), 
         // 'testing/vod_dump/110.png',
         UserNameBinarization.PRE_RACE_START);
 

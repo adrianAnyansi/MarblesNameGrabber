@@ -50,11 +50,23 @@ const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id f
 const TWITCH_CRED_FILE = 'twitch_creds.json'
 
 const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
-const USE_LAMBDA = false
+const USE_LAMBDA = true
 const NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
+
+const TESSERACT_ARGS = [
+    // String.raw`C:\Users\Tobe\Documents\Github\MarblesNameGrabber\testing\name_bin.png`, '-', // stdin, stdout
+    "-", "-",
+    "--psm", "4",
+    "-l", "eng",
+    "-c", "preserve_interword_spaces=1",
+    "-c", "tessedit_char_whitelist=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQKRSTUVWXYZ_0123456789",
+    "-c", "hocr_char_boxes=1",
+    "hocr"
+];
 
 export class MarblesAppServer {
 
+    /** Not being used right now */
     static ENV = 'dev' // set from router
     static TESSERACT_LOC = String.raw`C:\Program Files\Tesseract-OCR\tesseract.exe`
     
@@ -94,16 +106,7 @@ export class MarblesAppServer {
         this.ffmpegCmd = [MarblesAppServer.FFMPEG_LOC, '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
         this.streamlinkProcess = null   // Node process for streamlink
         this.ffmpegProcess = null       // Node process for ffmpeg
-        this.tesseractLinkCmd = [MarblesAppServer.TESSERACT_LOC, 
-            // String.raw`C:\Users\Tobe\Documents\Github\MarblesNameGrabber\testing\name_bin.png`, '-', // stdin, stdout
-            "-", "-",
-            "--psm", "4",
-            "-l", "eng",
-            "-c", "preserve_interword_spaces=1",
-            "-c", "tessedit_char_whitelist=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQKRSTUVWXYZ_0123456789",
-            "-c", "hocr_char_boxes=1",
-            "hocr"
-        ]
+        this.tesseractCmd = MarblesAppServer.TESSERACT_LOC
         this.pngChunkBufferArr = []     // Maintained PNG buffer over iterations
 
         // Tesseract variables
@@ -185,7 +188,7 @@ export class MarblesAppServer {
      * Native tesseract process */
     async nativeTesseractProcess(imgBinBuffer) {
         // console.debug(`Running native Tesseract process`)
-        const tessProcess = spawn(this.tesseractLinkCmd[0], this.tesseractLinkCmd.slice(1),{
+        const tessProcess = spawn(this.tesseractCmd, TESSERACT_ARGS, {
             stdio: ["pipe", "pipe", "pipe"]
         })          //stdin //stdout //stderr
 
@@ -215,60 +218,7 @@ export class MarblesAppServer {
         tessProcess.stdout.on('end', () => {
             // This should be the XML format HOCR
             // Parsing into a usable line/bbox/symbol for the final text
-            const json_obj = MarblesAppServer.XML_PARSER.parse(outputText)
-            let tesseractData = {
-                lines: [],
-                xml: json_obj
-            }
-            // TODO: Throw error if malformed
-
-            function getXMLChildren(xmlNode_s) {
-                if (!xmlNode_s) return []
-                if (Array.isArray(xmlNode_s)) return xmlNode_s
-                return [xmlNode_s]
-            }
-            
-            for (const ocr_page of getXMLChildren(json_obj.html.body.div)) { // this is the page level
-                for (const ocr_carea of getXMLChildren(ocr_page?.div)) { // column level
-                    for (const ocr_par of getXMLChildren(ocr_carea?.p)) { // paragraph level
-                        for (const ocr_line of getXMLChildren(ocr_par?.span)) { // line level
-
-                            const currLine = {}
-                            tesseractData.lines.push(currLine)
-                            // For each line, pull the bounding box from title
-                            // TODO: Need to ensure that this is parsed when fields exist, this is naive
-                            const titleAttr = ocr_line["@_title"].split(';')
-                            const bbox_arr = titleAttr[0].split(' ')
-                            const bbox_rect = {
-                                x0: parseInt(bbox_arr[1], 10),
-                                y0: parseInt(bbox_arr[2], 10),
-                                x1: parseInt(bbox_arr[3], 10),
-                                y1: parseInt(bbox_arr[4], 10),
-                            }
-                            currLine.bbox = bbox_rect
-
-                            currLine.text = ""
-                            currLine.confidence = 0;
-                            currLine.char_conf_avg = 0;
-                            currLine.conf = []
-                            for (const ocr_word of getXMLChildren(ocr_line.span)) { // No curr instances of multiple words on 1 line
-                                currLine.confidence = parseInt(ocr_word["@_title"].split(';')[1].trim().split(' ')[1], 10)
-                                for (const ocr_cinfo of getXMLChildren(ocr_word.span)) {
-                                    currLine.text += ocr_cinfo["#text"]
-                                    // TODO: Also hardcoded attribute text values
-                                    const conf = parseInt(ocr_cinfo["@_title"].split(';')[1].trim().split(' ')[1], 10);
-                                    currLine.char_conf_avg += conf
-                                    currLine.conf.push(ocr_cinfo["#text"])
-                                }
-                                // NOTE: I am ignoring whitespace here. Could add this back if required
-                            }
-                            currLine.char_conf_avg /= currLine.conf.length * 1.3;
-                            if (currLine.confidence < currLine.char_conf_avg)
-                                currLine.confidence = currLine.char_conf_avg
-                        }
-                    }
-                }
-            }
+            let tesseractData = this.parseHOCRResponse(outputText)
 
             // I don't know what's actually here so just say you got it
             // console.warn(`Tesseract process complete; ${tesseractData}`)
@@ -292,6 +242,67 @@ export class MarblesAppServer {
         // tessProcess.stdin.end()
 
         return retPromise
+    }
+
+    /** Separating XML Parser so Lambda doesn't have to use it  */
+    parseHOCRResponse(output_text) {
+        const json_obj = MarblesAppServer.XML_PARSER.parse(output_text);
+        let ret_obj = {
+            lines: [],
+            xml:json_obj
+        }
+        
+        // TODO: Throw error if malformed
+
+        function getXMLChildren(xmlNode_s) {
+            if (!xmlNode_s) return []
+            if (Array.isArray(xmlNode_s)) return xmlNode_s
+            return [xmlNode_s]
+        }
+        
+        for (const ocr_page of getXMLChildren(json_obj.html.body.div)) { // this is the page level
+            for (const ocr_carea of getXMLChildren(ocr_page?.div)) { // column level
+                for (const ocr_par of getXMLChildren(ocr_carea?.p)) { // paragraph level
+                    for (const ocr_line of getXMLChildren(ocr_par?.span)) { // line level
+
+                        const currLine = {}
+                        ret_obj.lines.push(currLine)
+                        // For each line, pull the bounding box from title
+                        // TODO: Need to ensure that this is parsed when fields exist, this is naive
+                        const titleAttr = ocr_line["@_title"].split(';')
+                        const bbox_arr = titleAttr[0].split(' ')
+                        const bbox_rect = {
+                            x0: parseInt(bbox_arr[1], 10),
+                            y0: parseInt(bbox_arr[2], 10),
+                            x1: parseInt(bbox_arr[3], 10),
+                            y1: parseInt(bbox_arr[4], 10),
+                        }
+                        currLine.bbox = bbox_rect
+
+                        currLine.text = ""
+                        currLine.confidence = 0;
+                        currLine.char_conf_avg = 0;
+                        currLine.conf = []
+                        for (const ocr_word of getXMLChildren(ocr_line.span)) { // No curr instances of multiple words on 1 line
+                            currLine.confidence = parseInt(ocr_word["@_title"].split(';')[1].trim().split(' ')[1], 10)
+                            for (const ocr_cinfo of getXMLChildren(ocr_word.span)) {
+                                currLine.text += ocr_cinfo["#text"]
+                                // TODO: Also hardcoded attribute text values
+                                const conf = parseInt(ocr_cinfo["@_title"].split(';')[1].trim().split(' ')[1], 10);
+                                currLine.char_conf_avg += conf
+                                currLine.conf.push(ocr_cinfo["#text"])
+                            }
+                            // NOTE: I am ignoring whitespace here. Could add this back if required
+                        }
+                        currLine.char_conf_avg /= currLine.conf.length * 1.3;
+                        if (currLine.confidence < currLine.char_conf_avg)
+                            currLine.confidence = currLine.char_conf_avg
+                    }
+                }
+            }
+        }
+
+        return ret_obj
     }
 
 // -------------------------
@@ -483,8 +494,8 @@ export class MarblesAppServer {
 
         if (!this.uselambda) {
             tesseractPromise = mng.isolateUserNames()
-            // .then( buffer =>  this.scheduleTextRecogn(buffer) )
-            .then( buffer =>  this.nativeTesseractProcess(buffer) )
+            .then( buffer =>  this.scheduleTextRecogn(buffer) )
+            // .then( buffer =>  this.nativeTesseractProcess(buffer) )
             .catch( err => {
                 console.error("Failure to parse image!!!")
             })
@@ -649,13 +660,22 @@ export class MarblesAppServer {
 
         if (withLambda) {
             console.log("Using lambda debug")
+            let debugStart = performance.now();
             await this.warmupLambda(1)
             await mng.buildBuffer().catch( err => {console.error(`Buffer build errored! ${err}`); throw err})
             mng.orig_buffer = mng.buffer // TODO: Is this being used?
+            console.log(`Built buffer in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
 
             return mng.dumpInternalBuffer()
-            .then( ({buffer, imgMetadata, info}) => this.sendImgToLambda(buffer, imgMetadata, info, 'test', false))
-            .then( ({data, info, jobId}) => {console.debug(`Lambda complete job-${jobId}`); return {mng: mng, data: data}})
+            .then( ({buffer, imgMetadata, info}) => {
+                debugStart = performance.now(); 
+                return this.sendImgToLambda(buffer, imgMetadata, info, 'test', false)
+            })
+            .then( ({data, info, jobId}) => {
+                console.debug(`Lambda complete job-${jobId}`); 
+                console.log(`Recognized in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
+                return {mng: mng, data: data}
+            })
             .catch( err => {console.error(`Lambda errored! ${err}`); throw err})
             // NOTE: This doesn't return early
         }
@@ -1000,7 +1020,7 @@ export class MarblesAppServer {
 
         console.log(`Running test! ${folderName}`)
         const st = performance.now();
-        // await this.setupWorkerPool(NUM_LIVE_WORKERS*2)
+        await this.setupWorkerPool(NUM_LIVE_WORKERS)
 
         const promiseList = []
         let ignoreFrames = 60;

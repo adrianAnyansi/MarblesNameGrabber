@@ -15,7 +15,12 @@
 		{
 			"label": "Build lambda deployment",
 			"type": "shell",
-			"command": "Compress-Archive -Path ./lambda/node_modules/, ./lambda/index.mjs, ./src/MarblesNameGrabberNode.mjs, ./src/DataStructureModule.mjs, ./data/ -DestinationPath MarblesNameLambdaDeploy.zip -Force"
+			"command": "Compress-Archive -Path ./lambda/node_modules/, ./lambda/index.mjs, ./src/UserNameBinarization.mjs, ./src/UtilModule.mjs, ./src/DataStructureModule.mjs, ./data/ -DestinationPath MarblesNameLambdaDeploy.zip -Force",
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
 		}
 	]
 }

@@ -164,7 +164,7 @@ server.listen(PORT, (socket) => {
     console.log(`Server[${server_env}] running at ${HOST}:${PORT}`)
     
     if (env != 'development') {
-        app_server.use_lambda = true
+        app_server.uselambda = true
         console.log("[PROD] server, default to lambda functions")
         app_server.enableMonitor = true
         console.log("[PROD] server, default to twitch monitor on")
