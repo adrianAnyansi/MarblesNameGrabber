@@ -58,8 +58,8 @@ export class ColorSpace {
 }
 
 // External programming things
-const START_NAME_LOCS = JSON.parse(fs.readFileSync(resolve("data\\startpixels.json"), 'utf8'))
-const COLORSPACE_JSON = JSON.parse(fs.readFileSync(resolve("data\\colorspace.json"), 'utf8'))
+const START_NAME_LOCS = JSON.parse(fs.readFileSync(resolve("data/startpixels.json"), 'utf8'))
+const COLORSPACE_JSON = JSON.parse(fs.readFileSync(resolve("data/colorspace.json"), 'utf8'))
 
 const COLORSPACE_OBJ = {
     WHITE: ColorSpace.Import(COLORSPACE_JSON.WHITE),
@@ -782,7 +782,7 @@ export class UserNameBinarization {
     
     static PRE_RACE_START = {x:1136, y:220, w:103, h:46};
     static START_BUTTON_TEMPLATE = new ImageTemplate(
-        resolve('data/start_btn.png'), 
+        'data/start_btn.png', 
         // 'testing/vod_dump/110.png',
         UserNameBinarization.PRE_RACE_START);
 
