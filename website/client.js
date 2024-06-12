@@ -23,6 +23,7 @@ const UserImgEl = document.getElementById('userImg')
 const ServerStatusEl = document.getElementById('server_status')
 const ServerUsersEl = document.getElementById('user_tracked')
 const WebsiteUsersEl = document.getElementById('viewers_visiting')
+const LagTimeEl = document.getElementById('lag_time')
 
 const trackedUserNums = [0, 0]
 const visitingUserNums = [0, 0]
@@ -200,6 +201,7 @@ function handleServerStatus(serverJSON) {
     document.querySelector('#serverStatusIcon').classList = serverJSON['status']['state'].toLowerCase()
     // ServerUsersEl.textContent = `${serverJSON['userList']['user_list']} possible user(s)`
     WebsiteUsersEl.textContent = `${serverJSON['status']['viewers']} site viewer(s)` // TODO: Finish
+    LagTimeEl.textContent = `-${serverJSON['status']['lag_time']} from LIVE`
     
     let dialingTracked = trackedUserNums[0] != trackedUserNums[1] // tracked is being moved already
     trackedUserNums[1] = serverJSON['userList']['user_list']

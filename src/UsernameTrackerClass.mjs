@@ -58,7 +58,7 @@ const DEFINED_ADJC_SETS = [
     ['s', 'z'],                 // zigzag lt
     ['R', 'A'],             // Big lt with circle
     ['Y', 'v', 'y'],         // v/w
-    ['4', 'd', 'A'],
+    ['4', 'd', 'A', 'a'],
     ['d', '9'],
     ['7', 'T'],
     ['g', 'y'],
@@ -272,7 +272,7 @@ export class UsernameTracker {
 
         // take the first line, try to match to previous page
         /** best-match within leven distance of # */
-        const MIN_MATCH = 6;
+        const MIN_MATCH = 4;
         /** number of links required before joining pages */
         const LINK_AMOUNT = 3
         /** where currPage points to prev page */

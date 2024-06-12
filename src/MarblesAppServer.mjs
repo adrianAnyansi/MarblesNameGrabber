@@ -40,7 +40,7 @@ const WORKER_RECOGNIZE_PARAMS = {
 }
 const TEST_FILENAME = "testing/test.png"
 const LIVE_FILENAME = "testing/#.png"
-const VOD_DUMP_LOC = "testing/vod_dump/"
+const VOD_DUMP_LOC = "testing/vod_dump3/"
 
 let TWITCH_ACCESS_TOKEN_BODY = null
 const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
@@ -50,7 +50,7 @@ const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id f
 const TWITCH_CRED_FILE = 'twitch_creds.json'
 
 const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
-const USE_LAMBDA = true
+const USE_LAMBDA = false
 const NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
 
 const TESSERACT_ARGS = [
@@ -91,7 +91,8 @@ export class MarblesAppServer {
             started_stream_ts: null,            // how long the program has ingested data
             ended_stream_ts: null,              // when stream ingest ended
             viewers: 0,                         // current viewers on the site
-            interval: 1_000 * 3                 // interval to refresh status
+            interval: 1_000 * 3,                 // interval to refresh status
+            lag_time: 0
         }
 
         // debug variables
@@ -113,7 +114,8 @@ export class MarblesAppServer {
         this.OCRScheduler = null
         this.numOCRWorkers = 0
 
-        this.usernameList = new UsernameTracker()   // Userlist
+        /** @type {UsernameTracker} Userlist for server */
+        this.usernameList = new UsernameTracker() 
         this.emptyListPages = 0 // Number of images without any names
 
         // Twitch tokens
@@ -134,6 +136,7 @@ export class MarblesAppServer {
         this.imageProcessQueue = []    // Queue for image processing
         this.imageProcessQueueLoc = 0    // Where the first element of imageProcessQueue points to
         this.imageProcessId = 0          // Current id for image
+        this.imageProcessTime = []
 
         // Start up the Twitch game monitor
         if (this.enableMonitor)
@@ -533,6 +536,11 @@ export class MarblesAppServer {
 
                 const processTS = performance.now() - perfCapture;
                 console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}. Lag-time: ${msToHUnits(processTS, false)}`)
+                this.imageProcessTime.push(processTS);
+                while (this.imageProcessTime.length > 10)
+                    this.imageProcessTime.shift();
+                this.serverStatus.lag_time = msToHUnits(
+                    this.imageProcessTime.reduce((p,c) => p+c, 0)/this.imageProcessTime.length, false, 2, 's');
                 
                 if (this.emptyListPages >= MarblesAppServer.EMPTY_PAGE_COMPLETE && this.usernameList.length > 5) {
                     console.log(`${this.emptyListPages} empty frames @ ${funcImgId}; 
@@ -656,7 +664,7 @@ export class MarblesAppServer {
         })
         console.log(`WaitingForStart was ${m}`)
         
-        const withNative = true
+        const withNative = false
 
         if (withLambda) {
             console.log("Using lambda debug")
@@ -875,6 +883,7 @@ export class MarblesAppServer {
 
         if (this.streamlinkProcess == null) {
             this.usernameList.clear()
+            this.imageProcessTime.length = 0;
             
             if (!this.uselambda)
                 this.setupWorkerPool(NUM_LIVE_WORKERS)
@@ -903,6 +912,7 @@ export class MarblesAppServer {
             this.serverStatus.state = SERVER_STATE_ENUM.STOPPED
         }
 
+        this.imageProcessTime.length = 0;
         this.debugVODDump = false;
 
         return {"state": this.serverStatus.state, "text": resp_text}
@@ -1020,6 +1030,7 @@ export class MarblesAppServer {
 
         console.log(`Running test! ${folderName}`)
         const st = performance.now();
+        // setup workers
         await this.setupWorkerPool(NUM_LIVE_WORKERS)
 
         const promiseList = []

@@ -56,8 +56,11 @@ What is needed to get marbles site running?
 [x] Fixing the names box
 [x] Fixing the colors (if those have changed)
 [x] Fixing start recognition
-[ ] Native Tesseract in Lambda
+[-] Native Tesseract in Lambda (not efficient)
+[ ] Website update + notes
+[ ] Admin stuff + page
 
+## Native tesseract 
 Native tesseract (also v5?)
 592.755499958992ms
 590.9905000329018ms
@@ -72,22 +75,15 @@ nearly x3 speedup
 
 
 ## todo TODAY
-Lambda work
-Deploy to server after
+Update website to show lag from live
+ADMIN stuff (just read from a text file)
 
 ## todo later
 Server
     Reduce memory stuff (memory)
         Think about reducing the images used based on confidence 
         Or only save unique names to prevent pile-up of data
-
-    START/STOP AUTH
-    Verify image backend 
-        request_id + info (in set)
-        if 1, add to verified (only if username is not taken)
-        once info has 2 similar results, add to verified
-
-
+        (or use S3)
 
 # Notes
 ## Computer text recogn

@@ -20,6 +20,7 @@
                         <span id="server_status">Getting server status</span>
                     </div>
                     <span id="viewers_visiting">Website viewers</span>
+                    <span id="lag_time"></span>
                 </div>
             </div>
 
@@ -52,12 +53,6 @@
             </p>
         </div>
 
-        <div class="page verifyPage">
-            <h2 class="small-title">Verify Users</h2>
-            <p> Coming soon! Need to do some backend stuff first!</p>
-        </div>
-
-
         <div class="page aboutPage">
             <h2 class="small-title">About</h2>
 
@@ -76,17 +71,19 @@
             </p>
             <p><i>So Barb please don't obscure names during the initial scroll</i></p>
             <p>
-                Both the background extract & text recognition are not perfect, so the site is not completely accurate and uses some human
-                interaction to verify usernames. The long answer is... very long & technical.
+                Both the background extract & text recognition are not perfect, so the site is not completely accurate.
+                It uses binarization and OCR to do this.
             </p>
 
             <p class="aboutQuestion"><span>Q: </span> Ok but how accurate? Am I in or not?</p>
 
             <p>
-                Testing shows it's about ~92% accurate and ~1.4s behind live. 
+                Testing shows it's about ~98% accurate and ~2.3s behind live. 
             </p>
             <p>
                 The exact amount can vary depending on obscured names, bitrate, certain letters, etc.
+                There's no way to know 100% because there can be situations where names are unreadable:
+                i.e 
             </p>
             <!-- <ul>
                 <li>Twitch chat not being moved early</li>
@@ -94,10 +91,6 @@
                 <li>Bitrate making names unreadable</li>
                 <li>Other oversights in code</li>
             </ul> -->
-            <p>
-                I think filling the gap is best done manually and I'm working on that. I plan on making a UI that lets everyone help
-                identify usernames that the bot can't read.
-            </p>
 
             <p class="aboutQuestion"><span>Q: </span>So with all this work; you must know the secret of getting into marbles?</p>
 
@@ -124,11 +117,11 @@
                 <ul>
                     <li> Have you seen how tiny that is? Smaller letters will make it even more inaccurate.</li>
                     <li> Stream chat either gets removed/or moved to a random spot on screen </li>
-                    <li> That chat scrolls so fast that the computer will miss people. </li>
+                    <li> That chat scrolls so fast that even the computer will miss people. </li>
                 </ul>
             </p>
             <p>
-                Also I can't use Twitch chat as my order is different from Barb's. (Though it might supplement it) So this is my current best option.
+                Also I can't use Twitch chat as my order is different from Barb's.
             </p>
 
             <p class="aboutQuestion"><span>Q: </span>Alright so I found a bug. Who do I snitch to?</p>
@@ -143,6 +136,11 @@
                 Improvements: Number of users is more accurate (now ±30 users)
                 Fixed placeholder for user input.
                 Username search is slightly more accurate.
+            </p>
+            <p>
+                Improvements 0.2.2: Fixed bug with username search
+                Increased avg accuracy to 98%
+                Added lag from LIVE
             </p>
         </div>
 
