@@ -50,7 +50,7 @@ const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id f
 const TWITCH_CRED_FILE = 'twitch_creds.json'
 
 const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
-const USE_LAMBDA = false
+const USE_LAMBDA = true
 const NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
 
 const TESSERACT_ARGS = [
@@ -449,12 +449,12 @@ export class MarblesAppServer {
             return
         }
 
-        this.serverStatus.imgs_downloaded += 1
+        const imgId = this.serverStatus.imgs_downloaded++
 
         if (this.debugVODDump) {
             console.debug(`Stream is dumped to location ${VOD_DUMP_LOC}`)
             fs.mkdir(`${VOD_DUMP_LOC}`, {recursive: true})
-            fs.writeFile(`${VOD_DUMP_LOC}${this.serverStatus.imgs_downloaded}.png`, imageLike)
+            fs.writeFile(`${VOD_DUMP_LOC}${imgId}.png`, imageLike)
             return
         }
 
@@ -505,7 +505,7 @@ export class MarblesAppServer {
         } else {
             tesseractPromise = mng.dumpInternalBuffer()
             .then ( ({buffer, imgMetadata, info}) => 
-                this.sendImgToLambda(buffer, imgMetadata, info, `lid:${this.serverStatus.imgs_downloaded}`, false)
+                this.sendImgToLambda(buffer, imgMetadata, info, `lid:${imgId}`, false)
             )
             this.lambdaQueue += 1
         }

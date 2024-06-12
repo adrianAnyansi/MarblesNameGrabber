@@ -168,5 +168,7 @@ server.listen(PORT, (socket) => {
         console.log("[PROD] server, default to lambda functions")
         app_server.enableMonitor = true
         console.log("[PROD] server, default to twitch monitor on")
+        app_server.ffmpegCmd[0] = 'ffmpeg'
+        console.log("[PROD] server, change to installed FFMPEG")
     }
 })
