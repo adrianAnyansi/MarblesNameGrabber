@@ -57,7 +57,7 @@ What is needed to get marbles site running?
 [x] Fixing the colors (if those have changed)
 [x] Fixing start recognition
 [-] Native Tesseract in Lambda (not efficient)
-[ ] Website update + notes
+[x] Website update + notes
 [ ] Admin stuff + page
 
 ## Native tesseract 
@@ -100,7 +100,11 @@ The other thing is judging by how people use it, I doubt anyone will crowd sourc
 
 
 ## Bugs
+Im just bug-testing stuff from the run today.
+1. Stream-monitor did not pick up the game. Verified that the game id / name did not change on laptop.
+Solved: the server gets created before startup variables are updated.
 
+2. Fix the bug with names & images being wrong.
 
 # Long thoughts
 

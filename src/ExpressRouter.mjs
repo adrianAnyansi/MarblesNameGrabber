@@ -3,7 +3,7 @@
 */
 
 import express from 'express'
-import { MarblesAppServer } from './MarblesAppServer.mjs';
+import { MarblesAppServer, SERVER_STATE_ENUM } from './MarblesAppServer.mjs';
 // import HyperExpress from 'hyper-express'
 import helmet from "helmet";
 import path from 'path'
@@ -56,12 +56,14 @@ server.post(['/start', '/start/*'], (req, res) => {
 server.all(['/force'], (req, res) => {
     
     console.log(`Recieved FORCE command ${req.originalUrl}.`)
-    if (app_server.serverStatus.state != 'STOPPED') {
+    if ([SERVER_STATE_ENUM.WAITING, SERVER_STATE_ENUM.STOPPED].includes(
+        app_server.serverStatus.state
+    )) {
         app_server.start()
         app_server.serverStatus.state = "READING"
         res.json({'res':"Forced into READING state"})
     } else {
-        res.json({'res':"Already in READING state"})
+        res.json({'res':`Currently in ${app_server.serverStatus.state} state`})
     }
 })
 
@@ -167,6 +169,9 @@ server.listen(PORT, (socket) => {
         app_server.uselambda = true
         console.log("[PROD] server, default to lambda functions")
         app_server.enableMonitor = true
+        if (!app_server.game_type_monitor_interval) {
+            app_server.setupTwitchMonitor()
+        }
         console.log("[PROD] server, default to twitch monitor on")
         app_server.ffmpegCmd[0] = 'ffmpeg'
         console.log("[PROD] server, change to installed FFMPEG")

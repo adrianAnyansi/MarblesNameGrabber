@@ -18,15 +18,21 @@ class Username {
      * @param {Date} timestamp Ingest date
      */
     constructor (name, confidence, index, timestamp=null) {
-        this.name = name                // qualified name
-        this.confidence = confidence    // confidence pct
-        this.index = index              // index in full list
+        /** @type {string} most confident name */
+        this.name = name                
+        /** @type {number} confidence percentage */
+        this.confidence = confidence
+        /** @type {number} index in user list */
+        this.index = index
         
-        this.timestamp = timestamp      // ingest timestamp
+        /** @type {number} ingest timestamp in ms */
+        this.timestamp = timestamp      
         this.verifyAmount = 0           // verified by human
-        this.fullImgIdxList = []        // images of this user
+        /** @type {UserImage<>} images of the user */
+        this.fullImgIdxList = []       
 
-        this.aliases = new Set() // set of usernames that are similar
+        /** @type {Set<string>} set of usernames that are at this index */
+        this.aliases = new Set()
     }
 }
 
@@ -87,9 +93,11 @@ export class UsernameTracker {
 
     constructor () {
         this.hash = new Map()       // hash of names
+        /** @type {Array<Username>} */
         this.usersInOrder = []  // List of UserObj in order
 
         this.pageIdx = 0           // Currently injested page
+        /** @type {UserImage[]} images of the user */
         this.fullImageList = []     // All images in order
 
         this.unverifiedImgs = []    // List of usernames unsuccessfully read
@@ -105,9 +113,9 @@ export class UsernameTracker {
 
     /**
      * Add username to userInOrder with object
-     * @param {*} username 
-     * @param {*} confidence 
-     * @param {*} index 
+     * @param {string} username 
+     * @param {number} confidence 
+     * @param {number} index 
      * @param {Date} capture_dt
      * @returns {Username}
      */
@@ -174,8 +182,6 @@ export class UsernameTracker {
         this.hash.delete(oldUsername)
         this.add(newUsername, user.confidence, true)
 
-        // const img = this.imgHash.get(oldUsername)
-        // this.imgHash.delete(oldUsername)
         this.hash.set(newUsername, img) // maybe don't replace old one?
     }
 
@@ -188,6 +194,8 @@ export class UsernameTracker {
 
     MIN_PAGE_CHECK = 1  // At least # usernames must exist for this page to be checked
 
+    static USER_IMG_LIMIT = 3
+
     /**
      * Add a page of usernames (including scrubbing to check which line is which)
      * While this function is async, it's not expected to be run as such.
@@ -199,7 +207,7 @@ export class UsernameTracker {
     addPage (tesseractData, sharpOCRImg, orig_img_size, capture_dt) {
         const retList = []  // List of names to return for state info
         
-        const heightPadding = 10; // TODO: Turn into pct
+        const HEIGHT_PADDING = 13; // TODO: Turn into pct
         if (!tesseractData.lines) return retList
         
         const validLines = tesseractData.lines.filter( line => line.text.length > 2)
@@ -208,8 +216,6 @@ export class UsernameTracker {
             return retList
         }
 
-        // TODO: Use current image width/height to get the orignal basis
-        // const RES_BASIS = new PixelMeasure(1920, 1080); 
         const OCR_SCALE_RATIO = UserNameBinarization.OCR_WIDTH / UserNameBinarization.NAME_CROP_RECT.w;
         /** This will be the trueUsernameHeight thanks to res_basis */
         const OCR_RES_BASIS = new PixelMeasure(
@@ -222,10 +228,10 @@ export class UsernameTracker {
         const OCR_IMG_WIDTH = OCR_RES_BASIS.getHorizUnits(orig_img_size.w, {floor:true})
 
         /** height of the OCR binarized buffer */
-        const ocrImgHeight = Math.floor(OCR_SCALE_RATIO * orig_img_size.h); // sharp.scale is not reflected in this buffer.
+        // const ocrImgHeight = Math.floor(OCR_SCALE_RATIO * orig_img_size.h); // sharp.scale is not reflected in this buffer.
         /** width of the OCR binarized buffer */
-        const ocrImgWidth = Math.floor(OCR_SCALE_RATIO * orig_img_size.w); // sharp.scale is not reflected in this buffer.
-        /** @type {Object[string, int]} pageData #. {user:string, idx:int} */
+        // const ocrImgWidth = Math.floor(OCR_SCALE_RATIO * orig_img_size.w); // sharp.scale is not reflected in this buffer.
+        /** @type {Object<string, int>} pageData #. {user:string, idx:int} */
         const pageData = []
         /** @type {Object[]} Current page username objects */
         const pageParsedInfo = []
@@ -239,7 +245,6 @@ export class UsernameTracker {
             /** Get vertical center of username box */
             const username_box_center = (line.bbox.y1 - line.bbox.y0)/2 + line.bbox.y0
             /** Division in OCR Image bounds that matches the user lines */
-            // let old_division = Math.floor(username_box_center / (this.USERNAME_BOX_CROP_PCT * ocrImgHeight))  
             const division = Math.floor(username_box_center / (USERNAME_OCR_BOX_HEIGHT))  
             pageData.push({"username":username, "division":division}) // set the current division
 
@@ -251,21 +256,21 @@ export class UsernameTracker {
                     conf = symbolSum / (2 * line.words[0].symbols.length)
                 }
                 pageParsedInfo[division] = {'username':username, 'conf':conf, 
-                    'division':division, 'capture_dt':capture_dt, 
+                    'division':division, 'capture_dt':capture_dt, 'bbox':line.bbox,
                     'line':line}
                 
-                retList.push(`${username}, ${conf}`)
+                retList.push(`[${division}]${username}, ${conf}`)
             
                 // Extract the image
-                const bbox = line.bbox
-                pageParsedInfo[division]['imgPromise'] = // set image buffer promise to be made after
-                    sharpOCRImg.extract({  left: 0,
-                                        width: OCR_IMG_WIDTH,
-                                        top: Math.max(bbox.y0 - heightPadding, 0),
-                                        height: Math.min((bbox.y1+heightPadding) - bbox.y0, OCR_IMG_HEIGHT)
-                    })
-                    .jpeg().toBuffer()
-                    .catch( err => { console.warn(`Couldn't retrieve image buffer ${err}`)})
+                // const bbox = line.bbox
+                // pageParsedInfo[division]['imgPromise'] = // set image buffer promise to be made after
+                //     sharpOCRImg.extract({  left: 0,
+                //                         width: OCR_IMG_WIDTH,
+                //                         top: Math.max(bbox.y0 - HEIGHT_PADDING, 0),
+                //                         height: Math.min((bbox.y1+HEIGHT_PADDING) - bbox.y0, OCR_IMG_HEIGHT)
+                //     })
+                //     .jpeg().toBuffer()
+                //     .catch( err => { console.warn(`Couldn't retrieve image buffer ${err}`)})
             }
             // NOTE: Ditch name if invalid? I assume that the incomplete text cant be matched to alias to help here
         }
@@ -313,13 +318,16 @@ export class UsernameTracker {
 
         let startIndex = this.usersInOrder.length   // Offset to full user list
 
-        if (linkAnswer != null) { // Stitch pages together
+        // Stitch pages together
+        if (linkAnswer != null) { 
             console.warn(`Page Match lines by ${linkAnswer}. Joining pages.`)
             startIndex -= (this.lastPage.at(-1).division+1 - linkAnswer)
         } else { // Add pages together
             let result_text = (this.lastPage.length > 0) ? `${this.lastPage.map( line => line.username)}` : `{empty list}`
             console.error(`No page match for \nLAST:\t${result_text}\nCURR:\t${pageData.map( line => line.username)} `)
         }
+
+        const currPageIdx = this.pageIdx+1;
 
         // Add users to list & Get image promises (including skipped divisions)
         for (let i=0; i<pageParsedInfo.length; i++) {
@@ -328,31 +336,44 @@ export class UsernameTracker {
             const division = i
 
             /** sharp extracted username image */
-            let imgPromise = null
-            // add image (even if no text was found) from divission based on height/width
+            let imgExtract = null;
+            // add image (even if no text was found) from division based on height/width
             if (userInfo == undefined) {
-                imgPromise = sharpOCRImg.extract({  left: 0,    width: OCR_IMG_WIDTH,
-                    // top_old: Math.floor(i * this.USERNAME_BOX_CROP_PCT * ocrImgHeight),
-                    // height_old: Math.floor(i+1 * this.USERNAME_BOX_CROP_PCT * ocrImgHeight),
-                    top: Math.floor(i * USERNAME_OCR_BOX_HEIGHT),
-                    height: Math.floor(i+1 * USERNAME_OCR_BOX_HEIGHT)
+                imgExtract = sharpOCRImg.extract({  left: 0,    width: OCR_IMG_WIDTH,
+                    top: Math.floor(division * USERNAME_OCR_BOX_HEIGHT),
+                    height: Math.floor(USERNAME_OCR_BOX_HEIGHT)
                 })
-                .jpeg().toBuffer()
-                .catch( err => { console.warn(`Couldn't retrieve image buffer ${err}`)})
-            } else {                        // else grab image promise while adding user
-                this.add(userInfo.username, userInfo.conf, startIndex + userInfo.division, userInfo.capture_dt)
-                imgPromise = userInfo.imgPromise
+            } else {
+                // else grab image promise while adding user
+                const userObj = this.add(userInfo.username, userInfo.conf, 
+                    startIndex + userInfo.division, userInfo.capture_dt);
+                if (userObj.fullImgIdxList.length < UsernameTracker.USER_IMG_LIMIT || userInfo.conf >= userObj.confidence) {
+                    const bbox = userInfo.bbox
+                    imgExtract = sharpOCRImg.extract({  left: 0,
+                        width: OCR_IMG_WIDTH,
+                        top: Math.max(bbox.y0 - HEIGHT_PADDING, 0),
+                        height: Math.min((bbox.y1+HEIGHT_PADDING) - bbox.y0, OCR_IMG_HEIGHT)
+                    })
+                }
             }
 
+            imgExtract
+            ?.jpeg().toBuffer()
+            .catch( err => { console.warn(`Couldn't retrieve image buffer ${err}`)})
             // add image to usernameTracker object
-            imgPromise.then( imgBuffer => {
-                this.addImage(this.pageIdx, division, imgBuffer, startIndex + division, nextImgIdx)
+            .then( imgBuffer => {
+                this.addImage(currPageIdx, division, imgBuffer, startIndex + division, nextImgIdx)
                 if (userInfo) {
                     const userObj = this.usersInOrder[startIndex+division]
-                    if (userObj && userObj.fullImgIdxList.length > 1 && userInfo.conf == userObj.confidence) {
-                        const swap = userObj.fullImgIdxList[0]
-                        userObj.fullImgIdxList[0] = userObj.fullImgIdxList.at(-1)
-                        userObj.fullImgIdxList[userObj.fullImgIdxList.length-1] = swap
+                    // swap if higher confidence
+                    if (userObj && userObj.fullImgIdxList.length > 1 
+                        && userInfo.conf >= userObj.confidence) {
+                            const swap = userObj.fullImgIdxList.pop()
+                            userObj.fullImgIdxList.shift(swap)
+                    }
+                    while (userObj && userObj.fullImgIdxList.length > UsernameTracker.USER_IMG_LIMIT) {
+                        const delImgIdx = userObj.fullImgIdxList.pop();
+                        this.removeImage(delImgIdx, userObj)
                     }
                 }
               } // end of promise
@@ -367,11 +388,11 @@ export class UsernameTracker {
 
     /**
      * Add image to object, link to username object (if exists)
-     * @param {*} pageIdx 
-     * @param {*} division 
-     * @param {*} imgBuffer 
-     * @param {*} userIdx 
-     * @param {*} fullImgIdx 
+     * @param {number} pageIdx 
+     * @param {number} division 
+     * @param {import("tesseract.js").ImageLike} imgBuffer 
+     * @param {number} userIdx 
+     * @param {number} fullImgIdx 
      */
     addImage (pageIdx, division, imgBuffer, userIdx, fullImgIdx) {
         
@@ -380,14 +401,8 @@ export class UsernameTracker {
         
         this.fullImageList[fullImgIdx] = newImg
 
-        if (!userObj) { // Add for user identification
-            this.unverifiedImgs.push(imgBuffer)
-        } else if (userObj.verifyAmount < 2) {  // add to unverified userObj
+        if (userObj) 
             userObj.fullImgIdxList.push(fullImgIdx)
-            this.unverifiedUsers.add(userObj)
-        } else {
-            userObj.fullImgIdxList.push(fullImgIdx) // Add to userObj
-        }
     }
     
     /** DEPRECATED */
@@ -405,6 +420,15 @@ export class UsernameTracker {
         } else {
             userObj.fullImgIdxList.push(fullImgIdx)
         }
+    }
+
+    /** Remove image from fullImgList
+     * Assumes image has been removed from userObj, this is simply for debug
+     */
+    removeImage(fullImgIdx, userObj) {
+
+        const imgObj = this.fullImageList.at(fullImgIdx);
+        this.fullImageList[fullImgIdx] = null;
     }
 
     clear () {
@@ -426,6 +450,9 @@ export class UsernameTracker {
         if (this.hash.has(username)) {
             const userObj = this.hash.get(username)
             const imgObj = this.fullImageList[userObj.fullImgIdxList[0]] // Return random?
+            // console.warn(userObj.fullImgIdxList)
+            // console.warn(userObj.fullImgIdxList.map(val => this.fullImageList[val]))
+            // console.warn(`Got image from P:${imgObj.pageIdx} D:${imgObj.division}`)
             return imgObj.imgBuffer
         }
         return null

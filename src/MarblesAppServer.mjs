@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process'
 import axios from 'axios'
 import fs from 'fs/promises'
 
-import {UserNameBinarization} from "./UserNameBinarization.mjs"
+import { UserNameBinarization } from './UserNameBinarization.mjs'
 import {UsernameTracker} from './UsernameTrackerClass.mjs'
 
 import { createWorker, createScheduler } from 'tesseract.js'
@@ -16,7 +16,7 @@ import { setTimeout } from 'node:timers/promises'
 import { XMLParser } from 'fast-xml-parser'
 
 /** Server state */
-const SERVER_STATE_ENUM = {
+export const SERVER_STATE_ENUM = {
     STOPPED: 'STOPPED', // Server has stopped reading or hasnt started reading
     WAITING: 'WAITING', // Server is waiting for the load screen
     READING: 'READING', // Server is currently performing OCR and reading
@@ -493,12 +493,12 @@ export class MarblesAppServer {
         // Perform tesseract 
         let tesseractPromise = null
         /** scaled color buffer from original */
-        const OCRColorNameBuffer = mng.bufferToPNG(mng.buffer, true, false)
+        mng.ocr_buffer = mng.bufferToPNG(mng.buffer, true, false)
 
         if (!this.uselambda) {
             tesseractPromise = mng.isolateUserNames()
-            .then( buffer =>  this.scheduleTextRecogn(buffer) )
-            // .then( buffer =>  this.nativeTesseractProcess(buffer) )
+            // .then( buffer =>  this.scheduleTextRecogn(buffer) )
+            .then( buffer =>  this.nativeTesseractProcess(buffer) )
             .catch( err => {
                 console.error("Failure to parse image!!!")
             })
@@ -510,7 +510,7 @@ export class MarblesAppServer {
             this.lambdaQueue += 1
         }
         
-        return tesseractPromise.then( ({data, info}) => {      // add result to nameBuffer
+        return tesseractPromise.then( ({data, info, jobId}) => {      // add result to nameBuffer
             
             if (this.uselambda)
                 this.lambdaQueue -= 1
@@ -518,7 +518,6 @@ export class MarblesAppServer {
 
             // Add to queue
             this.imageProcessQueue[funcImgId - this.imageProcessQueueLoc] = [data, mng]
-            // console.debug(`Added ${funcImgId} to queue loc ${funcImgId - this.imageProcessQueueLoc}`)
 
             while (this.imageProcessQueue.at(0)) {  // While next image exists
                 let [qdata, qmng] = this.imageProcessQueue.shift()
@@ -528,7 +527,7 @@ export class MarblesAppServer {
                 }
                 this.imageProcessQueueLoc++
 
-                let retList = this.usernameList.addPage(qdata, OCRColorNameBuffer, mng.bufferSize, captureDt)
+                let retList = this.usernameList.addPage(qdata, qmng.ocr_buffer, qmng.bufferSize, captureDt)
                 if (retList.length == 0)
                     this.emptyListPages += 1
                 else
@@ -544,7 +543,7 @@ export class MarblesAppServer {
                 
                 if (this.emptyListPages >= MarblesAppServer.EMPTY_PAGE_COMPLETE && this.usernameList.length > 5) {
                     console.log(`${this.emptyListPages} empty frames @ ${funcImgId}; 
-                        dumping queue ${this.imageProcessQueue} & moving to COMPLETE state.`)
+                        dumping queue ${this.imageProcessQueue.length} & moving to COMPLETE state.`)
                     this.serverStatus.state = SERVER_STATE_ENUM.COMPLETE
                     this.spinDown()
                     return
@@ -1031,7 +1030,13 @@ export class MarblesAppServer {
         console.log(`Running test! ${folderName}`)
         const st = performance.now();
         // setup workers
-        await this.setupWorkerPool(NUM_LIVE_WORKERS)
+        if (this.uselambda)
+            this.warmupLambda(NUM_LAMBDA_WORKERS)
+        else if (this.withNative)
+            ;
+        else 
+            this.setupWorkerPool(NUM_LIVE_WORKERS)
+            
 
         const promiseList = []
         let ignoreFrames = 60;
@@ -1048,7 +1053,7 @@ export class MarblesAppServer {
             const file = await fs.readFile(path.resolve(folderName, fileName))
             promiseList.push(this.parseImgFile(file)) // filename works but I want to read
             console.debug(`Parsing image file ${fileName}`)
-            await setTimeout(20); // forcing sleep so my computer doesn't explode
+            await setTimeout(200); // forcing sleep so my computer doesn't explode
         }
 
         // Once complete, go through the names list and check against server accuracy

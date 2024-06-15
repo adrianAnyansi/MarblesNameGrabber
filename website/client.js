@@ -114,7 +114,7 @@ function queueInput(inputEvent) {
 }
 
 
-const MATCH_RET = ['Match!', 'Probably', 'Maybe', 'Unlikely', 'No Match']
+const MATCH_RET = ['Match!', 'Very Likely', 'Maybe', 'Unlikely', 'No Match']
 
 /**
  * Trigger search query to server
