@@ -316,11 +316,12 @@ export class BufferView {
 /** Helper class for Image Comparisons */
 export class ImageTemplate {
 
-    constructor(imageLike, rectObj) {
+    constructor(imageLike, rectObj, name='') {
         this.imageLike = imageLike;
         this.rectObj = rectObj;
         this.bufferView = null;
         this.bufferViewPromise = BufferView.Build(imageLike)
+        this.name = name
     }
 
     async getBufferView() {

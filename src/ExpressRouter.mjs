@@ -62,6 +62,7 @@ server.all(['/force'], (req, res) => {
         app_server.start()
         app_server.serverStatus.state = "READING"
         res.json({'res':"Forced into READING state"})
+        // TODO: Tell users that it started late
     } else {
         res.json({'res':`Currently in ${app_server.serverStatus.state} state`})
     }

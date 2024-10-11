@@ -28,15 +28,28 @@ const LagTimeEl = document.getElementById('lag_time')
 const trackedUserNums = [0, 0]
 const visitingUserNums = [0, 0]
 
+let adminEl = document.getElementById('Admin header')
+const queryParams = new URLSearchParams(window.location.search)
+document.getElementById('force_btn').addEventListener('click', sendForceCmd)
+document.getElementById('stop_btn').addEventListener('click', () => {
+    fetch(`${serverURL}/stop`, {method: 'POST'})
+})
 
+if (queryParams.has('admin')) {
+    adminEl.classList.add('show')
+    adminEl.querySelector('#admin').classList.add('show')
+}
 if (location.host.includes('localhost') || location.host.includes('127.0.0.1')) {
-    document.body.prepend('DEBUG')
+    
+    adminEl.classList.add('show')
+    adminEl.querySelector('#debug').classList.add('show')
 }
 
 // ==================
 
 function fetchServerStatus () {
-    fetch(`${serverURL}/status`)
+    const adminString = queryParams.has("admin") ? "?admin" : ""
+    fetch(`${serverURL}/status${adminString}`)
     .catch( resp => {
         // ◗
         ServerStatusEl.textContent = `Offline.`
@@ -46,7 +59,11 @@ function fetchServerStatus () {
     .then(resp => resp.json())
     .then( serverJSON => {
         handleServerStatus(serverJSON)
-        const nextInterval = serverJSON['status']['interval'] ?? 1_000 * 6
+        let nextInterval = 1_000 * 6
+        if (queryParams.has('admin'))
+            nextInterval = 200;
+        else
+            nextInterval ??= serverJSON['status']['interval']
         setTimeout(fetchServerStatus, nextInterval) // retry
     })
     .catch( err => {
@@ -83,6 +100,10 @@ function userInfoInterval(default_text, default_elem=UsernameOutputEl) {
             default_elem.textContent = `${default_text}`+''.padEnd(dotNum, '.')
         }, 1_000)
     }
+}
+
+function sendForceCmd() {
+    fetch(`${serverURL}/force`)
 }
 
 /** Queue input after 2 seconds of no input */

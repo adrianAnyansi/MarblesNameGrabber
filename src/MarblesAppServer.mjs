@@ -40,7 +40,7 @@ const WORKER_RECOGNIZE_PARAMS = {
 }
 const TEST_FILENAME = "testing/test.png"
 const LIVE_FILENAME = "testing/#.png"
-const VOD_DUMP_LOC = "testing/vod_dump3/"
+const VOD_DUMP_LOC = "testing/vod_dump/"
 
 let TWITCH_ACCESS_TOKEN_BODY = null
 const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
@@ -439,6 +439,30 @@ export class MarblesAppServer {
     }
 
     /**
+     * Helper function to check if this is the marbles pre-race screen by checking
+     * multiple UI elements
+     * @param {UserNameBinarization} mng 
+     * @returns {Boolean} true if matched marbles site 
+     */
+    async validateMarblesPreRaceScreen(mng) {
+        const generic_buffer =  0.05;
+
+        return (
+            await mng.checkImageAtLocation(
+                UserNameBinarization.START_BUTTON_TEMPLATE, 0.85-generic_buffer)
+            ||
+            await mng.checkImageAtLocation(
+                UserNameBinarization.PRE_RACE_START_W_DOTS_TEMPLATE, 0.90-generic_buffer)
+            ||
+            await mng.checkImageAtLocation(
+                UserNameBinarization.GAME_SETUP_TEMPLATE, 0.9-generic_buffer)
+            ||
+            await mng.checkImageAtLocation(
+                UserNameBinarization.SUBSCRIBERS_TEMPLATE, 0.9-generic_buffer)
+        )
+    }
+
+    /**
      * Parse an image for names
      * @param {*} imageLike 
      * @returns 
@@ -467,8 +491,14 @@ export class MarblesAppServer {
         let mng = new UserNameBinarization(imageLike, false)
 
         if (this.serverStatus.state == SERVER_STATE_ENUM.WAITING) {
-            const validMarblesImgBool = await mng.checkImageAtLocation(
+            let validMarblesImgBool = await mng.checkImageAtLocation(
                 UserNameBinarization.START_BUTTON_TEMPLATE, 0.85)
+            
+            if (!validMarblesImgBool) 
+                validMarblesImgBool = await mng.checkImageAtLocation(
+                UserNameBinarization.GAME_SETUP_TEMPLATE, 0.9)
+
+
             if (validMarblesImgBool) {
                 console.log("Found Marbles Pre-Race header, starting read")
                 this.serverStatus.state = SERVER_STATE_ENUM.READING
@@ -656,12 +686,14 @@ export class MarblesAppServer {
         
         let mng = new UserNameBinarization(filename, true)
 
-        let m = await mng.checkImageAtLocation(
-            UserNameBinarization.START_BUTTON_TEMPLATE
-        ).catch( err => {
-            console.log(err)
-        })
-        console.log(`WaitingForStart was ${m}`)
+        await this.validateMarblesPreRaceScreen(mng);
+        // TODO: Get error
+        // let m = await mng.checkImageAtLocation(
+        //     UserNameBinarization.START_BUTTON_TEMPLATE
+        // ).catch( err => {
+        //     console.log(err)
+        // })
+        // console.log(`WaitingForStart was ${m}`)
         
         const withNative = false
 
@@ -680,7 +712,7 @@ export class MarblesAppServer {
             })
             .then( ({data, info, jobId}) => {
                 console.debug(`Lambda complete job-${jobId}`); 
-                console.log(`Recognized in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
+                console.log(`Lambda Recognized in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
                 return {mng: mng, data: data}
             })
             .catch( err => {console.error(`Lambda errored! ${err}`); throw err})
@@ -931,14 +963,20 @@ export class MarblesAppServer {
 
     status (req) {
 
-        // Track viewers
         const curr_dt = Date.now()
         while (this.monitoredViewers && this.monitoredViewers[0] < curr_dt)
             this.monitoredViewers.shift()
-        this.monitoredViewers.push(Date.now() + this.serverStatus.interval) // TODO: Link client to this value
 
+        if (req.query?.admin != undefined) {
+            // Dont add anything
+            // TODO: Get more stats
+        } else {
+            // Track viewers
+            this.monitoredViewers.push(Date.now() + this.serverStatus.interval) // TODO: Link client to this value
+        }
+        
         this.serverStatus.viewers = this.monitoredViewers.length
-
+        
         let streaming_time = 'X'
         if (this.serverStatus.started_stream_ts) {
             if (this.serverStatus.ended_stream_ts)

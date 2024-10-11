@@ -705,6 +705,7 @@ export class UserNameBinarization {
     /**
      * Returns true if matches the px of Marbles pre-race screen
      * DEPRECATED; UI changed
+     * @deprecated
      * @returns {Boolean}
      */
     async checkValidMarblesNamesImg() {
@@ -780,11 +781,28 @@ export class UserNameBinarization {
     }
 
     
-    static PRE_RACE_START = {x:1136, y:220, w:103, h:46};
     static START_BUTTON_TEMPLATE = new ImageTemplate(
-        'data/start_btn.png', 
-        // 'testing/vod_dump/110.png',
-        UserNameBinarization.PRE_RACE_START);
+        'data/start_btn.png',
+        {x:1136, y:1030, w:104, h:46},
+        "Start button");
+
+    static SUBSCRIBERS_TEMPLATE = new ImageTemplate(
+        'data/subscribers.png',
+        {x:1703, y:130, w:128, h:25},
+        "Subscribers"
+    )
+
+    static GAME_SETUP_TEMPLATE = new ImageTemplate(
+        'data/game_setup_tmp.png',
+        {x:577, y:967, w:135, h:24},
+        "Game Setup"
+    )
+
+    static PRE_RACE_START_W_DOTS_TEMPLATE = new ImageTemplate(
+        'data/start_with_dots.png',
+        {x:1018, y:73, w:182, h:49},
+        "Start..."
+    )
 
     /**
      * Check if image at a specific location
@@ -799,8 +817,10 @@ export class UserNameBinarization {
         let imgPxTotal = rectObj.w * rectObj.h;
         /** total of all pixels */
         const fixedTotal = imgPxTotal;
+
+        const magicDivNum = fixedTotal % 13 != 0 ? 13 : 12;
         
-        const magicNum = Math.trunc(fixedTotal / 13);
+        const magicNum = Math.trunc(fixedTotal / magicDivNum);
         const ALPHA_THRESHOLD = 200;
         const CHANNEL_MEAN_THRESHOLD = 20;
         const MAX_PX_COMPARE = 0.3;
@@ -848,13 +868,13 @@ export class UserNameBinarization {
             // console.debug(`Compare pct was ${pxMatchCount / checkedPxTotal}%`)
             if (checkedPxTotal > imgPxTotal * MIN_PX_COMPARE &&
                 pxMatchCount / checkedPxTotal > PASS_PCT) {
-                    console.debug(`Compare pct was ${toPct(pxMatchCount / checkedPxTotal)}`)
+                    console.debug(`Compare pct was ${imgTemplate.name}: ${toPct(pxMatchCount / checkedPxTotal)}`)
                     return true
                 }
             
             incrCurrPxCounter();
         }
-        console.debug(`Compare pct was ${toPct(pxMatchCount / checkedPxTotal)}`)
+        console.debug(`Compare pct failed  ${imgTemplate.name}: ${toPct(pxMatchCount / checkedPxTotal)}`)
         return false;
     }
 

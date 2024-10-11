@@ -185,18 +185,27 @@ body {
 
 #serverStatusIcon {
     color: white;
+    background-color: white;
+    clip-path: circle(45%);
+    width: 1em;
+    height: 1em;
+    display: inline-block;
 }
 #serverStatusIcon.stopped {
     color: red;
+    background-color: red;
 }
 #serverStatusIcon.complete {
     color: blue;
+    background-color: blue
 }
 #serverStatusIcon.reading {
     color: greenyellow;
+    background-color: greenyellow;
 }
 #serverStatusIcon.waiting {
     color: yellow;
+    background-color: yellow;
 }
 
 
@@ -237,4 +246,15 @@ body {
     color: #e1e0e8;
     font-family: Cambria;
     /*! font-size: ; */
+}
+
+#Admin_header,
+#admin, 
+#debug {
+    display: none
+}
+
+#admin.show, #debug.show,
+#Admin_header.show {
+    display: inherit
 }
