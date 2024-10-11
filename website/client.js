@@ -28,7 +28,7 @@ const LagTimeEl = document.getElementById('lag_time')
 const trackedUserNums = [0, 0]
 const visitingUserNums = [0, 0]
 
-let adminEl = document.getElementById('Admin header')
+let adminEl = document.getElementById('Admin_header')
 const queryParams = new URLSearchParams(window.location.search)
 document.getElementById('force_btn').addEventListener('click', sendForceCmd)
 document.getElementById('stop_btn').addEventListener('click', () => {
