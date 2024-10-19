@@ -491,13 +491,7 @@ export class MarblesAppServer {
         let mng = new UserNameBinarization(imageLike, false)
 
         if (this.serverStatus.state == SERVER_STATE_ENUM.WAITING) {
-            let validMarblesImgBool = await mng.checkImageAtLocation(
-                UserNameBinarization.START_BUTTON_TEMPLATE, 0.85)
-            
-            if (!validMarblesImgBool) 
-                validMarblesImgBool = await mng.checkImageAtLocation(
-                UserNameBinarization.GAME_SETUP_TEMPLATE, 0.9)
-
+            let validMarblesImgBool = await this.validateMarblesPreRaceScreen(mng)
 
             if (validMarblesImgBool) {
                 console.log("Found Marbles Pre-Race header, starting read")
