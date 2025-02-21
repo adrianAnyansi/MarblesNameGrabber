@@ -15,6 +15,16 @@
             "program": "${workspaceFolder}\\src\\ExpressRouter.mjs"
         },
         {
+            "type": "node",
+            "request": "launch",
+            "name": "Run Unittest",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}\\src\\Unittest.mjs"
+        },
+        {
             "name": "P:MinBoundingBox",
             "type": "python",
             "request": "launch",

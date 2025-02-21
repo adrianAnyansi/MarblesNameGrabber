@@ -8,9 +8,11 @@ import {Buffer} from 'node:buffer'
 export class Color {
 
     /**
-     * @typedef RGBA
-     * @type {Uint8Array[]}
+     * @typedef {Uint8Array[]} RGBA
+     * @typedef {Uint8Array[]} RGB
      */
+
+
     static BLACK           = Color.toRGBA(0x000000);
     static DARKGRAY        = Color.toRGBA(0x555555);
     static WHITE           = Color.toRGBA(0xFFFFFF);
@@ -34,19 +36,19 @@ export class Color {
     static ANTI_MATCH_ALPHA =   0xFC
 
     /** 
-     * @param {number[]} rgba array of uint8, alpha is ignored
+     * @param {RGB} rgb array of uint8, alpha is ignored
      * @returns hex value in numbers
      */
-    static toHex(rgba) {
-        return (rgba[0] << 8*2) + (rgba[1] << 8*1) + rgba[2];
+    static toHex(rgb) {
+        return (rgb[0] << 8*2) + (rgb[1] << 8*1) + rgb[2];
     }
 
     /**
      * Returns a UintArray using a valid hexadecimal number
      * Alpha is set to 255 by default. Extra digits after 0xFFFFFF are ignored
-     * @param {Uint8Array[3]} hexColor 
+     * @param {Number} hexColor 
      * @param {Number} alpha 
-     * @returns {Uint8Array[3]}
+     * @returns {Uint8Array[]}
      */
     static toRGBA (hexColor, alpha=0xFF) {
         const mask = 0xFF
@@ -54,6 +56,14 @@ export class Color {
                 (hexColor >> 8*1) & mask, 
                 hexColor & mask,
                 alpha])
+    }
+
+    /**
+     * To RGB value
+     * @param {RGBA} rgba 
+     */
+    static toRGB(rgba) {
+        return rgba.slice(0, 3)
     }
 
     // https://stackoverflow.com/questions/4754506/color-similarity-distance-in-rgba-color-space
@@ -102,6 +112,7 @@ export class Color {
      * Function that takes two values and returns the mean of all color channel
      * @param {RGBA} rgba1 
      * @param {RGBA} rgba2 
+     * @returns {number}
      */
     static compareMean(rgba1, rgba2) {
         const r_diff = Math.abs(rgba1[0] - rgba2[0])
@@ -109,6 +120,21 @@ export class Color {
         const b_diff = Math.abs(rgba1[2] - rgba2[2])
 
         return (r_diff+g_diff+b_diff) / 3;
+    }
+
+    static compareWhite(rgb, rgb2) {
+        return rgb[0] - rgb2[0] 
+            + (rgb[1] - rgb2[1])
+            + (rgb[2] - rgb2[2])
+    }
+
+    /**
+     * Sum color values of RGB
+     * @param {RGBA} rgb
+     * @returns {number}
+     */
+    static sumColor(rgb) {
+        return rgb[0] + rgb[1] + rgb[2]
     }
 }
 

@@ -175,11 +175,13 @@ export class MarblesAppServer {
     /** Warmup lambda by sending an empty file */
     async warmupLambda (workers) {
         // Im throwing away lambdaClient, dont know if this is recommened
-        this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
+        if (!this.lambdaClient) {
+            this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
 
-        let lambda_id=0
-        while (lambda_id < workers) {
-            this.sendWarmupLambda(`warmup ${lambda_id++}`)
+            let lambda_id=0
+            while (lambda_id < workers) {
+                this.sendWarmupLambda(`warmup ${lambda_id++}`)
+            }
         }
     }
 
@@ -563,7 +565,7 @@ export class MarblesAppServer {
                 while (this.imageProcessTime.length > 10)
                     this.imageProcessTime.shift();
                 this.serverStatus.lag_time = msToHUnits(
-                    this.imageProcessTime.reduce((p,c) => p+c, 0)/this.imageProcessTime.length, false, 2, 's');
+                    this.imageProcessTime.reduce((p,c) => p+c, 0)/this.imageProcessTime.length, true, 2, 's');
                 
                 if (this.emptyListPages >= MarblesAppServer.EMPTY_PAGE_COMPLETE && this.usernameList.length > 5) {
                     console.log(`${this.emptyListPages} empty frames @ ${funcImgId}; 
@@ -689,7 +691,7 @@ export class MarblesAppServer {
         // })
         // console.log(`WaitingForStart was ${m}`)
         
-        const withNative = false
+        const withNative = true
 
         if (withLambda) {
             console.log("Using lambda debug")
@@ -697,16 +699,18 @@ export class MarblesAppServer {
             await this.warmupLambda(1)
             await mng.buildBuffer().catch( err => {console.error(`Buffer build errored! ${err}`); throw err})
             mng.orig_buffer = mng.buffer // TODO: Is this being used?
-            console.log(`Built buffer in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
+            console.log(`Built buffer in ${msToHUnits(performance.now() - debugStart, true, 0)}`)
 
             return mng.dumpInternalBuffer()
             .then( ({buffer, imgMetadata, info}) => {
                 debugStart = performance.now(); 
                 return this.sendImgToLambda(buffer, imgMetadata, info, 'test', false)
             })
-            .then( ({data, info, jobId}) => {
+            .then( ({raw, data, info, jobId}) => {
+                if (raw)
+                    data = this.parseHOCRResponse(raw)
                 console.debug(`Lambda complete job-${jobId}`); 
-                console.log(`Lambda Recognized in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
+                console.log(`Lambda Recognized in ${msToHUnits(performance.now() - debugStart, true, 0)}`)
                 return {mng: mng, data: data}
             })
             .catch( err => {console.error(`Lambda errored! ${err}`); throw err})
@@ -723,19 +727,19 @@ export class MarblesAppServer {
             throw err
         })
         .then(  () => {
-            console.log(`Built buffer in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
+            console.log(`Built buffer in ${msToHUnits(performance.now() - debugStart, true, 0)}`)
             debugStart = performance.now();
             return mng.isolateUserNames()
         })
         .then(  buffer => {
-            console.log(`Binarized in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
+            console.log(`Binarized in ${msToHUnits(performance.now() - debugStart, true, 0)}`)
             debugStart = performance.now();
             if (withNative) {
                 return this.nativeTesseractProcess(buffer)
             }
             return this.scheduleTextRecogn(buffer)})
         .then(  tsData => { 
-            console.log(`Recognized in ${msToHUnits(performance.now() - debugStart, false, 0)}`)
+            console.log(`Recognized in ${msToHUnits(performance.now() - debugStart, true, 0)}`)
             return {mng: mng, data: tsData.data} 
         })
         .catch(
@@ -1039,6 +1043,7 @@ export class MarblesAppServer {
         return this.debugRun(filename, withLambda)
         .then( async ({mng, data}) => {
             // TODO: Fix resync
+            console.log("Got data:", data)
             let retList = await this.usernameList.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false), mng.bufferSize, Date.now())
             return {list: retList, debug:true}
         })

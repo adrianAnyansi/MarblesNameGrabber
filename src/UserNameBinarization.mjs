@@ -879,6 +879,153 @@ export class UserNameBinarization {
     }
 
     /**
+     * Search image for white username bounding box at locations
+     */
+    async getUNBoundingBox() {
+
+        // await this.buildBuffer() // Ensure buffer exists
+        const {data, info} = await sharp(this.imageLike).raw().toBuffer( { resolveWithObject: true })
+        const buffer = data
+        // leftEdge is at 1694* 
+        // Going to do edge detection across this
+
+        let username_top = 125;
+        let username_left = 1574+120;
+        let username_box_height = UserNameBinarization.USERNAME_HEIGHT;
+        
+        let y_start = username_top;
+        const userNameList = []
+
+        while (y_start < 1080 - username_box_height) { // per username
+            // check the right side wall
+            const userMiddle = y_start + parseInt(username_box_height/2)
+            const rightLine = this.checkLine(username_left, userMiddle, buffer, info, 1)
+
+            // follow top white-line until disappearance, works for all users
+            let x_start = UserNameBinarization.NAME_CROP_RECT.x + UserNameBinarization.NAME_CROP_RECT.w
+            let leftmost_x = 1920 
+            const bar = 26
+            while (x_start > 0) {
+
+                let fails = 0
+                const bar_iter = 8;
+                const bar_max_fails = 5;
+                const pass = []
+                for (let i = 0; i <= bar_iter; i++) {
+                    const diff = Math.round(-bar/2 + (bar * (i/bar_iter)))
+                    const res = this.checkLine(x_start, userMiddle+diff, buffer, info, 1)
+                    if (!res) fails++
+                    else pass.push(diff)
+
+                    if (fails >= bar_max_fails) break;
+                }
+
+
+                if (fails < bar_max_fails) {
+                    const px_rgb = UserNameBinarization.getPixelStatic(x_start, userMiddle, buffer, info)
+                    console.log(`Found left at ${x_start}, ${userMiddle} px:${px_rgb}`)
+                    // UserNameBinarization.setPixel(x_start-1, userMiddle, Color.YELLOW, buffer, info)
+                    for (let i=0; i<bar; i++) {
+                        UserNameBinarization.setPixel(x_start, userMiddle+i-bar/2, Color.toRGB(Color.RED), buffer, info)
+                    }
+
+                    for (let diff of pass) {
+                        // const diff = Math.round(-bar/2 + (bar * (i/bar_iter)))
+                        UserNameBinarization.setPixel(x_start, userMiddle+diff, Color.toRGB(Color.BRIGHT_GREEN), buffer, info)
+                    }
+                    
+                    leftmost_x = x_start
+                    // break;
+                }
+
+                UserNameBinarization.setPixel(x_start, userMiddle, Color.toRGB(Color.YELLOW), buffer, info)
+                x_start--
+            }
+
+            if (leftmost_x == 1920)
+                console.log(`Not match for y ${userMiddle}`)
+            
+            y_start += username_box_height
+        }
+
+
+        this.bufferSize = this.bufferSize = {w: info.width, h:info.height, channels: info.channels, premultiplied: info.premultiplied, size: info.size }
+        this.bufferToFile("testing/line_testing.png", buffer, false)
+    }
+
+    /**
+     * Check if there's a white line in this direction
+     * 
+     */
+    checkLine(x,y, buffer, info, size=1, horizontal=true) {
+
+        const lineTest = []
+        const beforeSide = []
+        const afterSide = []
+
+        const blurPixel = 3;
+
+        let i = 1;
+        const beforeCoord = []
+        while (i <= blurPixel)
+            beforeCoord.push(-1*i++)
+
+        const lineCoord = [0]
+        for (i=1; i<size; i++)
+            lineCoord.push(i)
+
+        const afterCoord = []
+        while (i <= blurPixel)
+            afterCoord.push(i++)
+
+        const horizFunc = (x, y, addt) => horizontal ? [x+addt, y] : [x, y+addt]
+        const sumPixNAvg = (pxTest) => {
+            const avgPix = pxTest.reduce((pv, cv) => [pv[0]+cv[0], pv[1]+cv[1], pv[2]+cv[0]])
+            avgPix[0] /= pxTest.length;
+            avgPix[1] /= pxTest.length;
+            avgPix[2] /= pxTest.length;
+            return avgPix
+        }
+        
+        for (const addt of lineCoord) {
+            let [dx, dy] = horizFunc(x,y,addt)
+            lineTest.push(UserNameBinarization.getPixelStatic(dx, dy, buffer, info))
+        }
+        // check that pixels are generally white
+        const lineAvg = sumPixNAvg(lineTest)
+        const lineDiff = Math.abs(lineAvg[0]-lineAvg[1]) + Math.abs(lineAvg[1]-lineAvg[2]) + Math.abs(lineAvg[0]-lineAvg[2])
+
+        const WHITE_BALANCE = 20;
+        if (lineDiff/3 > WHITE_BALANCE && Color.sumColor(lineAvg) > 150*3) {
+            // console.log(`line itself is not balanced white ${lineDiff}`)
+            return false;
+        }
+
+        // for (const addt of beforeCoord) {
+        //     let [dx, dy] = horizFunc(x,y,addt)
+        //     beforeSide.push(UserNameBinarization.getPixelStatic(dx, dy, buffer, info))
+        // }
+        // const beforeAvg = sumPixNAvg(beforeSide)
+
+        for (const addt of afterCoord) {
+            let [dx, dy] = horizFunc(x,y,addt)
+            afterSide.push(UserNameBinarization.getPixelStatic(dx, dy, buffer, info))
+        }
+        const afterAvg = sumPixNAvg(afterSide)
+
+        // All pixels have been collected, start to test
+        // console.log(`before: ${beforeAvg} < line: ${lineAvg} > after: ${afterAvg}`)
+
+        const LINE_DIFF = 26
+
+        return Color.compareWhite(lineAvg, afterAvg) > LINE_DIFF
+
+        // return (Color.compareWhite(lineAvg, beforeAvg) > LINE_DIFF) 
+        //     && (Color.compareWhite(lineAvg, afterAvg) > LINE_DIFF)
+
+    }
+
+    /**
      * Turn raw buffer into PNG buffer
      * @param {*} buffer        Buffer that will be converted
      * @param {*} scaleForOCR   Scale buffer up/down for OCR (specific to marbles name)
