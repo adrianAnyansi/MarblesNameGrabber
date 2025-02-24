@@ -7,7 +7,7 @@ Removes canvas elements and uses sharp instead
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
 import { rotPoint, toPct } from './DataStructureModule.mjs'
-import { PixelMeasure, Color, BufferView, ImageTemplate } from './UtilModule.mjs'
+import { PixelMeasure, Color, BufferView, ImageTemplate, ImageBuffer, Direction2D } from './UtilModule.mjs'
 import {resolve} from 'node:path'
 import fs from 'fs'
 
@@ -70,23 +70,6 @@ const COLORSPACE_OBJ = {
 // Utility functions
 // ==========================================
 
-
-
-// https://stackoverflow.com/questions/4754506/color-similarity-distance-in-rgba-color-space
-// NOTE: SO on pre-multiplied alpha, but note my colours are all 100% alpha
-function redmean (rgba, rgba2) {
-    // https://en.wikipedia.org/wiki/Color_difference
-    // Referenced from here: https://www.compuphase.com/cmetric.htm
-    // Range should be ~255*3
-    const redmean = 0.5 * (rgba[0]+rgba2[0])
-
-    const redComp   = (2+redmean/256)       * (rgba[0]-rgba2[0])** 2
-    const greenComp =   4                   * (rgba[1]-rgba2[1])** 2
-    const blueComp  =  (2+(255-redmean)/256) * (rgba[2]-rgba2[2])** 2
-
-    return Math.sqrt(redComp+greenComp+blueComp)
-}
-
 /**
  * 
  * @param {*} colorList 
@@ -110,13 +93,13 @@ function calcMinColorDistance (colorList) {
             if (range[0] >= range[1]) continue
             // let mid = parseInt((range[1] - range[0])/2) + range[0]
             let rgbaTest = [midOfRange(ranges[0]), midOfRange(ranges[1]), midOfRange(ranges[2])]
-            let maxColorDist = Math.max(...RGBA_LIST.map( rgbaC => redmean(rgbaTest, rgbaC)))
+            let maxColorDist = Math.max(...RGBA_LIST.map( rgbaC => Color.redmean(rgbaTest, rgbaC)))
 
             rgbaTest[idx] = (rgbaTest[idx]+1) % 255
-            let maxRightColorDist = Math.max(...RGBA_LIST.map( rgbaC => redmean(rgbaTest, rgbaC)))
+            let maxRightColorDist = Math.max(...RGBA_LIST.map( rgbaC => Color.redmean(rgbaTest, rgbaC)))
 
             rgbaTest[idx] = Math.max((rgbaTest[idx]-2), 0)
-            let maxLeftColorDist = Math.max(...RGBA_LIST.map( rgbaC => redmean(rgbaTest, rgbaC)))
+            let maxLeftColorDist = Math.max(...RGBA_LIST.map( rgbaC => Color.redmean(rgbaTest, rgbaC)))
 
             let midPoint = midOfRange(ranges[idx])
 
@@ -132,7 +115,7 @@ function calcMinColorDistance (colorList) {
 
     const retRGBA = ranges.map( range => range[0])
 
-    return [retRGBA, Math.max(...RGBA_LIST.map( c => redmean(retRGBA, c)))]
+    return [retRGBA, Math.max(...RGBA_LIST.map( c => Color.redmean(retRGBA, c)))]
 }
 
 // Define color space
@@ -497,7 +480,7 @@ export class UserNameBinarization {
                     if (this.debug) this.setPixel(x_start, y_start+anti_line_off, Color.YELLOW)
 
                     if (px_rgba[3] < Color.DEFAULT_ALPHA) continue // this has been visited, and due to anti-flood-fill I can ignore this
-                    if ( USERNAME_COLOR_RANGE_ARR.some( ([color, range])  => redmean(color, px_rgba) < range) ) {
+                    if ( USERNAME_COLOR_RANGE_ARR.some( ([color, range])  => Color.redmean(color, px_rgba) < range) ) {
                         failedMatchVertLines = Infinity
                         if (this.debug) this.setPixel(x_start, y_start+anti_line_off, Color.ORANGE)
                         break // do not continue iterating
@@ -531,7 +514,7 @@ export class UserNameBinarization {
                         const [color, range] = colorRange
                         const cacheMap = cacheColorMatch.get(colorRange)
                         if (!cacheMap.has(Color.hashRGB(px_rgba)) )
-                            cacheMap.set(Color.hashRGB(px_rgba), redmean(color, px_rgba))
+                            cacheMap.set(Color.hashRGB(px_rgba), Color.redmean(color, px_rgba))
                         
                         const cacheRedMean = cacheMap.get(Color.hashRGB(px_rgba))
                         return cacheRedMean < range 
@@ -552,7 +535,7 @@ export class UserNameBinarization {
                         firstColorRangeMatch = colorRange
                         
                         // do flood-fill
-                        cacheColorMatch.get(colorRange).set(Color.hashRGB(px_rgba), redmean(colorRange[0], px_rgba)) // Flood fill set twice?
+                        cacheColorMatch.get(colorRange).set(Color.hashRGB(px_rgba), Color.redmean(colorRange[0], px_rgba)) // Flood fill set twice?
                         depthInit += 1
                         
                         const anti_y_lines = new Set(ANTI_LINE_OFF.map(y_line => y_line + y_start))
@@ -624,7 +607,7 @@ export class UserNameBinarization {
                 // console.debug('Cache Hit!')
                 redMeanValue = colorCache.get(arrHashValue)
             } else {
-                redMeanValue = redmean(matchColor, px_rgba)
+                redMeanValue = Color.redmean(matchColor, px_rgba)
                 colorCache.set(arrHashValue, redMeanValue)
             }
 
@@ -728,7 +711,7 @@ export class UserNameBinarization {
             for (let i=0; i<rect.w; i+=iw) {
                 for (let j=0; j<rect.h; j+=ih) {
                     testTotal += 1
-                    if ( redmean(UserNameBinarization.getPixelStatic(rect.x+i, rect.y+j, data, info), colorRange[0]) < colorRange[1] ) {
+                    if ( Color.redmean(UserNameBinarization.getPixelStatic(rect.x+i, rect.y+j, data, info), colorRange[0]) < colorRange[1] ) {
                         testResult += 1
                     }
                 }
@@ -878,140 +861,228 @@ export class UserNameBinarization {
         return false;
     }
 
+    async validateMarblesPreRaceScreen() {
+        const generic_buffer = 0.05;
+
+        return (
+            await mng.checkImageAtLocation(
+                UserNameBinarization.START_BUTTON_TEMPLATE, 0.85-generic_buffer)
+            ||
+            await mng.checkImageAtLocation(
+                UserNameBinarization.PRE_RACE_START_W_DOTS_TEMPLATE, 0.90-generic_buffer)
+            ||
+            await mng.checkImageAtLocation(
+                UserNameBinarization.GAME_SETUP_TEMPLATE, 0.9-generic_buffer)
+            ||
+            await mng.checkImageAtLocation(
+                UserNameBinarization.SUBSCRIBERS_TEMPLATE, 0.9-generic_buffer)
+        )
+    }
+
     /**
      * Search image for white username bounding box at locations
      */
     async getUNBoundingBox() {
 
-        // await this.buildBuffer() // Ensure buffer exists
         const {data, info} = await sharp(this.imageLike).raw().toBuffer( { resolveWithObject: true })
+        const imgBuffer = new ImageBuffer(data, info.width, info.height, info.channels)
         const buffer = data
         // leftEdge is at 1694* 
         // Going to do edge detection across this
+
+        const start = performance.now()
 
         let username_top = 125;
         let username_left = 1574+120;
         let username_box_height = UserNameBinarization.USERNAME_HEIGHT;
         
-        let y_start = username_top;
+        let user_y_start = username_top;
         const userNameList = []
 
-        while (y_start < 1080 - username_box_height) { // per username
+        while (user_y_start < 1080 - username_box_height) { // per username
             // check the right side wall
-            const userMiddle = y_start + parseInt(username_box_height/2)
-            const rightLine = this.checkLine(username_left, userMiddle, buffer, info, 1)
+            for (let d=0; d < username_box_height; d++) {
+                const rightLine = this.checkLine(username_left, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
+                if (rightLine) imgBuffer.setPixel(username_left, user_y_start+d, Color.RED)
+                // If detected, add username to list
+            }
+            // 2ms
+            // user_y_start += username_box_height
+            // continue
 
-            // follow top white-line until disappearance, works for all users
-            let x_start = UserNameBinarization.NAME_CROP_RECT.x + UserNameBinarization.NAME_CROP_RECT.w
-            let leftmost_x = 1920 
-            const bar = 26
-            while (x_start > 0) {
+            // TODO: Binary search this
+            const [lx, ly] = this.followUsernameLine(username_left-20, user_y_start, imgBuffer, 
+                Direction2D.LEFT, Direction2D.DOWN)
 
-                let fails = 0
-                const bar_iter = 8;
-                const bar_max_fails = 5;
-                const pass = []
-                for (let i = 0; i <= bar_iter; i++) {
-                    const diff = Math.round(-bar/2 + (bar * (i/bar_iter)))
-                    const res = this.checkLine(x_start, userMiddle+diff, buffer, info, 1)
-                    if (!res) fails++
-                    else pass.push(diff)
+            // 7ms
+            // user_y_start += username_box_height
+            // continue
 
-                    if (fails >= bar_max_fails) break;
-                }
+            const CHECK_LEFT_SIDE_PX = 4
+            const FORWARDS = -12
+            const leftEdgeLineMatch = 14
+            const MAX_CORNER_BUFFER = 8
+            const CORNER_MATCH = 7
+            const matchCornerYToX = {}
 
-
-                if (fails < bar_max_fails) {
-                    const px_rgb = UserNameBinarization.getPixelStatic(x_start, userMiddle, buffer, info)
-                    console.log(`Found left at ${x_start}, ${userMiddle} px:${px_rgb}`)
-                    // UserNameBinarization.setPixel(x_start-1, userMiddle, Color.YELLOW, buffer, info)
-                    for (let i=0; i<bar; i++) {
-                        UserNameBinarization.setPixel(x_start, userMiddle+i-bar/2, Color.toRGB(Color.RED), buffer, info)
-                    }
-
-                    for (let diff of pass) {
-                        // const diff = Math.round(-bar/2 + (bar * (i/bar_iter)))
-                        UserNameBinarization.setPixel(x_start, userMiddle+diff, Color.toRGB(Color.BRIGHT_GREEN), buffer, info)
-                    }
-                    
-                    leftmost_x = x_start
-                    // break;
-                }
-
-                UserNameBinarization.setPixel(x_start, userMiddle, Color.toRGB(Color.YELLOW), buffer, info)
-                x_start--
+            // NOTE: The first item is mirrored on the bottom
+            // [username_y_offset, x_offset, range]
+            const cornerMatchTemplate = {
+                [1]: [8, 2],
+                [2]: [7, 2],
+                [3]: [5, 1],
+                [4]: [4, 1],
+                [5]: [2, 2],
+                [6]: [1, 1],
+                
+                [username_box_height-1]: [8, 2],
+                [username_box_height-2]: [7, 2],
+                [username_box_height-3]: [5, 1],
+                [username_box_height-4]: [4, 1],
+                [username_box_height-5]: [2, 2],
+                [username_box_height-6]: [1, 1],
             }
 
-            if (leftmost_x == 1920)
-                console.log(`Not match for y ${userMiddle}`)
-            
-            y_start += username_box_height
+            // TODO: Instead of checking all pixels, check center then do corner check
+            // on the go
+            for (let x_offset=CHECK_LEFT_SIDE_PX; x_offset > FORWARDS; x_offset--) {
+                const x_start = lx + x_offset;
+                let matchesForLine = 0;
+                for (let dy=0; dy < username_box_height; dy++) {
+                    // TODO: Skip checks if corner buffer already there
+                    const leftLine = this.checkLine(x_start, user_y_start+dy, imgBuffer, 1,  Direction2D.RIGHT)
+                    if (leftLine) {
+                        imgBuffer.setPixel(x_start, user_y_start+dy, Color.YELLOW)
+                        if (!matchCornerYToX[dy] || matchCornerYToX[dy] - x_offset > MAX_CORNER_BUFFER ) {
+                            matchCornerYToX[dy] = x_offset
+                        
+                        }
+                        matchesForLine += 1
+                    }
+                }
+                if (matchesForLine > leftEdgeLineMatch) {
+                    // this qualifies as a possible left edge, check for rounded corners
+                    const currLineX = x_offset;
+                    let cornerMatches = 0
+                    for (const crnYPosStr in cornerMatchTemplate) {
+                        const crnYPos = parseInt(crnYPosStr)
+                        const [crnXPos, crnRange] = cornerMatchTemplate[crnYPosStr]
+                        const cornerPxMatch = Math.abs(matchCornerYToX[crnYPos] - (currLineX+crnXPos)) <= crnRange
+                        if (cornerPxMatch) cornerMatches += 1
+                    }
+
+                    if (cornerMatches > CORNER_MATCH) {
+                        // consider this a match, color this up
+                        for (const user_y_offset_str in matchCornerYToX) {
+                            if (!cornerMatchTemplate[user_y_offset_str]) continue
+                            const user_y_offset = parseInt(user_y_offset_str)
+                            const x_offset = matchCornerYToX[user_y_offset]
+                            const [crn_x_offset, crnRange] = cornerMatchTemplate[user_y_offset]
+
+                            if (Math.abs(x_offset - (currLineX+crn_x_offset)) <= crnRange)
+                                imgBuffer.setPixel(lx+x_offset, user_y_start+user_y_offset, Color.HOT_PINK)
+                        }
+                        imgBuffer.setPixel(lx+currLineX, user_y_start+20, Color.HOT_PINK)
+
+                        // TODO: Add username length here
+                    }
+                }
+            }
+
+            // end-while statement
+            user_y_start += username_box_height
+            continue // debugging stuff
         }
 
+        // 13ms
+        console.log("Completed task in "+(performance.now()-start)+'ms')
 
         this.bufferSize = this.bufferSize = {w: info.width, h:info.height, channels: info.channels, premultiplied: info.premultiplied, size: info.size }
-        this.bufferToFile("testing/line_testing.png", buffer, false)
+        this.bufferToFile("testing/line_test/line_testing.png", buffer, false)
+    }
+
+    /**
+     * @param {number} x
+     * @param {number} y 
+     * @param {ImageBuffer} imgBuffer 
+     * @param {Direction2D} line_direction 
+     * @param {Direction2D} check_direction
+     */
+    followUsernameLine(x, y, imgBuffer, line_direction, check_direction) {
+        // This seems to be a transparent line of RGB 150,150,150
+        // Line below should always be lower than current line
+
+        let linePx = null
+        let nonLinePx = null
+
+        let x_offset = x
+        let y_offset = y
+        let fails = 0
+        const MAX_FAILS = 2
+        
+        while (fails < MAX_FAILS) {
+
+            linePx = imgBuffer.getPixel(x_offset, y_offset)
+            nonLinePx = imgBuffer.getPixel(x_offset + check_direction[0], y_offset + check_direction[1])
+
+
+            if (Color.sumColor(linePx) < Color.sumColor(nonLinePx)) {
+                fails += 1
+                imgBuffer.setPixel(x_offset, y_offset, Color.RED)
+            } else {
+                imgBuffer.setPixel(x_offset, y_offset, Color.YELLOW)
+            }
+                
+            if (Color.sumColor(linePx)/3 < 145 && linePx[2] < 145) {
+                fails += 1
+                imgBuffer.setPixel(x_offset, y_offset, Color.BRIGHT_GREEN)
+                // break;
+            }
+
+            x_offset += line_direction[0]
+            y_offset += line_direction[1]
+        }
+
+        return [x_offset, y_offset]
     }
 
     /**
      * Check if there's a white line in this direction
-     * 
+     * @param {number} x x_coord in image
+     * @param {number} y y_coord in image
+     * @param {ImageBuffer} imgBuffer
+     * @param {number} [size=1] size of line to check
+     * @param {Direction2D} [direction] direction to expect cliff
      */
-    checkLine(x,y, buffer, info, size=1, horizontal=true) {
+    checkLine(x,y, imgBuffer, size=1, direction=Direction2D.LEFT) {
+
+        const blurPixel = 1;
 
         const lineTest = []
-        const beforeSide = []
-        const afterSide = []
-
-        const blurPixel = 3;
-
-        let i = 1;
-        const beforeCoord = []
-        while (i <= blurPixel)
-            beforeCoord.push(-1*i++)
-
-        const lineCoord = [0]
-        for (i=1; i<size; i++)
-            lineCoord.push(i)
-
-        const afterCoord = []
-        while (i <= blurPixel)
-            afterCoord.push(i++)
-
-        const horizFunc = (x, y, addt) => horizontal ? [x+addt, y] : [x, y+addt]
-        const sumPixNAvg = (pxTest) => {
-            const avgPix = pxTest.reduce((pv, cv) => [pv[0]+cv[0], pv[1]+cv[1], pv[2]+cv[0]])
-            avgPix[0] /= pxTest.length;
-            avgPix[1] /= pxTest.length;
-            avgPix[2] /= pxTest.length;
-            return avgPix
+        for (let i=0; i<size; i++) {
+            let [dx, dy] = [direction[0]*-i, direction[1]*-i]
+            lineTest.push(imgBuffer.getPixel(x+dx, y+dy))
         }
-        
-        for (const addt of lineCoord) {
-            let [dx, dy] = horizFunc(x,y,addt)
-            lineTest.push(UserNameBinarization.getPixelStatic(dx, dy, buffer, info))
-        }
+
         // check that pixels are generally white
-        const lineAvg = sumPixNAvg(lineTest)
-        const lineDiff = Math.abs(lineAvg[0]-lineAvg[1]) + Math.abs(lineAvg[1]-lineAvg[2]) + Math.abs(lineAvg[0]-lineAvg[2])
+        const lineAvg = Color.avgPixel(...lineTest)
+        const lineDiff = Color.totalDiff(lineAvg)
 
-        const WHITE_BALANCE = 20;
-        if (lineDiff/3 > WHITE_BALANCE && Color.sumColor(lineAvg) > 150*3) {
+        const WHITE_BALANCE = 60;
+        const WHITE_ENOUGH = 140;
+
+        if (lineDiff/3 > WHITE_BALANCE
+            || Color.sumColor(lineAvg) < WHITE_ENOUGH*3) {
             // console.log(`line itself is not balanced white ${lineDiff}`)
             return false;
         }
 
-        // for (const addt of beforeCoord) {
-        //     let [dx, dy] = horizFunc(x,y,addt)
-        //     beforeSide.push(UserNameBinarization.getPixelStatic(dx, dy, buffer, info))
-        // }
-        // const beforeAvg = sumPixNAvg(beforeSide)
-
-        for (const addt of afterCoord) {
-            let [dx, dy] = horizFunc(x,y,addt)
-            afterSide.push(UserNameBinarization.getPixelStatic(dx, dy, buffer, info))
+        const planePixels = []
+        for (let i=1; i <= blurPixel; i++) {
+            let [dx,dy] = [direction[0]*i, direction[1]*i]
+            planePixels.push(imgBuffer.getPixel(x+dx, y+dy))
         }
-        const afterAvg = sumPixNAvg(afterSide)
+        const afterAvg = Color.avgPixel(...planePixels)
 
         // All pixels have been collected, start to test
         // console.log(`before: ${beforeAvg} < line: ${lineAvg} > after: ${afterAvg}`)
@@ -1020,9 +1091,28 @@ export class UserNameBinarization {
 
         return Color.compareWhite(lineAvg, afterAvg) > LINE_DIFF
 
-        // return (Color.compareWhite(lineAvg, beforeAvg) > LINE_DIFF) 
-        //     && (Color.compareWhite(lineAvg, afterAvg) > LINE_DIFF)
+    }
 
+
+    /**
+     * Verify if chat is on screen
+     * @param {ImageBuffer} imgBuffer 
+     */
+    verifyChatBlockingNames(imgBuffer) {
+
+        // verify chat is on blocking screen by checking the subscribers UI top-right
+        // NOTE: WHITE 210 is barely legible, proved that WHITE 220 is
+
+        const chatCheck = {x:1839, y:144, w:28, h:6}
+        const cleanMin = 220
+        let checkPx = imgBuffer.getPixel(chatCheck.x, chatCheck.y)
+
+        if (Color.sumColor(checkPx)/3 > cleanMin) {
+            console.log("Chat on screen")
+        } else {
+            console.log("Chat not on screen")
+        }
+        return Color.sumColor(checkPx)/3 > cleanMin;
     }
 
     /**

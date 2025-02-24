@@ -21,6 +21,8 @@ export class Color {
     static MAHOGANY        = Color.toRGBA(0xC04000);
     static MAHOGANY_DARK   = Color.toRGBA(0x902000);
     static RED             = Color.toRGBA(0xFF0000);
+    static BLUE            = Color.toRGBA(0x0000FF);
+    static GREEN           = Color.toRGBA(0x00FF00);
 
     static SUB_BLUE        = Color.toRGBA(0x7b96dc);
     static BRIGHT_GREEN    = Color.toRGBA(0x00FF00);
@@ -41,6 +43,35 @@ export class Color {
      */
     static toHex(rgb) {
         return (rgb[0] << 8*2) + (rgb[1] << 8*1) + rgb[2];
+    }
+
+    static INT8MASK = 0xFF;
+
+    /**
+     * Convert decimal to RGB
+     * @param {Number} decimal 
+     * @returns {RGB}
+     */
+    static castRGB(decimal) {
+        return new Uint8Array([
+            (decimal & Color.INT8MASK),
+            (decimal >> 8*1) & Color.INT8MASK,
+            (decimal >> 8*2) & Color.INT8MASK,
+        ])
+    }
+
+    /**
+     * Convert decimal to RGBA
+     * @param {Number} decimal 
+     * @returns {RGBA}
+     */
+    static castRGBA(decimal) {
+        return new Uint8Array([
+            (decimal & Color.INT8MASK),
+            (decimal >> 8*1) & Color.INT8MASK,
+            (decimal >> 8*2) & Color.INT8MASK,
+            (decimal >> 8*3) & Color.INT8MASK,
+        ])
     }
 
     /**
@@ -90,8 +121,8 @@ export class Color {
 
     /**
      * Helper function to hash arrays to strings for Set
-     * @param {Uint8Array} rgba
-     * @returns 
+     * @param {RGBA} rgba
+     * @returns {string} hashString
      */
     static hashRGB(rgba) {
         return `${rgba?.[0]},${rgba?.[1]},${rgba?.[2]}`
@@ -122,6 +153,18 @@ export class Color {
         return (r_diff+g_diff+b_diff) / 3;
     }
 
+    /**
+     * Return the total difference between all color values.
+     * R <-> G + G <-> B + R <-> B
+     * @param {RGBA | RGB} rgba 
+     * @returns {number}
+     */
+    static totalDiff(rgba) {
+        return Math.abs(rgba[0]-rgba[1])
+            + Math.abs(rgba[1]-rgba[2])
+            + Math.abs(rgba[0]-rgba[2])
+    }
+
     static compareWhite(rgb, rgb2) {
         return rgb[0] - rgb2[0] 
             + (rgb[1] - rgb2[1])
@@ -135,6 +178,21 @@ export class Color {
      */
     static sumColor(rgb) {
         return rgb[0] + rgb[1] + rgb[2]
+    }
+
+    /**
+     * Return the average pixel from a list of pixels
+     * @param {RGB[] | RGBA[]} rgba_list 
+     * @returns {RGB | RGBA}
+     */
+    static avgPixel(...rgba_list) {
+        if (rgba_list.length == 1) return rgba_list[0]
+
+        const avgPxSum = rgba_list.reduce( (ppx, cpx) => 
+            ppx.map((val, idx) => val + cpx[idx])
+        )
+        const avgPx = avgPxSum.map(px => Math.round(px / rgba_list.length))
+        return new Uint8ClampedArray([...avgPx])
     }
 }
 
@@ -152,6 +210,157 @@ export class Color {
  * @property {number} h
  */
 
+
+export class ImageBuffer {
+    /**
+     * @param {ArrayBuffer} arrayBuffer 
+     * @param {number} width width of buffer
+     * @param {number} height height of buffer
+     * @param {3 | 4} channels Should be 3/4 in this century
+     */
+    constructor(arrayBuffer, width, height, channels) {
+        /** @prop {Buffer} buffer */
+        this.buffer = arrayBuffer
+        /** @prop {number} width Width of the buffer */
+        this.width = width
+        /** @prop {number} height Height of the buffer */
+        this.height = height
+        /** @prop {number} channels Number of color channels (4 = RGBA) */
+        this.channels = channels
+    }
+
+    /**
+     * @param {number} x_coord 
+     * @param {number} y_coord
+     */
+    toPixelOffset (x_coord, y_coord) {
+        return (y_coord * this.width + x_coord) * this.channels
+    }
+
+    /**
+     * Get pixel from arrayBuffer
+     * @param {number} x 
+     * @param {number} y
+     * @returns {RGB | RGBA}
+     */
+    getPixel (x,y) {
+        const px_off = this.toPixelOffset(x,y)
+        const decimal = this.buffer.readUInt32LE(px_off)
+        if (this.channels == 3)
+            return Color.castRGB(decimal)
+        else if (this.channels == 4)
+            return Color.castRGBA(decimal)
+    }
+
+    /**
+     * Set pixel in array buffer.
+     * @param {number} x 
+     * @param {number} y
+     * @param {RGB | RGBA} rgba 
+     * @param {null} [alpha=null] Note alpha overrides rgba alpha if exists, then 0xFF if neither exists but alpha does
+     */
+    setPixel (x,y, rgba, alpha=null) {
+        const px_off = this.toPixelOffset(x,y)
+        this.buffer.writeUInt8(rgba[0], px_off+0)
+        this.buffer.writeUInt8(rgba[1], px_off+1)
+        this.buffer.writeUInt8(rgba[2], px_off+2)
+
+        const alpha_value = alpha ?? rgba[3] ?? 0xFF
+        if (this.channels == 4 && alpha_value)
+            this.buffer.writeUInt8(rgba[3], px_off+3)
+    }
+}
+
+/**
+ * Class to contain sharp memory reference and help with utility
+ */
+export class SharpImg {
+    
+    /**
+     * Takes a buffer/etc and turns it into a sharp object
+     */
+    constructor(imageLike=null, imgBuffer=null) {
+        /** sharp image on file */
+        this.sharpImg = imageLike ? sharp(imageLike) : null
+        /** @type {ImageBuffer} arrayBuffer with info. This is a copy of the sharp image */
+        this.imgBuffer = imgBuffer
+    }
+
+    async buildBuffer () {
+        if (this.imgBuffer) return this.imgBuffer
+
+        return this.sharpImg
+            .raw()
+            .toBuffer({resolveWithObject: true})
+            .then( ({data, info}) => {
+                if (data) {
+                    this.imgBuffer = new ImageBuffer(data, info.width, info.height, info.channels);
+                    return this.imgBuffer
+                }
+            })
+            .catch( err => {
+                console.warn(`Unable to make ImageBuffer; err${err}:${err.stack}`)
+                throw err
+            })
+    }
+
+    crop(cropRect) {
+        return new SharpImg(this.sharpImg.extract({
+                left:   cropRect.x,
+                top:    cropRect.y,
+                width:  cropRect.w,
+                height: cropRect.h
+            })
+        )
+    }
+
+    toBuffer(scaleForOCR=false, {toPNG=false, toJPG=false, toBuffer=false}) {
+        // NOTE: changes to buffer are not reflected in array, use array first
+        let bufferPromise = null
+        if (this.imgBuffer)
+            bufferPromise = sharp(this.imgBuffer.buffer, {
+                raw: {  width: this.imgBuffer.width, 
+                    height: this.imgBuffer.height, 
+                    channels: this.imgBuffer.channels, 
+                }
+                // TODO: Update if I decide to handle premultiplied
+                // premultiplied: this.bufferSize.premultiplied}
+            })
+        else if (this.sharpImg)
+            bufferPromise = this.sharpImg
+
+        if (!bufferPromise) throw Error("Trying to build buffer when both objects are NULL")
+
+        if (scaleForOCR) {
+            bufferPromise = bufferPromise.resize({width:scaleForOCR, kernel:'mitchell'})
+                .blur(1)
+                .withMetadata({density: 300})
+        }
+
+        if (toPNG) return bufferPromise.png()
+        if (toJPG) return bufferPromise.jpeg({quality:100})
+        if (toBuffer) return bufferPromise
+
+        throw Error("Did not specify output")
+    }
+}
+
+/**
+ * Builds a full BufferView from imgLike (filename/buffer)
+ * Helper function
+ * @param {*} imgLike 
+ * @returns {Promise<BufferView>} bufferView containing cropped* image
+ */
+function BuildImageBuffer () {
+    // TODO: Gonna use BufferView until I decide if separating it is useful
+}
+
+export class Direction2D {
+    static RIGHT = [1,0]
+    static LEFT = [-1,0]
+    static UP = [0,-1]
+    static DOWN = [0,1]
+}
 
 /** Class for managing resolution & targetting */
 export class PixelMeasure {
@@ -225,7 +434,6 @@ export class PixelMeasure {
 export class BufferView {
     
     /**
-     * 
      * @param {Buffer} buffer 
      * @param {number} width 
      * @param {number} height
@@ -337,6 +545,7 @@ export class BufferView {
         if (rgba[3])
             this.buffer.writeUInt8(rgba[3], px_off+3)
     }
+    
 }
 
 /** Helper class for Image Comparisons */

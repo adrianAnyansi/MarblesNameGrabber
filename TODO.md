@@ -20,6 +20,15 @@ Currently I have a max of 32 lambdas for testing, but I'm just going to increase
 
 
 # Focus today
+Build a better line/bounding box detector by detecting the cliff at a point
+Then I need to build something that "can" estimate the point between 2 pixels
+
+Once I have this logic, I can put the username detection in and see how well I can track lengths
+Aim is
+    Quickly determine userLen in less than 30ms
+    Track the len or lack of before sending for username recon
+    Determine each username position by counting
+
 
 Get the username bounding boxes, and their lengths, and time this information.
 

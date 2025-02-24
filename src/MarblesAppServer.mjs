@@ -144,7 +144,7 @@ export class MarblesAppServer {
     }
 
     // ---------------
-    // Declaring general functions
+    // OCR functions
     // ---------------
 
     /**
@@ -172,9 +172,11 @@ export class MarblesAppServer {
         // TODO: Change this to just terminate some workers?
     }
 
+    // LAMBDA Functions
+    // ------------------
+
     /** Warmup lambda by sending an empty file */
     async warmupLambda (workers) {
-        // Im throwing away lambdaClient, dont know if this is recommened
         if (!this.lambdaClient) {
             this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
 
@@ -310,9 +312,9 @@ export class MarblesAppServer {
         return ret_obj
     }
 
-// -------------------------
-// Server processing functions
-// -------------------------
+    // -------------------------
+    // Server processing functions
+    // -------------------------
     /**
      * Start downloading channel or vod to read
      * Note this also setups variables assuming a state changing going to START
@@ -581,6 +583,9 @@ export class MarblesAppServer {
         })
     }
 
+    // -----------------------
+    // LAMBDA FUNCTIONS
+    // -----------------------
 
     /**
      * Sends image file to lambda function, which returns a payload containing the tesseract information
