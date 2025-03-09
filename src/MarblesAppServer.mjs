@@ -6,7 +6,7 @@ import axios from 'axios'
 import fs from 'fs/promises'
 
 import { UserNameBinarization } from './UserNameBinarization.mjs'
-import {UsernameTracker} from './UsernameTrackerClass.mjs'
+import {UsernameAllTracker, UsernameTracker} from './UsernameTrackerClass.mjs'
 
 import { createWorker, createScheduler } from 'tesseract.js'
 import { humanReadableTimeDiff, msToHUnits } from './DataStructureModule.mjs'
@@ -54,7 +54,7 @@ const USE_LAMBDA = true
 const NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
 
 const TESSERACT_ARGS = [
-    // String.raw`C:\Users\Tobe\Documents\Github\MarblesNameGrabber\testing\name_bin.png`, '-', // stdin, stdout
+    // <image_filename>, '-', // stdin, stdout
     "-", "-",
     "--psm", "4",
     "-l", "eng",
@@ -68,6 +68,7 @@ export class MarblesAppServer {
 
     /** Not being used right now */
     static ENV = 'dev' // set from router
+
     static TESSERACT_LOC = String.raw`C:\Program Files\Tesseract-OCR\tesseract.exe`
     
     // TODO: Get value from streamlink config
@@ -86,13 +87,16 @@ export class MarblesAppServer {
     constructor () {
         this.serverStatus = {
             state: SERVER_STATE_ENUM.STOPPED,   // current state
+            chat_overlap: false,
+            barb_overlap: false,
+            unknown_overlap: false,
             imgs_downloaded: 0,                 // downloaded images from the stream
             imgs_read: 0,                       // images read from stream (that are valid marbles names)
             started_stream_ts: null,            // how long the program has ingested data
             ended_stream_ts: null,              // when stream ingest ended
             viewers: 0,                         // current viewers on the site
             interval: 1_000 * 3,                 // interval to refresh status
-            lag_time: 0
+            lag_time: 0                         // time behind from 
         }
 
         // debug variables
@@ -116,6 +120,7 @@ export class MarblesAppServer {
 
         /** @type {UsernameTracker} Userlist for server */
         this.usernameList = new UsernameTracker() 
+        this.usernameAdvObject = new UsernameAllTracker()
         this.emptyListPages = 0 // Number of images without any names
 
         // Twitch tokens
@@ -195,7 +200,7 @@ export class MarblesAppServer {
      * Native tesseract process */
     async nativeTesseractProcess(imgBinBuffer) {
         // console.debug(`Running native Tesseract process`)
-        const tessProcess = spawn(this.tesseractCmd, TESSERACT_ARGS, {
+        const tessProcess = spawn(this.tesseractCmd, ["-", "-"], {//TESSERACT_ARGS, {
             stdio: ["pipe", "pipe", "pipe"]
         })          //stdin //stdout //stderr
 
@@ -225,7 +230,8 @@ export class MarblesAppServer {
         tessProcess.stdout.on('end', () => {
             // This should be the XML format HOCR
             // Parsing into a usable line/bbox/symbol for the final text
-            let tesseractData = this.parseHOCRResponse(outputText)
+            // let tesseractData = this.parseHOCRResponse(outputText)
+            let tesseractData = outputText
 
             // I don't know what's actually here so just say you got it
             // console.warn(`Tesseract process complete; ${tesseractData}`)
@@ -241,7 +247,8 @@ export class MarblesAppServer {
         })
         
         // put the binarized image to stdin
-        tessProcess.stdin.end(imgBinBuffer
+        tessProcess.stdin.end(
+            imgBinBuffer
             // (err) => {
             //     console.debug("Tesseract bin buffer has been written")
             // }
@@ -443,30 +450,6 @@ export class MarblesAppServer {
     }
 
     /**
-     * Helper function to check if this is the marbles pre-race screen by checking
-     * multiple UI elements
-     * @param {UserNameBinarization} mng 
-     * @returns {Boolean} true if matched marbles site 
-     */
-    async validateMarblesPreRaceScreen(mng) {
-        const generic_buffer =  0.05;
-
-        return (
-            await mng.checkImageAtLocation(
-                UserNameBinarization.START_BUTTON_TEMPLATE, 0.85-generic_buffer)
-            ||
-            await mng.checkImageAtLocation(
-                UserNameBinarization.PRE_RACE_START_W_DOTS_TEMPLATE, 0.90-generic_buffer)
-            ||
-            await mng.checkImageAtLocation(
-                UserNameBinarization.GAME_SETUP_TEMPLATE, 0.9-generic_buffer)
-            ||
-            await mng.checkImageAtLocation(
-                UserNameBinarization.SUBSCRIBERS_TEMPLATE, 0.9-generic_buffer)
-        )
-    }
-
-    /**
      * Parse an image for names
      * @param {*} imageLike 
      * @returns 
@@ -495,7 +478,8 @@ export class MarblesAppServer {
         let mng = new UserNameBinarization(imageLike, false)
 
         if (this.serverStatus.state == SERVER_STATE_ENUM.WAITING) {
-            let validMarblesImgBool = await this.validateMarblesPreRaceScreen(mng)
+            // let validMarblesImgBool = await this.validateMarblesPreRaceScreen(mng)
+            let validMarblesImgBool = await mng.validateMarblesPreRaceScreen()
 
             if (validMarblesImgBool) {
                 console.log("Found Marbles Pre-Race header, starting read")
@@ -505,7 +489,15 @@ export class MarblesAppServer {
                 return
             }
         }
+
         
+        // TODO: Try and detect BARB & CHAT location & update
+        
+        // TODO: Read the username number in the top right
+        // Depending on how slow, it will be hard to be real-time
+
+        // TODO: Build buffer then try detect username
+
         // Parse the image for names
         console.debug(`Queuing LIVE image queue: ${this.getTextRecgonQueue()}`)
 
@@ -582,6 +574,67 @@ export class MarblesAppServer {
             // Since this is continous, this info/image is discarded
         })
     }
+
+    async handleImage(imageLike) {
+        if (this.serverStatus.state == SERVER_STATE_ENUM.COMPLETE) {
+            console.debug(`In COMPLETE/STOP state, ignoring.`)
+            return
+        }
+
+        const imgId = this.serverStatus.imgs_downloaded++
+
+        if (this.debugVODDump) {
+            console.debug(`Stream is dumped to location ${VOD_DUMP_LOC}`)
+            fs.mkdir(`${VOD_DUMP_LOC}`, {recursive: true})
+            fs.writeFile(`${VOD_DUMP_LOC}${imgId}.png`, imageLike)
+            return
+        }
+
+        this.parseAdvImg(imageLike)
+    }
+
+    /** Parse advanced image
+     * Need a complex state machine to handle this
+     */
+    async parseAdvImg(imageLike) {
+        
+        const frameStartMark = 'frame-start'
+        performance.mark(frameStartMark);
+        
+        const mng = new UserNameBinarization(imageLike, false)
+
+        // TODO: Rework this and also check for obstructions
+        if (this.serverStatus.state == SERVER_STATE_ENUM.WAITING) {
+            let validMarblesImgBool = await mng.validateMarblesPreRaceScreen()
+
+            if (validMarblesImgBool) {
+                console.log("Found Marbles Pre-Race header, starting read")
+                this.serverStatus.state = SERVER_STATE_ENUM.READING
+                this.serverStatus.started_stream_ts = new Date()
+            } else {
+                return
+            }
+        }
+
+        // Warm-up text recognition
+        console.debug(`Queuing LIVE image queue: ${this.getTextRecgonQueue()}`)
+
+        const funcImgId = this.imageProcessId++
+
+        
+        // Check all username appearance
+        const appearOut = mng.getUNBoundingBox([], {appear:true, length:false})
+        let visibleUsers = appearOut.filter(user => user?.appear == true)
+
+        // Get prediction from usernameList
+        // TODO: If obstacles are known, send details
+        const prediction = this.usernameAdvObject.predict(funcImgId)
+        // Actually I need the offset as well to know what to check
+
+        // for everything on screen, determine length
+
+    }
+
 
     // -----------------------
     // LAMBDA FUNCTIONS
@@ -676,6 +729,7 @@ export class MarblesAppServer {
 
     /**
      * Runs whatever debug thing I want with a local filename I want 
+     * This is specifically for individual images, but will be superceded by unittesting.
      * @param {*} filename 
      * @param {*} withLambda 
      * @returns 
@@ -687,14 +741,10 @@ export class MarblesAppServer {
         
         let mng = new UserNameBinarization(filename, true)
 
-        await this.validateMarblesPreRaceScreen(mng);
+        // await this.validateMarblesPreRaceScreen(mng);
+        let race_screen = mng.validateMarblesPreRaceScreen()
+        console.log(`Race bool ${race_screen}`)
         // TODO: Get error
-        // let m = await mng.checkImageAtLocation(
-        //     UserNameBinarization.START_BUTTON_TEMPLATE
-        // ).catch( err => {
-        //     console.log(err)
-        // })
-        // console.log(`WaitingForStart was ${m}`)
         
         const withNative = true
 
@@ -917,6 +967,7 @@ export class MarblesAppServer {
 
         if (this.streamlinkProcess == null) {
             this.usernameList.clear()
+            this.usernameAdvObject.clear()
             this.imageProcessTime.length = 0;
             
             if (!this.uselambda)
@@ -961,6 +1012,7 @@ export class MarblesAppServer {
         this.serverStatus.imgs_downloaded = 0
         this.serverStatus.imgs_read = 0
         this.usernameList.clear()
+        this.usernameAdvObject.clear()
         return "Cleared usernameList."
     }
 

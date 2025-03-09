@@ -141,6 +141,7 @@ export class UsernameTracker {
 
     /**
      * Deprecated (hash version of user)
+     * @deprecated
      * @param {*} username 
      * @param {*} confidence 
      * @param {*} userVerify 
@@ -165,6 +166,7 @@ export class UsernameTracker {
 
     /**
      * Deprecated, no longer manually removing usernames
+     * @deprecated
      * @param {*} username 
      * @returns 
      */
@@ -405,7 +407,9 @@ export class UsernameTracker {
             userObj.fullImgIdxList.push(fullImgIdx)
     }
     
-    /** DEPRECATED */
+    /** DEPRECATED 
+     * @deprecated
+    */
     addImageOld(username, imgBuffer, fullImgIdx) {
         const newImg = new UserImage(this.pageIdx, imgBuffer, null)
         this.fullImageList[fullImgIdx] = newImg
@@ -598,5 +602,127 @@ export class UsernameTracker {
             if (adjcSet.has(ltB)) return 1
         }
         return 2
+    }
+}
+
+class TrackedUsername {
+    /**
+     * Store info about the Username and etc
+     * @param {String} name Username string
+     * @param {number} confidence Confidence in OCR
+     * @param {number} index Index in the full 1000 list
+     * @param {number} enterFrameTime Ingest date
+     * * @param {Date} endTs Ingest date
+     */
+    constructor (enterFrameTime=null) {
+        /** @type {string} most confident name */
+        this.name = null                
+        /** @type {number} approx length of the */
+        this.length = null
+        /** @type {number} confidence percentage */
+        this.confidence = null
+        /** @type {number} index in user list */
+        this.index = null
+        
+        /** @type {number} ingest timestamp in ms */
+        this.enterFrameTime = enterFrameTime
+        this.exitFrameTime = null
+
+        /** @type {UserImage<>} images of the user */
+        this.partialImgList = []
+
+        /** @type {UserImage} Image to display to user */
+        this.bestImg = null
+
+        /** @type {Set<string>} set of usernames that are at this index */
+        this.aliases = new Set()
+    }
+
+
+    // TrackerUsername has 3 states
+    /*
+    1. Pre-screen                   - no appeartime
+    2. On screen, unknown length    - appeartime
+    3. On screen, length known      - apeparTime & length
+    3.a (going off-screen), this might take some testing    - endTime*
+    4. Off screen - endTime
+    */
+
+    /**
+     * Return if userbox is expected to be on-screen.
+     * This is true if endFrameTime is past currentTime
+     * @param {number} currFrameTime 
+     */
+    onScreen (currFrameTime) {
+        return (this.exitFrameTime && this.exitFrameTime > currFrameTime)
+    }
+
+}
+
+/**
+ * More intensive tracker, that links each username
+ */
+export class UsernameAllTracker {
+
+    constructor () {
+        /** @type {Map<string, Username>} hash of all names */
+        this.hash = new Map()       // hash of names
+        /** @type {Array<TrackedUsername>} */
+        this.usersInOrder = []  // List of UserObj in order
+
+        this.pageIdx = 0           // Currently injested page
+        /** @type {UserImage[]} images of the user */
+        // this.fullImageList = []     // All images in order
+
+        this.currentScreen = [] // should be max of 24
+        this.currentScreenFirstIndex = 0; // first user index on screen
+        this.currFrameTime = 0;
+    }
+
+    static SCREEN_MAX = 24;
+
+    /** Using internal frameTime, predict the shown userboxes based on 
+     * input frameTime.
+     * @param {*} frameTime current frame being sent
+     * @param {number} [totalUsers=null] total users from the top-left corner
+     * @param {boolean} [predictFullScreen=true] assume that all 24 slots are occupied. 
+     * This overrides totalUsers and should only be used when totalUsers is obscured
+     * @returns {Array<TrackedUsername>} list of tracked users, including new users that haven't been verified
+    */
+    predict (frameTime, totalUsers=null, predictFullScreen=true) {
+
+        let startUserIndex = this.currentScreenFirstIndex;
+        const screenUsers = []
+
+        // Depending the totalUsers 
+        let expectedUserAmt = UsernameAllTracker.SCREEN_MAX
+        if (!predictFullScreen && totalUsers) {
+            expectedUserAmt = Math.min(UsernameAllTracker.SCREEN_MAX, totalUsers - this.currentScreenFirstIndex)
+        }
+
+        let offsetFromCurrent = 0;
+
+        // Iterate names, skipping names that have expired*
+        while (screenUsers.length < UsernameAllTracker.SCREEN_MAX) {
+            const userbox = this.usersInOrder.at(startUserIndex++)
+            if (userbox.exitFrameTime >= frameTime) {
+                offsetFromCurrent++
+                continue
+            }
+            if (userbox == undefined) break // Early-out
+            screenUsers.push(userbox)
+        }
+
+        // Now create new users to fill the remaining space
+        while (screenUsers.length < expectedUserAmt) {
+            // NOTE: does not add into list until verified
+            screenUsers.push(new TrackedUsername(frameTime));
+        }
+
+        return {predictedUsers: screenUsers, offset: offsetFromCurrent}
+    }
+
+    recognizeUsers (imgBuffer) {
+
     }
 }

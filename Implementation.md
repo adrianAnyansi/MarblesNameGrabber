@@ -70,7 +70,6 @@ I'm not gonna write so much, but I think doing a manual OCR would be a huge spee
 
 https://www.twitch.tv/videos/2368542002?t=6h8m5s
 https://www.twitch.tv/videos/2349366019?t=6h7m47s
-https://www.twitch.tv/videos/2334886470?t=6h4m14s
 
 ## Streamlink Commands
 
@@ -113,3 +112,6 @@ ffmpeg -re '-f','mpegts', '-i','pipe:0', '-f','image2', '-pix_fmt','rgba', '-vf'
     -f image2pipe = if you pipe image2, its gets mad and crashes
     -c:v png    = video output is png
     pipe:1      = output to stdout
+
+
+# Font and OCR tracking

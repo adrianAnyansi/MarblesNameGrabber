@@ -727,6 +727,7 @@ export class UserNameBinarization {
 
     /**
      * Returns true if the white "Waiting for Start" is visible
+     * @deprecated
      */
     async checkWaitingForStartImg() {
 
@@ -785,6 +786,12 @@ export class UserNameBinarization {
         'data/start_with_dots.png',
         {x:1018, y:73, w:182, h:49},
         "Start..."
+    )
+
+    static EVERYONE_TEMPLATE = new ImageTemplate(
+        'data/everyone.png',
+        {x:24, y:132, w:102, h:23},
+        "Everyone"
     )
 
     /**
@@ -881,8 +888,15 @@ export class UserNameBinarization {
 
     /**
      * Search image for white username bounding box at locations
+     * @param {number[]} usersToCheck check slots [0-23]. Empty list is 0-23, ignore exceptions
+     * @param {Object} checkDetails 
+     * @param {boolean} [checkDetails.appear=true] check that this user exists (right line)
+     * @param {boolean} [checkDetails.length=true] check the length of the user
+     * @param {boolean} [checkDetails.quickLength=null] check length at x_coord
+     * 
+     * @returns {Object} retObj, sparse* array {appear:bool, length:number, quickLen:bool}
      */
-    async getUNBoundingBox() {
+    async getUNBoundingBox(usersToCheck=[], {appear=true, length=true, quickLength=null}) {
 
         const {data, info} = await sharp(this.imageLike).raw().toBuffer( { resolveWithObject: true })
         const imgBuffer = new ImageBuffer(data, info.width, info.height, info.channels)
@@ -890,115 +904,155 @@ export class UserNameBinarization {
         // leftEdge is at 1694* 
         // Going to do edge detection across this
 
-        const start = performance.now()
+        const startMarkName = "userbox-start"
+        performance.mark(startMarkName)
 
-        let username_top = 125;
-        let username_left = 1574+120;
-        let username_box_height = UserNameBinarization.USERNAME_HEIGHT;
+        const UN_TOP_Y = 125;
+        const UN_RIGHT_X = 1574+120;
+        const UN_BOX_HEIGHT = UserNameBinarization.USERNAME_HEIGHT;
         
-        let user_y_start = username_top;
-        const userNameList = []
+        // let user_y_start = username_top;
+        const userBoxList = []
+        for (let i=0; i<24; i++) {
+            userBoxList[i] = {}
+        }
+        // const userBoxLenList = []
+        
+        // let userIndex = 0;
+        if (usersToCheck.length == 0)
+            usersToCheck = Array.from(Array(24).keys())
 
-        while (user_y_start < 1080 - username_box_height) { // per username
+        // while (user_y_start < 1080 - username_box_height) { // per username
+        for (const userIndex of usersToCheck) {
+
+            const user_y_start = UN_TOP_Y + UN_BOX_HEIGHT * userIndex
+
+            const userstart = 'userstart'
+            performance.clearMarks(userstart)
+            performance.mark(userstart)
+
             // check the right side wall
-            for (let d=0; d < username_box_height; d++) {
-                const rightLine = this.checkLine(username_left, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
-                if (rightLine) imgBuffer.setPixel(username_left, user_y_start+d, Color.RED)
-                // If detected, add username to list
-            }
-            // 2ms
-            // user_y_start += username_box_height
-            // continue
-
-            // TODO: Binary search this
-            const [lx, ly] = this.followUsernameLine(username_left-20, user_y_start, imgBuffer, 
-                Direction2D.LEFT, Direction2D.DOWN)
-
-            // 7ms
-            // user_y_start += username_box_height
-            // continue
-
-            const CHECK_LEFT_SIDE_PX = 4
-            const FORWARDS = -12
-            const leftEdgeLineMatch = 14
-            const MAX_CORNER_BUFFER = 8
-            const CORNER_MATCH = 7
-            const matchCornerYToX = {}
-
-            // NOTE: The first item is mirrored on the bottom
-            // [username_y_offset, x_offset, range]
-            const cornerMatchTemplate = {
-                [1]: [8, 2],
-                [2]: [7, 2],
-                [3]: [5, 1],
-                [4]: [4, 1],
-                [5]: [2, 2],
-                [6]: [1, 1],
-                
-                [username_box_height-1]: [8, 2],
-                [username_box_height-2]: [7, 2],
-                [username_box_height-3]: [5, 1],
-                [username_box_height-4]: [4, 1],
-                [username_box_height-5]: [2, 2],
-                [username_box_height-6]: [1, 1],
-            }
-
-            // TODO: Instead of checking all pixels, check center then do corner check
-            // on the go
-            for (let x_offset=CHECK_LEFT_SIDE_PX; x_offset > FORWARDS; x_offset--) {
-                const x_start = lx + x_offset;
-                let matchesForLine = 0;
-                for (let dy=0; dy < username_box_height; dy++) {
-                    // TODO: Skip checks if corner buffer already there
-                    const leftLine = this.checkLine(x_start, user_y_start+dy, imgBuffer, 1,  Direction2D.RIGHT)
-                    if (leftLine) {
-                        imgBuffer.setPixel(x_start, user_y_start+dy, Color.YELLOW)
-                        if (!matchCornerYToX[dy] || matchCornerYToX[dy] - x_offset > MAX_CORNER_BUFFER ) {
-                            matchCornerYToX[dy] = x_offset
-                        
-                        }
-                        matchesForLine += 1
+            if (appear) {
+                // TODO: Reduce the num of checks here
+                const APPEAR_MIN = 10
+                let right_match = 0
+                for (let d=0; d < UN_BOX_HEIGHT/2; d++) {
+                    if (user_y_start+d >= imgBuffer.height) break
+                    const rightLine = this.checkLine(UN_RIGHT_X, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
+                    if (rightLine) {
+                        right_match++
+                        if (this.debug) imgBuffer.setPixel(UN_RIGHT_X, user_y_start+d, Color.RED)
+                    }
+                    if (right_match > APPEAR_MIN) {
+                        break;
                     }
                 }
-                if (matchesForLine > leftEdgeLineMatch) {
-                    // this qualifies as a possible left edge, check for rounded corners
-                    const currLineX = x_offset;
-                    let cornerMatches = 0
-                    for (const crnYPosStr in cornerMatchTemplate) {
-                        const crnYPos = parseInt(crnYPosStr)
-                        const [crnXPos, crnRange] = cornerMatchTemplate[crnYPosStr]
-                        const cornerPxMatch = Math.abs(matchCornerYToX[crnYPos] - (currLineX+crnXPos)) <= crnRange
-                        if (cornerPxMatch) cornerMatches += 1
-                    }
+                
+                userBoxList[userIndex].appear = (right_match > APPEAR_MIN) // update value in userList
+                // console.log(`Right-line took ${performance.measure('right-detect', userstart).duration}`)
+                // 2ms
+            }
 
-                    if (cornerMatches > CORNER_MATCH) {
-                        // consider this a match, color this up
-                        for (const user_y_offset_str in matchCornerYToX) {
-                            if (!cornerMatchTemplate[user_y_offset_str]) continue
-                            const user_y_offset = parseInt(user_y_offset_str)
-                            const x_offset = matchCornerYToX[user_y_offset]
-                            const [crn_x_offset, crnRange] = cornerMatchTemplate[user_y_offset]
+            // NOTE: Could bin-search this but could be inaccurate if there's a line somewhere else
+            if (length) {
+                const [lx, ly] = (quickLength[userIndex] != undefined) ? 
+                    this.followUsernameLine(UN_RIGHT_X-20, user_y_start, imgBuffer, Direction2D.LEFT, Direction2D.DOWN)
+                    : [quickLength[userIndex], null];
 
-                            if (Math.abs(x_offset - (currLineX+crn_x_offset)) <= crnRange)
-                                imgBuffer.setPixel(lx+x_offset, user_y_start+user_y_offset, Color.HOT_PINK)
+                // console.log(`Line-follow took ${performance.measure('line-follow', userstart).duration}`)
+                // 7ms
+
+                const CHECK_LEFT_SIDE_PX = 4
+                const FORWARDS = -12
+                const leftEdgeLineMatch = 14
+                const MAX_CORNER_BUFFER = 8
+                const CORNER_MATCH = 7
+                const matchCornerYToX = {}
+
+                // NOTE: The first item is mirrored on the bottom
+                // [username_y_offset, x_offset, range]
+                const cornerMatchTemplate = {
+                    [1]: [8, 2],
+                    [2]: [7, 2],
+                    [3]: [5, 1],
+                    [4]: [4, 1],
+                    [5]: [2, 2],
+                    [6]: [1, 1],
+                    
+                    [UN_BOX_HEIGHT-1]: [8, 2],
+                    [UN_BOX_HEIGHT-2]: [7, 2],
+                    [UN_BOX_HEIGHT-3]: [5, 1],
+                    [UN_BOX_HEIGHT-4]: [4, 1],
+                    [UN_BOX_HEIGHT-5]: [2, 2],
+                    [UN_BOX_HEIGHT-6]: [1, 1],
+                }
+
+                leftfind: for (let x_offset=CHECK_LEFT_SIDE_PX; x_offset > FORWARDS; x_offset--) {
+                    const x_start = lx + x_offset;
+                    let matchesForLine = 0;
+                    for (let dy=0; dy < UN_BOX_HEIGHT; dy++) {
+                        // TODO: Skip checks if corner buffer already there
+                        if (user_y_start+d >= imgBuffer.height) break
+                        const leftLine = this.checkLine(x_start, user_y_start+dy, imgBuffer, 1,  Direction2D.RIGHT)
+                        if (leftLine) {
+                            if (this.debug) imgBuffer.setPixel(x_start, user_y_start+dy, Color.YELLOW)
+
+                            if (!matchCornerYToX[dy] || matchCornerYToX[dy] - x_offset > MAX_CORNER_BUFFER ) {
+                                matchCornerYToX[dy] = x_offset
+                            
+                            }
+                            matchesForLine += 1
                         }
-                        imgBuffer.setPixel(lx+currLineX, user_y_start+20, Color.HOT_PINK)
+                    }
+                    // console.log(`Left-line took ${performance.measure('left-find', userstart).duration}`)
+                    if (matchesForLine > leftEdgeLineMatch) {
+                        // this qualifies as a possible left edge, check for rounded corners
+                        const currLineX = x_offset;
+                        let cornerMatches = 0
+                        for (const crnYPosStr in cornerMatchTemplate) {
+                            const crnYPos = parseInt(crnYPosStr)
+                            const [crnXPos, crnRange] = cornerMatchTemplate[crnYPosStr]
+                            const cornerPxMatch = Math.abs(matchCornerYToX[crnYPos] - (currLineX+crnXPos)) <= crnRange
+                            if (cornerPxMatch) cornerMatches += 1
+                        }
 
-                        // TODO: Add username length here
+                        if (cornerMatches > CORNER_MATCH) {
+                            // consider this a match, color this up
+                            for (const user_y_offset_str in matchCornerYToX) {
+                                if (!cornerMatchTemplate[user_y_offset_str]) continue
+                                const user_y_offset = parseInt(user_y_offset_str)
+                                const x_offset = matchCornerYToX[user_y_offset]
+                                const [crn_x_offset, crnRange] = cornerMatchTemplate[user_y_offset]
+
+                                if (this.debug && Math.abs(x_offset - (currLineX+crn_x_offset)) <= crnRange)
+                                    imgBuffer.setPixel(lx+x_offset, user_y_start+user_y_offset, Color.HOT_PINK)
+                            }
+                            if (this.debug)
+                                imgBuffer.setPixel(lx+currLineX, user_y_start+20, Color.HOT_PINK)
+
+                            // TODO: Add username length here
+                            // userBoxLenList.push(lx+currLineX)
+                            userBoxList[userIndex].length = lx+currLineX - UN_RIGHT_X
+                            break leftfind;
+                        }
+                        // console.log(`Left-corner took ${performance.measure('left-corner', userstart).duration}`)
                     }
                 }
             }
 
             // end-while statement
-            user_y_start += username_box_height
-            continue // debugging stuff
+            // user_y_start += UN_BOX_HEIGHT
+            // continue // debugging stuff
         }
 
         // 13ms
-        console.log("Completed task in "+(performance.now()-start)+'ms')
+        console.log("Finished box detect in "+(performance.measure(startMarkName, startMarkName).duration)+'ms')
+
 
         this.bufferSize = this.bufferSize = {w: info.width, h:info.height, channels: info.channels, premultiplied: info.premultiplied, size: info.size }
         this.bufferToFile("testing/line_test/line_testing.png", buffer, false)
+
+        return userBoxList
     }
 
     /**
@@ -1028,14 +1082,17 @@ export class UserNameBinarization {
 
             if (Color.sumColor(linePx) < Color.sumColor(nonLinePx)) {
                 fails += 1
-                imgBuffer.setPixel(x_offset, y_offset, Color.RED)
+                if (this.debug)
+                    imgBuffer.setPixel(x_offset, y_offset, Color.RED)
             } else {
-                imgBuffer.setPixel(x_offset, y_offset, Color.YELLOW)
+                if (this.debug)
+                    imgBuffer.setPixel(x_offset, y_offset, Color.YELLOW)
             }
                 
             if (Color.sumColor(linePx)/3 < 145 && linePx[2] < 145) {
                 fails += 1
-                imgBuffer.setPixel(x_offset, y_offset, Color.BRIGHT_GREEN)
+                if (this.debug)
+                    imgBuffer.setPixel(x_offset, y_offset, Color.BRIGHT_GREEN)
                 // break;
             }
 

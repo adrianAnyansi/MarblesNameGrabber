@@ -230,6 +230,25 @@ export class ImageBuffer {
     }
 
     /**
+     * Creates a new Image with the bounds from the inputs.
+     *  
+     * @param {number} width width of buffer
+     * @param {number} height height of buffer
+     * @param {3 | 4} channels Should be 3/4 in this century
+     */
+    static Build(width, height, channels, defaultRGBA=Color.WHITE) {
+        const buffer = Buffer.alloc((width * height * channels), new Uint8Array(defaultRGBA));
+        return new ImageBuffer(buffer, width, height, channels);
+    }
+
+    /**
+     * Clone ImageBuffer
+     */
+    clone() {
+        return ImageBuffer.Build(this.width, this.height, this.channels);
+    }
+
+    /**
      * @param {number} x_coord 
      * @param {number} y_coord
      */
@@ -305,16 +324,23 @@ export class SharpImg {
     }
 
     crop(cropRect) {
-        return new SharpImg(this.sharpImg.extract({
+        let new_obj = new SharpImg()
+        new_obj.sharpImg = this.sharpImg.extract({
                 left:   cropRect.x,
                 top:    cropRect.y,
                 width:  cropRect.w,
                 height: cropRect.h
             })
-        )
+        return new_obj
     }
 
-    toBuffer(scaleForOCR=false, {toPNG=false, toJPG=false, toBuffer=false}) {
+    /**
+     * Convert current buffer to a valid sharp object.
+     * NOTE: Will use this.imgBuffer or this.sharpImg as source, throwing error if none
+     * 
+     * @returns {sharp.Sharp}
+     */
+    toSharp(scaleForOCR=false, {toPNG=false, toJPG=false, toBuffer: toRaw=false}) {
         // NOTE: changes to buffer are not reflected in array, use array first
         let bufferPromise = null
         if (this.imgBuffer)
@@ -332,27 +358,17 @@ export class SharpImg {
         if (!bufferPromise) throw Error("Trying to build buffer when both objects are NULL")
 
         if (scaleForOCR) {
-            bufferPromise = bufferPromise.resize({width:scaleForOCR, kernel:'mitchell'})
+            bufferPromise = bufferPromise.resize({width:100, kernel:'mitchell'})
                 .blur(1)
                 .withMetadata({density: 300})
         }
 
         if (toPNG) return bufferPromise.png()
         if (toJPG) return bufferPromise.jpeg({quality:100})
-        if (toBuffer) return bufferPromise
+        if (toRaw) return bufferPromise
 
         throw Error("Did not specify output")
     }
-}
-
-/**
- * Builds a full BufferView from imgLike (filename/buffer)
- * Helper function
- * @param {*} imgLike 
- * @returns {Promise<BufferView>} bufferView containing cropped* image
- */
-function BuildImageBuffer () {
-    // TODO: Gonna use BufferView until I decide if separating it is useful
 }
 
 export class Direction2D {
