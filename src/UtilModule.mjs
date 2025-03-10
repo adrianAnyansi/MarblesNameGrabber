@@ -337,10 +337,14 @@ export class SharpImg {
     /**
      * Convert current buffer to a valid sharp object.
      * NOTE: Will use this.imgBuffer or this.sharpImg as source, throwing error if none
-     * 
+     * @param {boolean} [scaleForOCR=false] 
+     * @param {Object} param1 
+     * @param {boolean} [param1.toPNG=false] 
+     * @param {boolean} [param1.toJPG=false] 
+     * @param {boolean} [param1.toRaw=false] 
      * @returns {sharp.Sharp}
      */
-    toSharp(scaleForOCR=false, {toPNG=false, toJPG=false, toBuffer: toRaw=false}) {
+    toSharp(scaleForOCR=false, {toPNG=false, toJPG=false, toRaw=false}) {
         // NOTE: changes to buffer are not reflected in array, use array first
         let bufferPromise = null
         if (this.imgBuffer)
@@ -580,6 +584,37 @@ export class ImageTemplate {
     }
 }
 
+
+export class Mathy {
+
+    /**
+     * Test if number is within range of sourceNum+-range 
+     * @param {number} testNum Number to test
+     * @param {number} sourceNum Number to use as base
+     * @param {number[]} range Either single number, or [lowNum, highNum]
+     * @param {boolean} bothSides instead of assuming [0,range], assume [-range, range]
+     */
+    inRange(testNum, sourceNum, range) {
+
+        if (range == 0) {
+            return testNum == range
+        }
+        
+        const testRange = []
+        if (Array.isArray(range) && range.length == 2) {
+            testRange.push(...range)
+        } else {
+            testRange.push(0, range)
+        }
+
+        if (testRange[0] > testRange[1]) {
+            testRange.push(testRange.shift()) // swap 
+        }
+        testRange.forEach(val => val + sourceNum)
+
+        return testNum > testRange[0] && testNum < testRange[1]
+    }
+}
 
 // console.log(
 // Timestamp.msToHUnits(2000),

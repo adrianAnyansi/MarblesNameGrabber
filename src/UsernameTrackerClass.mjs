@@ -6,7 +6,7 @@
 
 import sharp from "sharp"
 import { LimitedList } from "./DataStructureModule.mjs"
-import { PixelMeasure } from "./UtilModule.mjs"
+import { Mathy, PixelMeasure } from "./UtilModule.mjs"
 import { UserNameBinarization } from "./UserNameBinarization.mjs"
 
 class Username {
@@ -612,21 +612,24 @@ class TrackedUsername {
      * @param {number} confidence Confidence in OCR
      * @param {number} index Index in the full 1000 list
      * @param {number} enterFrameTime Ingest date
-     * * @param {Date} endTs Ingest date
+     * @param {Date} endTs Ingest date
      */
-    constructor (enterFrameTime=null) {
+    constructor (enterFrameTime=undefined) {
         /** @type {string} most confident name */
         this.name = null                
-        /** @type {number} approx length of the */
+        /** @type {number} approx length of the username*/
         this.length = null
         /** @type {number} confidence percentage */
         this.confidence = null
         /** @type {number} index in user list */
         this.index = null
-        
+
+        /** @type {boolean} has the username been seen */
+        this.seen = false;
+
         /** @type {number} ingest timestamp in ms */
         this.enterFrameTime = enterFrameTime
-        this.exitFrameTime = null
+        // this.exitFrameTime = undefined
 
         /** @type {UserImage<>} images of the user */
         this.partialImgList = []
@@ -636,6 +639,22 @@ class TrackedUsername {
 
         /** @type {Set<string>} set of usernames that are at this index */
         this.aliases = new Set()
+    }
+
+    /** 
+     * @returns {number} Time that username should be offscreen
+     */
+    get exitFrameTime () {
+        if (!this.enterFrameTime) return undefined
+        return this.enterFrameTime + UsernameAllTracker.FinishExitTime
+    }
+
+    /** 
+     * @returns {number} Time that username right-line stops being visible
+     */
+    get exitingFrameTime () {
+        if (!this.enterFrameTime) return undefined
+        return this.enterFrameTime + UsernameAllTracker.BeginExitTime
     }
 
 
@@ -657,12 +676,33 @@ class TrackedUsername {
         return (this.exitFrameTime && this.exitFrameTime > currFrameTime)
     }
 
+
+    static LENGTH_MIN = 3;
+    /**
+     * Helper function to match length within a range
+     */
+    matchLen (inputLen) {
+        return Mathy.inRange(inputLen, this.length, 
+            [-TrackedUsername.LENGTH_MIN, TrackedUsername.LENGTH_MIN])
+    }
+
 }
 
 /**
  * More intensive tracker, that links each username
  */
 export class UsernameAllTracker {
+
+    static measuredFPS = 30;
+    static BeginExitTime = 176-29;
+    static FinishExitTime = 183-29;
+
+
+
+    static updateFPSTime (fps) {
+        UsernameAllTracker.BeginExitTime *= 30/fps;
+        UsernameAllTracker.FinishExitTime *= 30/fps; 
+    }
 
     constructor () {
         /** @type {Map<string, Username>} hash of all names */
@@ -681,23 +721,31 @@ export class UsernameAllTracker {
 
     static SCREEN_MAX = 24;
 
+    /**
+     * @typedef TrackedUsernamePredictObject
+     * @type {object}
+     * @property {Array<TrackedUsername} predictedUsers list of predicted UN objects
+     * @property {number} offset list shifted by num. If null, list could shift at any time.
+     */
+
     /** Using internal frameTime, predict the shown userboxes based on 
      * input frameTime.
-     * @param {*} frameTime current frame being sent
-     * @param {number} [totalUsers=null] total users from the top-left corner
-     * @param {boolean} [predictFullScreen=true] assume that all 24 slots are occupied. 
+     * @param {number} frameTime current frame being sent
+     * @param {Object} amount
+     * @prop {number} [amount.totalUsers=null] total users from the top-left corner
+     * @prop {boolean} [amount.predictFullScreen=true] assume that all 24 slots are occupied. 
      * This overrides totalUsers and should only be used when totalUsers is obscured
-     * @returns {Array<TrackedUsername>} list of tracked users, including new users that haven't been verified
+     * @returns {TrackedUsernamePredictObject} List of users & offset
     */
-    predict (frameTime, totalUsers=null, predictFullScreen=true) {
+    predict (frameTime, {totalUsers=null, predictFullScreen=true}, setNewUserEnter=true) {
 
         let startUserIndex = this.currentScreenFirstIndex;
         const screenUsers = []
 
-        // Depending the totalUsers 
+        // Set expected user amount from input
         let expectedUserAmt = UsernameAllTracker.SCREEN_MAX
         if (!predictFullScreen && totalUsers) {
-            expectedUserAmt = Math.min(UsernameAllTracker.SCREEN_MAX, totalUsers - this.currentScreenFirstIndex)
+            expectedUserAmt = Math.min(UsernameAllTracker.SCREEN_MAX, totalUsers)
         }
 
         let offsetFromCurrent = 0;
@@ -705,24 +753,77 @@ export class UsernameAllTracker {
         // Iterate names, skipping names that have expired*
         while (screenUsers.length < UsernameAllTracker.SCREEN_MAX) {
             const userbox = this.usersInOrder.at(startUserIndex++)
+            if (userbox == undefined) { // FIXME: Should never happen
+                console.warn("undefined user in list"); 
+                continue;
+            } 
             if (userbox.exitFrameTime >= frameTime) {
-                offsetFromCurrent++
+                offsetFromCurrent++;
                 continue
             }
-            if (userbox == undefined) break // Early-out
             screenUsers.push(userbox)
         }
 
         // Now create new users to fill the remaining space
         while (screenUsers.length < expectedUserAmt) {
-            // NOTE: does not add into list until verified
-            screenUsers.push(new TrackedUsername(frameTime));
+            const enterTime = setNewUserEnter ? frameTime : null;
+            const newUser = new TrackedUsername(enterTime)
+            screenUsers.push(newUser);
+            // NOTE: Allowing the prediction to create users, as treating the total number as accurate
+            this.usersInOrder.push(newUser);
         }
 
-        return {predictedUsers: screenUsers, offset: offsetFromCurrent}
+        if (offsetFromCurrent == 0 && screenUsers[0]?.exitFrameTime == null) {
+            offsetFromCurrent = null
+        }
+
+        return {predictedUsers: screenUsers, offset: offsetFromCurrent }
+    }
+
+    /**
+     * Given a sparse array, create new users to fill the expected
+     * @param {*} sparseUserList
+     * @param {number} frameTime 
+     * @returns {Array<TrackedUsername>} updated list of users
+     */
+    updateUsers (sparseUserList, frameTime) {
+        const startUserIndex = this.currentScreenFirstIndex;
+
+        // TODO: if previous users didnt exist, backtrack
+        for (let i=0; i<sparseUserList.length; i++) {
+            if (!sparseUserList.at(i) || sparseUserList.at(i)?.appear == false) continue;
+            const userAtIndex = startUserIndex + i;
+            if (!this.usersInOrder.at(userAtIndex)) {
+                this.usersInOrder[userAtIndex] = new TrackedUsername(frameTime);
+            }
+        }
+
+        return this.usersInOrder.slice(startUserIndex, startUserIndex+sparseUserList.length)
+    }
+
+    /**
+     * Return username at this position, creating one if empty.
+     * Server controls when new names are added
+     * @param {number} screenIndex 
+     * @returns {TrackedUsername} user at index
+     * @deprecated
+     */
+    genUser (screenIndex) {
+        const relIdx = this.currentScreenFirstIndex + screenIndex
+        if (!this.usersInOrder.at(relIdx))
+            this.usersInOrder[relIdx] = new TrackedUsername(null)
+        return this.usersInOrder.at(relIdx)
     }
 
     recognizeUsers (imgBuffer) {
 
+    }
+
+    clear() {
+        this.usersInOrder = [];
+
+        this.hash.clear()
+
+        // TODO: Clear multiple things properly
     }
 }

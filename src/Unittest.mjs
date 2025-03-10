@@ -43,13 +43,13 @@ async function test_userbox() {
 }
 
 async function test_userbox_appear() {
-    const filename = file2;
+    // const filename = file2;
+    const filename = "testing/vod_dump_newui/44.png"
 
     const mng = new UserNameBinarization(filename, true);
     performance.mark('s')
-    let users = await mng.getUNBoundingBox([], {appear:true, length:false});
-    console.log(users)
-    console.log("Users", users)
+    let users = await mng.getUNBoundingBox([], {appear:true, length:true});
+    console.log("Users", JSON.stringify(users))
 }
 
 async function test_chat_detect() {

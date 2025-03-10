@@ -5,12 +5,9 @@ Plan is validating individual steps then putting them together with heavy testin
 Don't think about the obstacle detection validation right now.
 
 # Focus today
-Validate the length checking and timing of usernames.
-If I need a separate state/checker for (usernames disppearing, figure that out when it happens)
-
-Once this is done and I have all the usernames tracked, then check on obstacle detection and etc.
-
-I'll also go back and clean-up notes, its very cluttered
+Length check looks good.
+Im finding it hard to figure out how to merge prediction + reality,
+I'm going to write notes for this
 
 # Goal - Track Every Username
 The Goals is to track every username, when it appears, disappears, OCR and obstacles.
@@ -52,6 +49,33 @@ This means that during READING, there are now multiple states that I need to con
 2/3 can be done by username detection since I cant detect the actual object.
 its best to assume any username thats unreadable is covered. 
 And I can determine this by knowing the amount of usernames on screen.
+
+## Verify step
+Ok first let me buff the line detection, 43.png is very clean
+(fixed this but line detect needs more tweaking so clean is 100% and jittery* is 60% but tolerance)
+
+## Merge step
+UNTracker holds a prediction of the current frame
+Server (server state/etc) holds the current frame
+This needs to reconcile and then be updated in the UNTracker, lets discuss
+
+- Server needs prediction for ? nothing really
+- Prediction needs the total count for a good prediction, but not required* for past data
+- Server wants to know if users are verified and also keep references so it can directly update objects
+    - also lets me work iteratively, synchronous length & queueing OCR & (forogt)
+- Server wants to know predict offset or unknown exitTime check to tell when to do a list shift check.
+    - Once list shift is confirmed, the internal prediction offset should be updated
+    - Server needs to be able to say (this UN exists, but unknown enterTime for special cases)
+    - Its ok to have too many usernames created and cull later, as long as i verify when they're on screen... Say worst case a full black screen occurs, I could just estimate missed UNs and if it magically continues, just continue generating.
+
+- Once list is synced, I should have a merged predicted + verified list. Then Server can start the *new info step where it gets new data for this list while knowing the list is saving and verified.
+
+NOTE: For testing, using a special case where the 1st screen is considered previously unknown
+
+This means as long the predict contains the amount of users I want, I can just overwrite things
+
+## New info steps
+
 
 
 # Username Tracker V2

@@ -24,11 +24,7 @@ export const SERVER_STATE_ENUM = {
 }
 
 const TWITCH_URL = 'https://www.twitch.tv/'
-const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s' 
-                // "https://www.twitch.tv/videos/1895894790?t=06h39m40s"
-                // "https://www.twitch.tv/videos/1914386426?t=1h6m3s"
-                // start/videos/1938079879?t=4h55m20s       // no chat box; 29/9
-                // /videos/2134416841?t=6h7m3s
+const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s'
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
 
 const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
@@ -64,6 +60,13 @@ const TESSERACT_ARGS = [
     "hocr"
 ];
 
+class ScreenState {
+
+    constructor () {
+        this.knownScreen = false
+    }
+}
+
 export class MarblesAppServer {
 
     /** Not being used right now */
@@ -77,7 +80,7 @@ export class MarblesAppServer {
     static STREAMLINK_LOC = 'streamlink' // on PATH
 
     /** FPS to view stream */
-    static FFMPEG_FPS = '2'
+    static FFMPEG_FPS = '30' //'2'
     /** number of frames/seconds without any valid names on them */
     static EMPTY_PAGE_COMPLETE = 5 * parseInt(MarblesAppServer.FFMPEG_FPS)
 
@@ -98,6 +101,7 @@ export class MarblesAppServer {
             interval: 1_000 * 3,                 // interval to refresh status
             lag_time: 0                         // time behind from 
         }
+        this.screenState = new ScreenState()
 
         // debug variables
         this.debugTesseract = false;
@@ -623,15 +627,99 @@ export class MarblesAppServer {
 
         
         // Check all username appearance
-        const appearOut = mng.getUNBoundingBox([], {appear:true, length:false})
-        let visibleUsers = appearOut.filter(user => user?.appear == true)
+        const screenUsersArr = await mng.getUNBoundingBox([], {appear:true, length:false})
+        const visibleUsers = screenUsersArr.filter((user, idx) => [idx, user?.appear == true])
 
         // Get prediction from usernameList
         // TODO: If obstacles are known, send details
-        const prediction = this.usernameAdvObject.predict(funcImgId)
-        // Actually I need the offset as well to know what to check
+        
+        const setEnterFrame = this.screenState.knownScreen
+        const {predictedUsers, offset} = this.usernameAdvObject.predict(funcImgId, 
+            {totalUsers:null, predictFullScreen:true}, setEnterFrame)
+        
+        // do a length check as offset is odd
+        const LEN_CHECK_MATCH = 3;
+        if (offset === null || offset > 0) {
+            // TODO: If offset is a number, can use quickLen to check
+            let currLenList = [] // [index, len]
+            for (const [vidx, vuser] of visibleUsers.entries()) {
+                // grab index & length
+                const vlen = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
+                currLenList.push([vidx, vlen])
+                if (currLenList.length > LEN_CHECK_MATCH) break;
+            }
 
-        // for everything on screen, determine length
+            if (currLenList.length == 0) {
+                console.warn("No len match possible")
+                // TODO: Break here
+            }
+
+            // Now match offset for list sync
+            let offsetMatch = null;
+            for (const [pidx, puser] of predictedUsers.entries()) {
+                if (!puser.length) continue
+                let matchIdx = 0;
+                if (puser.matchLen(currLenList[matchIdx])) {
+                    offsetMatch = vidx - matchIdx
+                    break // NOTE: only 1 check rn
+                }
+            }
+
+            if (offsetMatch && offsetMatch > 0) {
+                this.usernameAdvObject.shiftOffset(offsetMatch)
+            }
+        }
+
+
+        // with a predicted list, UN should be verified
+        // check that user has been visible (need this check and forgot why)
+        for (const [idx, pUser] of predictedUsers.entries()) {
+            if (!pUser.seen) {
+                pUser.seen = screenUsersArr[idx].appear
+            }
+        }
+
+        // Now for visible ones, check length
+
+        if (!this.screenState.knownScreen) {
+            // verify each name
+            
+        } else {
+            // verify offset if predictedUsers exist
+        }
+        // If offset predicted, verify by length
+
+        // match users to predictedUsers
+        let knownUsers = predictedUsers;
+        if (visibleUsers.length > predictedUsers.length) {
+            // TODO: This should only suggest update users, need to think bout this
+            // Should ignore & not return visible users?
+            knownUsers = this.usernameAdvObject.updateUsers(visibleUsers, funcImgId);
+        }
+
+        // TODO: Here check the length to match up with tracked
+        // With the knownVisible usernames synced, check for length for the 1st 3 visible users
+        let maxLenCheck = 0;
+        const MIN_LEN_CHECKS = 3;
+        const printStuff = [];
+        for (const trackedUN of knownUsers) { // why is iteration with idx difficult, ahh
+            if (trackedUN == undefined) continue;
+            const idx = knownUsers.indexOf(trackedUN) // NOTE: Dumb, dont O(n) here
+            if (screenUsersArr[idx] == undefined || screenUsersArr[idx]?.appear) continue;
+            const foundLenArr = await mng.getUNBoundingBox([idx], {appear:false, length:true})
+
+            printStuff[idx] = [trackedUN?.length, foundLenArr[idx].length]
+            trackedUN.length = foundLenArr[idx].length
+
+            if (maxLenCheck++ > MIN_LEN_CHECKS) break;
+        }
+
+        // TODO: sync up by length, tell when the length has changed
+        
+        console.log(`Tracked users @ ${funcImgId}: `, JSON.stringify(printStuff))
+
+        if (!this.screenState.knownScreen)
+            this.screenState.knownScreen = true
 
     }
 
@@ -738,13 +826,16 @@ export class MarblesAppServer {
         filename ??= TEST_FILENAME
         console.log(`Running debug! ${filename}`)
         console.log(`Working directory: ${path.resolve()}`)
+
+        this.handleImage(filename);
+        return;
         
         let mng = new UserNameBinarization(filename, true)
 
         // await this.validateMarblesPreRaceScreen(mng);
         let race_screen = mng.validateMarblesPreRaceScreen()
         console.log(`Race bool ${race_screen}`)
-        // TODO: Get error
+        
         
         const withNative = true
 
@@ -966,8 +1057,9 @@ export class MarblesAppServer {
         }
 
         if (this.streamlinkProcess == null) {
-            this.usernameList.clear()
-            this.usernameAdvObject.clear()
+            // this.usernameList.clear()
+            // this.usernameAdvObject.clear()
+            this.clear()
             this.imageProcessTime.length = 0;
             
             if (!this.uselambda)
