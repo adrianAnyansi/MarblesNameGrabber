@@ -4,10 +4,31 @@ I've gone through the individual steps required to make this work way too many t
 Plan is validating individual steps then putting them together with heavy testing.
 Don't think about the obstacle detection validation right now.
 
+# Long thoughts
+Will think about OCR and everything once tracking is close to 100%
+Nice thing about that is now this is decoupled for tracking, it can be totally async
+and the image can separated and doesn't tracking doesn't hang on it
+
+After base tracking, then I'll add overlap tracking states
+Then building the number OCR and testing
+
+
 # Focus today
-Length check looks good.
-Im finding it hard to figure out how to merge prediction + reality,
-I'm going to write notes for this
+Fixing bugs with length check and persistent tracking in best case.
+
+Page 34 creates an undefined length at 7 due to a very small check
+Page 35 has a bad appear check 
+Page 39 bad appear
+
+Fixed the appear checks by increasing the pixel minumum
+    I need to test on a compressed image to see if this is precise enough
+    fortunately there's an example VOD I can use after this
+
+Testing worst case has shown:
+    Need a best guess length check function as edge-cases will destroy the sync otherwise
+        Move that into the tracker class imo
+    Need other ways to verify the username state for this
+
 
 # Goal - Track Every Username
 The Goals is to track every username, when it appears, disappears, OCR and obstacles.

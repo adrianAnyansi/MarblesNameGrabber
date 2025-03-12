@@ -3,7 +3,7 @@
 import { msToHUnits } from "./DataStructureModule.mjs";
 import { MarblesAppServer } from "./MarblesAppServer.mjs";
 import { ColorSpace, UserNameBinarization } from "./UserNameBinarization.mjs";
-import { Color, ImageBuffer, SharpImg } from "./UtilModule.mjs";
+import { Color, ImageBuffer, Mathy, SharpImg } from "./UtilModule.mjs";
 import sharp from 'sharp'
 import fs from 'fs'
 import {resolve} from 'node:path'
@@ -44,12 +44,16 @@ async function test_userbox() {
 
 async function test_userbox_appear() {
     // const filename = file2;
-    const filename = "testing/vod_dump_newui/44.png"
+    const page = 34
+    const filename = `testing/vod_dump/${page}.png`
 
     const mng = new UserNameBinarization(filename, true);
     performance.mark('s')
     let users = await mng.getUNBoundingBox([], {appear:true, length:true});
-    console.log("Users", JSON.stringify(users))
+    console.log("Users List")
+    console.log(users.map((u, i) => 
+        `[${i.toString().padStart(2, ' ')}] ${JSON.stringify(u)}`
+    ).join('\n'))
 }
 
 async function test_chat_detect() {
@@ -137,9 +141,16 @@ async function numberRead() {
 
     new SharpImg(null, outBuffer).toSharp(false, {toPNG:true}).toFile(testingFolder+'oneLet.png')
 }
+ function math_range_check () {
+
+    Mathy.inRange(5, 5, 0);
+    Mathy.inRange(3, 5, [-3,3]);
+}
 
 // TESTING HERE
 (async () => {
+
+    // math_range_check()
 
     // await test_userbox();
     // console.log('hi')

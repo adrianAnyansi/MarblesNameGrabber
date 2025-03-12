@@ -628,24 +628,33 @@ export class MarblesAppServer {
         
         // Check all username appearance
         const screenUsersArr = await mng.getUNBoundingBox([], {appear:true, length:false})
-        const visibleUsers = screenUsersArr.filter((user, idx) => [idx, user?.appear == true])
+        const visibleUsers = screenUsersArr.map((user, idx) => ({vidx:idx, vUser:user}))
+            .filter(val => (val.vUser.appear == true))
+            
 
         // Get prediction from usernameList
         // TODO: If obstacles are known, send details
         
         const setEnterFrame = this.screenState.knownScreen
-        const {predictedUsers, offset} = this.usernameAdvObject.predict(funcImgId, 
+        let {predictedUsers, offset} = this.usernameAdvObject.predict(funcImgId, 
             {totalUsers:null, predictFullScreen:true}, setEnterFrame)
         
         // do a length check as offset is odd
         const LEN_CHECK_MATCH = 3;
-        if (offset === null || offset > 0) {
-            // TODO: If offset is a number, can use quickLen to check
-            let currLenList = [] // [index, len]
-            for (const [vidx, vuser] of visibleUsers.entries()) {
+        let offsetMatch = null;
+
+        // TODO: Currently I don't do a 0 check to verify timing
+        if (offset === null || offset >= 0) {
+            // TODO: If offset is a number [known], can use quickLen to check
+            // TODO: Assuming list contains all checked frames here
+            const currLenList = [] // [index, len]
+            // TODO: Check multi users at once
+            for (const vobj of visibleUsers) {
+                const {vidx, vUser} = vobj
                 // grab index & length
                 const vlen = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
-                currLenList.push([vidx, vlen])
+                vUser.length = vlen[vidx].length
+                currLenList.push(vobj)
                 if (currLenList.length > LEN_CHECK_MATCH) break;
             }
 
@@ -655,71 +664,84 @@ export class MarblesAppServer {
             }
 
             // Now match offset for list sync
-            let offsetMatch = null;
+            // TODO: need to filter predictedUsers by available length
+            // as the null will return early fails
+            // long term solution is a sparse match with a score value
             for (const [pidx, puser] of predictedUsers.entries()) {
-                if (!puser.length) continue
-                let matchIdx = 0;
-                if (puser.matchLen(currLenList[matchIdx])) {
-                    offsetMatch = vidx - matchIdx
-                    break // NOTE: only 1 check rn
+                if (currLenList.length == 0) break;
+                if (!puser.length) continue;
+
+                // NOTE: slight inefficient check, could hash & build list during iteration
+                const st_vidx = currLenList[0].vidx;
+                if (currLenList.every(
+                    ({vidx, vUser}) => predictedUsers[pidx+vidx-st_vidx].matchLen(vUser.length))
+                ) {
+                    offsetMatch = pidx - currLenList[0].vidx
+                    break;
                 }
             }
 
             if (offsetMatch && offsetMatch > 0) {
-                this.usernameAdvObject.shiftOffset(offsetMatch)
+                this.usernameAdvObject.shiftOffset(offsetMatch); // update offset
+                // FYI this is a load-bearing semi-colon
+                // TODO: With an undershoot, this can create a new user before its on screen
+
+                // Our predicted users is inaccurate, recalc
+                ({predictedUsers, offset} = this.usernameAdvObject.predict(funcImgId, 
+                    {totalUsers:null, predictFullScreen:true}, setEnterFrame))
             }
         }
-
+        
+        if (offset != 0 && offsetMatch == null) {
+            console.warn("Could not make a successful match-")
+        } else if (offsetMatch != offset) {
+            if (offset == null) {
+                if (offsetMatch != 0)
+                    console.warn(`Detected shift from null exit ${offsetMatch}`)
+            } else {
+                console.warn(`Actual ${offsetMatch} did not match prediction ${offset}`)
+            }
+            
+            // if offset != offsetMatch, previous list is inaccurate, recalc
+            // and offset != null
+            // TODO: Do an overshoot check?
+        }
 
         // with a predicted list, UN should be verified
         // check that user has been visible (need this check and forgot why)
+        // oh its so I know when a username appears but can't do a length check
         for (const [idx, pUser] of predictedUsers.entries()) {
+            // TODO: Need to set enterTime here instead of predict
+            // as an undershoot can make an extra user before it enters screen
             if (!pUser.seen) {
                 pUser.seen = screenUsersArr[idx].appear
             }
+            // NOTE: when seen -> !seen, exitingFrameTime begins
         }
 
-        // Now for visible ones, check length
+        // Now do length checks for visible names
+        // TODO: Len check clashes with amount allowed for upper check
+        const LEN_LIMIT_PER_FRAME = 27; // NOTE: Maxing this for testing
+        let len_checks = 0
+        for (const {vidx, vUser} of visibleUsers) {
+            if (predictedUsers[vidx].length) continue;
+            if (!vUser.length) {
+                // TODO: Do multiple checks at once
+                const resultObj = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
+                vUser.length = resultObj[vidx].length
+            }
+            predictedUsers[vidx].length = vUser.length
 
-        if (!this.screenState.knownScreen) {
-            // verify each name
-            
-        } else {
-            // verify offset if predictedUsers exist
+            if (len_checks++ > LEN_LIMIT_PER_FRAME) break;
         }
-        // If offset predicted, verify by length
-
-        // match users to predictedUsers
-        let knownUsers = predictedUsers;
-        if (visibleUsers.length > predictedUsers.length) {
-            // TODO: This should only suggest update users, need to think bout this
-            // Should ignore & not return visible users?
-            knownUsers = this.usernameAdvObject.updateUsers(visibleUsers, funcImgId);
-        }
-
-        // TODO: Here check the length to match up with tracked
-        // With the knownVisible usernames synced, check for length for the 1st 3 visible users
-        let maxLenCheck = 0;
-        const MIN_LEN_CHECKS = 3;
-        const printStuff = [];
-        for (const trackedUN of knownUsers) { // why is iteration with idx difficult, ahh
-            if (trackedUN == undefined) continue;
-            const idx = knownUsers.indexOf(trackedUN) // NOTE: Dumb, dont O(n) here
-            if (screenUsersArr[idx] == undefined || screenUsersArr[idx]?.appear) continue;
-            const foundLenArr = await mng.getUNBoundingBox([idx], {appear:false, length:true})
-
-            printStuff[idx] = [trackedUN?.length, foundLenArr[idx].length]
-            trackedUN.length = foundLenArr[idx].length
-
-            if (maxLenCheck++ > MIN_LEN_CHECKS) break;
-        }
-
-        // TODO: sync up by length, tell when the length has changed
         
-        console.log(`Tracked users @ ${funcImgId}: `, JSON.stringify(printStuff))
+        // TODO: Sync/register OCR queries and send mng per each user
+
+        console.log(`Matched offset to ${offset} ${offsetMatch}`)
+        console.log(`Found users @ ${funcImgId.toString().padStart(5, ' ')}: ${screenUsersArr.map(sUser => sUser.appear ? 'V': '?').join('')}`)
 
         if (!this.screenState.knownScreen)
-            this.screenState.knownScreen = true
+            this.screenState.knownScreen = true // flip this when screen cannot be seen & top user is unknown
 
     }
 

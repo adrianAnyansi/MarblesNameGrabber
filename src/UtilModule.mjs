@@ -594,7 +594,7 @@ export class Mathy {
      * @param {number[]} range Either single number, or [lowNum, highNum]
      * @param {boolean} bothSides instead of assuming [0,range], assume [-range, range]
      */
-    inRange(testNum, sourceNum, range) {
+    static inRange(testNum, sourceNum, range) {
 
         if (range == 0) {
             return testNum == range
@@ -610,7 +610,7 @@ export class Mathy {
         if (testRange[0] > testRange[1]) {
             testRange.push(testRange.shift()) // swap 
         }
-        testRange.forEach(val => val + sourceNum)
+        testRange.forEach((val, idx) => testRange[idx]+= sourceNum)
 
         return testNum > testRange[0] && testNum < testRange[1]
     }

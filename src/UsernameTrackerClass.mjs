@@ -682,10 +682,11 @@ class TrackedUsername {
      * Helper function to match length within a range
      */
     matchLen (inputLen) {
+        if (this.length == null) return false;
+        
         return Mathy.inRange(inputLen, this.length, 
             [-TrackedUsername.LENGTH_MIN, TrackedUsername.LENGTH_MIN])
     }
-
 }
 
 /**
@@ -751,13 +752,14 @@ export class UsernameAllTracker {
         let offsetFromCurrent = 0;
 
         // Iterate names, skipping names that have expired*
-        while (screenUsers.length < UsernameAllTracker.SCREEN_MAX) {
+        while (screenUsers.length < expectedUserAmt) {
+            if (startUserIndex >= this.usersInOrder.length) break;
             const userbox = this.usersInOrder.at(startUserIndex++)
             if (userbox == undefined) { // FIXME: Should never happen
-                console.warn("undefined user in list"); 
-                continue;
+                console.warn("undefined user in list");
+                break;
             } 
-            if (userbox.exitFrameTime >= frameTime) {
+            if (userbox.exitFrameTime <= frameTime) {
                 offsetFromCurrent++;
                 continue
             }
@@ -813,6 +815,10 @@ export class UsernameAllTracker {
         if (!this.usersInOrder.at(relIdx))
             this.usersInOrder[relIdx] = new TrackedUsername(null)
         return this.usersInOrder.at(relIdx)
+    }
+
+    shiftOffset (positiveShift) {
+        this.currentScreenFirstIndex += positiveShift;
     }
 
     recognizeUsers (imgBuffer) {

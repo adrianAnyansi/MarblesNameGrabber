@@ -954,7 +954,9 @@ export class UserNameBinarization {
             // check the right side wall
             if (appear) {
                 // TODO: Reduce the num of checks here, also 24 check
-                const APPEAR_MIN = 10
+                const APPEAR_MIN = 15
+                // TODO: during exitingState, this can trigger on the A of Play (edge-case)
+                // detect the top/bottom lines to verify this as well
                 let right_match = 0
                 for (let d=UN_BOX_HEIGHT/4; d < UN_BOX_HEIGHT * 3/4; d++) {
                     if (user_y_start+d >= imgBuffer.height) break
@@ -1074,7 +1076,8 @@ export class UserNameBinarization {
 
         // this.bufferSize = {w: info.width, h:info.height, channels: info.channels, premultiplied: info.premultiplied, size: info.size }
         // this.bufferToFile("testing/line_test/line_testing.png", buffer, false)
-        this.sharpImg.toSharp(false, {toPNG:true}).toFile("testing/line_test/line_testing.png")
+        if (this.debug)
+            this.sharpImg.toSharp(false, {toPNG:true}).toFile("testing/line_test/line_testing.png")
 
         return userBoxList
     }
