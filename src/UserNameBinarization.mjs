@@ -875,7 +875,7 @@ export class UserNameBinarization {
             
             incrCurrPxCounter();
         }
-        console.debug(`Compare pct failed  ${imgTemplate.name}: ${toPct(pxMatchCount / checkedPxTotal)}`)
+        // console.debug(`Compare pct failed  ${imgTemplate.name}: ${toPct(pxMatchCount / checkedPxTotal)}`)
         return false;
     }
 
@@ -883,22 +883,22 @@ export class UserNameBinarization {
         const generic_buffer = 0.05;
 
         return (
-            await mng.checkImageAtLocation(
+            await this.checkImageAtLocation(
                 UserNameBinarization.START_BUTTON_TEMPLATE, 0.85-generic_buffer)
             ||
-            await mng.checkImageAtLocation(
+            await this.checkImageAtLocation(
                 UserNameBinarization.PRE_RACE_START_W_DOTS_TEMPLATE, 0.90-generic_buffer)
             ||
-            await mng.checkImageAtLocation(
+            await this.checkImageAtLocation(
                 UserNameBinarization.GAME_SETUP_TEMPLATE, 0.9-generic_buffer)
             ||
-            await mng.checkImageAtLocation(
+            await this.checkImageAtLocation(
                 UserNameBinarization.SUBSCRIBERS_TEMPLATE, 0.9-generic_buffer)
         )
     }
 
     /**
-     * @typedef TrackedUsernameDectection
+     * @typedef TrackedUsernameDetection
      * @type {Object}
      * @prop {?boolean} appear 
      * @prop {?number} length
@@ -913,7 +913,7 @@ export class UserNameBinarization {
      * @param {boolean} [checkDetails.length=true] check the length of the user
      * @param {boolean} [checkDetails.quickLength=[]] check length at x_coord
      * 
-     * @returns {Promise<TrackedUsernameDectection[]>} retObj, sparse* array {appear:bool, length:number, quickLen:bool}
+     * @returns {Promise<TrackedUsernameDetection[]>} retObj, sparse* array {appear:bool, length:number, quickLen:bool}
      */
     async getUNBoundingBox(usersToCheck=[], {appear=true, length=true, quickLength=[]}) {
 
@@ -931,7 +931,7 @@ export class UserNameBinarization {
         const UN_BOX_HEIGHT = UserNameBinarization.USERNAME_HEIGHT;
         
         // let user_y_start = username_top;
-        /** @type {TrackedUsernameDectection[]} */
+        /** @type {TrackedUsernameDetection[]} */
         const userBoxList = []
         for (let i=0; i<24; i++) {
             userBoxList[i] = {}
@@ -1033,6 +1033,7 @@ export class UserNameBinarization {
                         }
                     }
                     // console.log(`Left-line took ${performance.measure('left-find', userstart).duration}`)
+
                     if (matchesForLine > leftEdgeLineMatch) {
                         // this qualifies as a possible left edge, check for rounded corners
                         const currLineX = x_offset;
@@ -1074,10 +1075,8 @@ export class UserNameBinarization {
             console.log("Finished box detect in "+(performance.measure(startMarkName, startMarkName).duration)+'ms')
 
 
-        // this.bufferSize = {w: info.width, h:info.height, channels: info.channels, premultiplied: info.premultiplied, size: info.size }
-        // this.bufferToFile("testing/line_test/line_testing.png", buffer, false)
         if (this.debug)
-            this.sharpImg.toSharp(false, {toPNG:true}).toFile("testing/line_test/line_testing.png")
+            this.sharpImg.toSharp(false, {toPNG:true}).toFile("testing/line_testing.png")
 
         return userBoxList
     }

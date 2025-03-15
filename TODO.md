@@ -5,6 +5,22 @@ Plan is validating individual steps then putting them together with heavy testin
 Don't think about the obstacle detection validation right now.
 
 # Long thoughts
+
+## Deprecating prediction
+Lets talk about the prediction logic.
+Why did I want the prediction in the first place? What purpose was it made for? Two reasons.
+1. The intention was that I wasn't going to check the length every frame, because checking appearance & length takes 12ms and I had 16.6ms of budget. However that's a worse case scenario AND thats 24 length checks when ideally, I only maybe have 1-2 new checks to add per frame. And I now have 30ms of time.
+So its better to verify the position instead of guessing/predicting.
+
+2. The only time I can't verify the position is if there's a completely hidden screen. Not only this a super super edge case, the only purpose is to track exactly how many names were missed.
+But this can be determined by looking at the final score. There's no advantage to tracking this once it's discontinous other than clout.
+
+The reason I'm debating this is cause I've determined that around 3 names spawn off-screen, and I don't have any way except numbers to know that they're there, and god thats stupid.
+So I'm avoiding it, cause it really doesn't matter if I have a discontinous match as long as it doesn't keep happening.
+Looks like its 3 names off-screen, but with only the total number to anticipate, its a major pain.
+I can revisit later but I'll rather move on from this project.
+
+## OCR
 Will think about OCR and everything once tracking is close to 100%
 Nice thing about that is now this is decoupled for tracking, it can be totally async
 and the image can separated and doesn't tracking doesn't hang on it
@@ -14,20 +30,26 @@ Then building the number OCR and testing
 
 
 # Focus today
-Fixing bugs with length check and persistent tracking in best case.
+Ok the only way to know if this is working is having the OCR working.
+There are 2 concerns with the OCR right now, but first I gotta fix the length checking
 
-Page 34 creates an undefined length at 7 due to a very small check
-Page 35 has a bad appear check 
-Page 39 bad appear
+- Also appear does not verify that the name is readable, so I need to check length as well?
+    Not clear what the best process is on this since the major obstacle is chat, barb or alert.
 
-Fixed the appear checks by increasing the pixel minumum
-    I need to test on a compressed image to see if this is precise enough
-    fortunately there's an example VOD I can use after this
+Ok feedback
+need visible state, would be great if this collapses when it doesn't change, however I want the frame num
+So probably turn off when offset = 0 and remove that
 
-Testing worst case has shown:
-    Need a best guess length check function as edge-cases will destroy the sync otherwise
-        Move that into the tracker class imo
-    Need other ways to verify the username state for this
+I don't think the overlap check is even necessary now, since appear can be run every frame.
+Ignoring both appear & overlap checks, my next goal is chat removal.
+Actually chat removal isnt necessary as long as the appear runs per frame and catches a blank spot.
+
+There's the case where an alert blocks when chat disappears, but this only matters if the alert is there before the first screen so again, idk.
+
+Its bedtime so going to do some quick testing on that idea then sleep.
+
+---
+During testing there was a bug where prediction went backwards, do not know the cause of this rn.
 
 
 # Goal - Track Every Username

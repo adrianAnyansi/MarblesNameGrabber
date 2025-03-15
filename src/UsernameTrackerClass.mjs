@@ -759,10 +759,10 @@ export class UsernameAllTracker {
                 console.warn("undefined user in list");
                 break;
             } 
-            if (userbox.exitFrameTime <= frameTime) {
-                offsetFromCurrent++;
-                continue
-            }
+            // if (userbox.exitFrameTime <= frameTime) {
+            //     offsetFromCurrent++;
+            //     continue
+            // }
             screenUsers.push(userbox)
         }
 
@@ -775,11 +775,58 @@ export class UsernameAllTracker {
             this.usersInOrder.push(newUser);
         }
 
-        if (offsetFromCurrent == 0 && screenUsers[0]?.exitFrameTime == null) {
-            offsetFromCurrent = null
-        }
+        // if (offsetFromCurrent == 0 && screenUsers[0]?.exitFrameTime == null) {
+        //     offsetFromCurrent = null
+        // }
+        // NOTE: Overwrite while offset prediction is disabled
+        offsetFromCurrent = null;
 
         return {predictedUsers: screenUsers, offset: offsetFromCurrent }
+    }
+
+    /**
+     * Finds the best match for 2 lists of users with same length
+     * Match minimum is a percentage of the testLength, current 70%
+     * @param {TrackedUsername[]} predictedUsers 
+     * @param {TrackedUsernameDetection[]} testLenList 
+     */
+    static findBestShiftMatch (predictedUsers, testLenList) {
+
+        if (testLenList.length == 0) return {offset:null, goodMatch:false};
+
+        let bestPctMatch = 0;
+        let bestOffsetIdx = null;
+        const MIN_MATCH = 0.7;
+
+        // NOTE: Possible to get multiple list matches- gotta rely on this being a very low chance
+        const st_vidx = testLenList[0].vidx;
+        // Remove users with length != null
+
+        for (const pidx of predictedUsers.keys()) {
+
+            const matches = testLenList.map(({vidx, vUser}) => {
+                const midx = pidx+vidx-st_vidx;
+                if (predictedUsers.length <= midx) return false
+                if (predictedUsers[midx].length === null) return undefined
+                return predictedUsers[midx].matchLen(vUser.length)
+            })
+            
+            let [tnum, unum] = [0,0]
+            for (const bool of matches){
+                if (bool == true)   tnum++
+                else if (bool == undefined) unum++
+            }
+            const undefinedMulti = 0.5
+            const matchPct = tnum / (testLenList.length - unum * undefinedMulti)
+            
+            if (bestPctMatch < matchPct) {
+                bestPctMatch = matchPct
+                bestOffsetIdx = pidx - st_vidx
+                if (bestPctMatch > MIN_MATCH) break;
+            }
+        }
+
+        return {offset:bestOffsetIdx, goodMatch: (bestPctMatch > MIN_MATCH)}
     }
 
     /**

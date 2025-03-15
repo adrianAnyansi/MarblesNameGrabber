@@ -44,7 +44,7 @@ async function test_userbox() {
 
 async function test_userbox_appear() {
     // const filename = file2;
-    const page = 34
+    const page = 362
     const filename = `testing/vod_dump/${page}.png`
 
     const mng = new UserNameBinarization(filename, true);

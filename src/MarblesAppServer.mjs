@@ -407,7 +407,8 @@ export class MarblesAppServer {
                 // close png
                 const pngBuffer = Buffer.concat(this.pngChunkBufferArr)
                 this.pngChunkBufferArr.length = 0 // clear array
-                this.parseImgFile(pngBuffer)
+                // this.parseImgFile(pngBuffer)
+                this.handleImage(pngBuffer)
             }
 
         })
@@ -621,20 +622,16 @@ export class MarblesAppServer {
         }
 
         // Warm-up text recognition
-        console.debug(`Queuing LIVE image queue: ${this.getTextRecgonQueue()}`)
+        // console.debug(`Queuing LIVE image queue: ${this.getTextRecgonQueue()}; total: ${this.usernameAdvObject.usersInOrder.length}`)
 
         const funcImgId = this.imageProcessId++
-
         
         // Check all username appearance
         const screenUsersArr = await mng.getUNBoundingBox([], {appear:true, length:false})
         const visibleUsers = screenUsersArr.map((user, idx) => ({vidx:idx, vUser:user}))
             .filter(val => (val.vUser.appear == true))
-            
 
         // Get prediction from usernameList
-        // TODO: If obstacles are known, send details
-        
         const setEnterFrame = this.screenState.knownScreen
         let {predictedUsers, offset} = this.usernameAdvObject.predict(funcImgId, 
             {totalUsers:null, predictFullScreen:true}, setEnterFrame)
@@ -643,7 +640,6 @@ export class MarblesAppServer {
         const LEN_CHECK_MATCH = 3;
         let offsetMatch = null;
 
-        // TODO: Currently I don't do a 0 check to verify timing
         if (offset === null || offset >= 0) {
             // TODO: If offset is a number [known], can use quickLen to check
             // TODO: Assuming list contains all checked frames here
@@ -651,7 +647,7 @@ export class MarblesAppServer {
             // TODO: Check multi users at once
             for (const vobj of visibleUsers) {
                 const {vidx, vUser} = vobj
-                // grab index & length
+                // calculate length from current prediction
                 const vlen = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
                 vUser.length = vlen[vidx].length
                 currLenList.push(vobj)
@@ -659,27 +655,14 @@ export class MarblesAppServer {
             }
 
             if (currLenList.length == 0) {
-                console.warn("No len match possible")
+                // console.warn("No len match possible")
                 // TODO: Break here
             }
 
-            // Now match offset for list sync
-            // TODO: need to filter predictedUsers by available length
-            // as the null will return early fails
-            // long term solution is a sparse match with a score value
-            for (const [pidx, puser] of predictedUsers.entries()) {
-                if (currLenList.length == 0) break;
-                if (!puser.length) continue;
-
-                // NOTE: slight inefficient check, could hash & build list during iteration
-                const st_vidx = currLenList[0].vidx;
-                if (currLenList.every(
-                    ({vidx, vUser}) => predictedUsers[pidx+vidx-st_vidx].matchLen(vUser.length))
-                ) {
-                    offsetMatch = pidx - currLenList[0].vidx
-                    break;
-                }
-            }
+            // calculate best matching ofset
+            ({offset:offsetMatch} = UsernameAllTracker.findBestShiftMatch(
+                predictedUsers, currLenList
+            ))
 
             if (offsetMatch && offsetMatch > 0) {
                 this.usernameAdvObject.shiftOffset(offsetMatch); // update offset
@@ -692,20 +675,20 @@ export class MarblesAppServer {
             }
         }
         
-        if (offset != 0 && offsetMatch == null) {
-            console.warn("Could not make a successful match-")
-        } else if (offsetMatch != offset) {
-            if (offset == null) {
-                if (offsetMatch != 0)
-                    console.warn(`Detected shift from null exit ${offsetMatch}`)
-            } else {
-                console.warn(`Actual ${offsetMatch} did not match prediction ${offset}`)
-            }
+        // if (offset != 0 && offsetMatch == null) {
+        //     console.warn("Could not make a successful match-")
+        // } else if (offsetMatch != offset) {
+        //     if (offset == null) {
+        //         if (offsetMatch != 0)
+        //             console.warn(`Detected shift from null exit ${offsetMatch}`)
+        //     } else {
+        //         console.warn(`Actual ${offsetMatch} did not match prediction ${offset}`)
+        //     }
             
-            // if offset != offsetMatch, previous list is inaccurate, recalc
-            // and offset != null
-            // TODO: Do an overshoot check?
-        }
+        //     // if offset != offsetMatch, previous list is inaccurate, recalc
+        //     // and offset != null
+        //     // TODO: Do an overshoot check?
+        // }
 
         // with a predicted list, UN should be verified
         // check that user has been visible (need this check and forgot why)
@@ -719,6 +702,10 @@ export class MarblesAppServer {
             // NOTE: when seen -> !seen, exitingFrameTime begins
         }
 
+        if (offset != 0) {
+            const predLenStr = predictedUsers.map(user => user.length ? 'L':'?').join('')
+            console.warn(`${predLenStr.padEnd(24, ' ')}| Offset is ${offsetMatch} | Total: ${this.usernameAdvObject.usersInOrder.length}`)
+        }
         // Now do length checks for visible names
         // TODO: Len check clashes with amount allowed for upper check
         const LEN_LIMIT_PER_FRAME = 27; // NOTE: Maxing this for testing
@@ -728,7 +715,8 @@ export class MarblesAppServer {
             if (!vUser.length) {
                 // TODO: Do multiple checks at once
                 const resultObj = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
-                vUser.length = resultObj[vidx].length
+                if (resultObj[vidx].length)
+                    vUser.length = resultObj[vidx].length
             }
             predictedUsers[vidx].length = vUser.length
 
@@ -737,8 +725,11 @@ export class MarblesAppServer {
         
         // TODO: Sync/register OCR queries and send mng per each user
 
-        console.log(`Matched offset to ${offset} ${offsetMatch}`)
-        console.log(`Found users @ ${funcImgId.toString().padStart(5, ' ')}: ${screenUsersArr.map(sUser => sUser.appear ? 'V': '?').join('')}`)
+        // console.log(`Matched offset to ${offset} ${offsetMatch}`)
+        if (len_checks > 0) {
+            const screenAppearStr = screenUsersArr.map(sUser => sUser.appear ? 'V': '?').join('')
+            console.log(`${screenAppearStr.padEnd(24, ' ')}| frame_num: ${funcImgId.toString().padStart(5, ' ')}`)
+        }
 
         if (!this.screenState.knownScreen)
             this.screenState.knownScreen = true // flip this when screen cannot be seen & top user is unknown
@@ -814,7 +805,7 @@ export class MarblesAppServer {
     }
     
     /**
-     * Get current image queue
+     * Get current OCR image queue
      * @returns {Number}
      */
     getTextRecgonQueue () {
