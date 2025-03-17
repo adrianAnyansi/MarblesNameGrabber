@@ -6,7 +6,7 @@
 
 import sharp from "sharp"
 import { LimitedList } from "./DataStructureModule.mjs"
-import { Mathy, PixelMeasure } from "./UtilModule.mjs"
+import { ImageBuffer, Mathy, PixelMeasure } from "./UtilModule.mjs"
 import { UserNameBinarization } from "./UserNameBinarization.mjs"
 
 class Username {
@@ -605,7 +605,7 @@ export class UsernameTracker {
     }
 }
 
-class TrackedUsername {
+export class TrackedUsername {
     /**
      * Store info about the Username and etc
      * @param {String} name Username string
@@ -620,12 +620,15 @@ class TrackedUsername {
         /** @type {number} approx length of the username*/
         this.length = null
         /** @type {number} confidence percentage */
-        this.confidence = null
+        this.confidence = 0
         /** @type {number} index in user list */
         this.index = null
 
         /** @type {boolean} has the username been seen */
         this.seen = false;
+
+        /** @type {boolean} OCR in progress */
+        this.ocr_processing = false;
 
         /** @type {number} ingest timestamp in ms */
         this.enterFrameTime = enterFrameTime
@@ -686,6 +689,39 @@ class TrackedUsername {
         
         return Mathy.inRange(inputLen, this.length, 
             [-TrackedUsername.LENGTH_MIN, TrackedUsername.LENGTH_MIN])
+    }
+
+    /**
+     * Add new image to the user
+     * @param {ImageBuffer} jpgBuffer 
+     * @param {string} name 
+     * @param {number} confidence 
+     */
+    addImage (jpgBuffer, name, confidence) {
+        this.partialImgList.push(jpgBuffer)
+
+        if (confidence > this.confidence) {
+            // Update name and best Img
+            this.name = name
+            this.confidence = confidence
+            this.bestImg = jpgBuffer
+        }
+        this.aliases.add(name)
+    } 
+
+    /**
+     * Checks if user is available for OCR processing
+     * User must 
+     *      have length
+     *      not already have OCR ongoing
+     *      low confidence
+     */
+    readyForOCR () {
+        return (
+            this.length != null &&
+            this.ocr_processing == false &&
+            this.confidence < 85
+        )
     }
 }
 
@@ -759,6 +795,7 @@ export class UsernameAllTracker {
                 console.warn("undefined user in list");
                 break;
             } 
+            // NOTE: Disabling prediction until necessary
             // if (userbox.exitFrameTime <= frameTime) {
             //     offsetFromCurrent++;
             //     continue
@@ -773,6 +810,7 @@ export class UsernameAllTracker {
             screenUsers.push(newUser);
             // NOTE: Allowing the prediction to create users, as treating the total number as accurate
             this.usersInOrder.push(newUser);
+            newUser.index = this.usersInOrder.length - 1;
         }
 
         // if (offsetFromCurrent == 0 && screenUsers[0]?.exitFrameTime == null) {
@@ -834,6 +872,7 @@ export class UsernameAllTracker {
      * @param {*} sparseUserList
      * @param {number} frameTime 
      * @returns {Array<TrackedUsername>} updated list of users
+     * @deprecated
      */
     updateUsers (sparseUserList, frameTime) {
         const startUserIndex = this.currentScreenFirstIndex;
@@ -866,10 +905,6 @@ export class UsernameAllTracker {
 
     shiftOffset (positiveShift) {
         this.currentScreenFirstIndex += positiveShift;
-    }
-
-    recognizeUsers (imgBuffer) {
-
     }
 
     clear() {

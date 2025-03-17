@@ -48,11 +48,11 @@ export class Color {
     static INT8MASK = 0xFF;
 
     /**
-     * Convert decimal to RGB
+     * Convert decimal to RGB, Little Endiean
      * @param {Number} decimal 
      * @returns {RGB}
      */
-    static castRGB(decimal) {
+    static castRGBLE(decimal) {
         return new Uint8Array([
             (decimal & Color.INT8MASK),
             (decimal >> 8*1) & Color.INT8MASK,
@@ -65,7 +65,7 @@ export class Color {
      * @param {Number} decimal 
      * @returns {RGBA}
      */
-    static castRGBA(decimal) {
+    static castRGBALE(decimal) {
         return new Uint8Array([
             (decimal & Color.INT8MASK),
             (decimal >> 8*1) & Color.INT8MASK,
@@ -194,6 +194,18 @@ export class Color {
         const avgPx = avgPxSum.map(px => Math.round(px / rgba_list.length))
         return new Uint8ClampedArray([...avgPx])
     }
+
+    /**
+     * Weighted grayscale conversion
+     * @param {RGB | RGBA} rgba 
+     * @returns {RGBA}
+     */
+    static weightedBW(rgba) {
+        const avgCh = Math.round(0.299 * rgba[0]) +
+        Math.round(0.587 * rgba[1]) +
+        Math.round(0.114 * rgba[2]);
+        return [avgCh, avgCh, avgCh, 0xFF]
+    }
 }
 
 /**
@@ -242,10 +254,18 @@ export class ImageBuffer {
     }
 
     /**
-     * Clone ImageBuffer
+     * Create a copy of the ImageBuffer with the same dimensions and num of channels
+     */
+    cloneDims() {
+        return ImageBuffer.Build(this.width, this.height, this.channels);
+    }
+
+    /**
+     * Clone the contents of this ImageBuffer to a new ArrayBuffer
      */
     clone() {
-        return ImageBuffer.Build(this.width, this.height, this.channels);
+        const cloneBuffer = Buffer.copyBytesFrom(this.buffer)
+        return new ImageBuffer(cloneBuffer, this.width, this.height, this.channels)
     }
 
     /**
@@ -266,9 +286,9 @@ export class ImageBuffer {
         const px_off = this.toPixelOffset(x,y)
         const decimal = this.buffer.readUInt32LE(px_off)
         if (this.channels == 3)
-            return Color.castRGB(decimal)
+            return Color.castRGBLE(decimal)
         else if (this.channels == 4)
-            return Color.castRGBA(decimal)
+            return Color.castRGBALE(decimal)
     }
 
     /**
@@ -276,7 +296,7 @@ export class ImageBuffer {
      * @param {number} x 
      * @param {number} y
      * @param {RGB | RGBA} rgba 
-     * @param {null} [alpha=null] Note alpha overrides rgba alpha if exists, then 0xFF if neither exists but alpha does
+     * @param {null} [alpha=null] NOTE: alpha > rgba alpha > 0xFF 
      */
     setPixel (x,y, rgba, alpha=null) {
         const px_off = this.toPixelOffset(x,y)
@@ -305,6 +325,11 @@ export class SharpImg {
         this.imgBuffer = imgBuffer
     }
 
+    /**
+     * Builds a raw buffer from the sharpImg variable into the imgBuffer variable
+     * Once built, imgBuffer will not be rebuilt unless deleted.
+     * @returns {Promise<ImageBuffer>}
+     */
     async buildBuffer () {
         if (this.imgBuffer) return this.imgBuffer
 
@@ -323,6 +348,16 @@ export class SharpImg {
             })
     }
 
+    /** Return a cropped SharpImg object.
+     * Note that because this is NOT a Promise, do not use this across multiple threads
+     * or async without creating a new Sharp object per child cropped object
+     * @param {Object} cropRect 
+     * @param {number} cropRect.x 
+     * @param {number} cropRect.y
+     * @param {number} cropRect.w 
+     * @param {number} cropRect.h 
+     * @returns {SharpImg} cropped SharpImg
+     */
     crop(cropRect) {
         let new_obj = new SharpImg()
         new_obj.sharpImg = this.sharpImg.extract({
@@ -345,6 +380,9 @@ export class SharpImg {
      * @returns {sharp.Sharp}
      */
     toSharp(scaleForOCR=false, {toPNG=false, toJPG=false, toRaw=false}) {
+
+        // TODO: Remove scaleForOCR here and make it similar to crop (own function)
+        
         // NOTE: changes to buffer are not reflected in array, use array first
         let bufferPromise = null
         if (this.imgBuffer)
@@ -362,7 +400,7 @@ export class SharpImg {
         if (!bufferPromise) throw Error("Trying to build buffer when both objects are NULL")
 
         if (scaleForOCR) {
-            bufferPromise = bufferPromise.resize({width:100, kernel:'mitchell'})
+            bufferPromise = bufferPromise.resize({width:500, kernel:'mitchell'})
                 .blur(1)
                 .withMetadata({density: 300})
         }

@@ -21,38 +21,27 @@ Looks like its 3 names off-screen, but with only the total number to anticipate,
 I can revisit later but I'll rather move on from this project.
 
 ## OCR
-Will think about OCR and everything once tracking is close to 100%
-Nice thing about that is now this is decoupled for tracking, it can be totally async
-and the image can separated and doesn't tracking doesn't hang on it
-
-After base tracking, then I'll add overlap tracking states
-Then building the number OCR and testing
-
+OCR needs extra improvement and testing-
+Need a better state mechanicism 
+Also run testing with the new binarization to check for accuracy
 
 # Focus today
-Ok the only way to know if this is working is having the OCR working.
-There are 2 concerns with the OCR right now, but first I gotta fix the length checking
-
-- Also appear does not verify that the name is readable, so I need to check length as well?
-    Not clear what the best process is on this since the major obstacle is chat, barb or alert.
-
-Ok feedback
-need visible state, would be great if this collapses when it doesn't change, however I want the frame num
-So probably turn off when offset = 0 and remove that
-
-I don't think the overlap check is even necessary now, since appear can be run every frame.
-Ignoring both appear & overlap checks, my next goal is chat removal.
-Actually chat removal isnt necessary as long as the appear runs per frame and catches a blank spot.
-
-There's the case where an alert blocks when chat disappears, but this only matters if the alert is there before the first screen so again, idk.
-
-Its bedtime so going to do some quick testing on that idea then sleep.
+Many fixes are needed
+- Need to skip vidx 23, but also check that user after
+- Update all calls to the old class when adding/returning
+- OCR might take too long to respond to a bit-crushed name, need something to do temporal over?
+- Figure out the best stopping mechanism for this (probably keep old code logic)
+- Test on AWS to see if that explodes
+- Need some kind of lag testing to check how far behind from LIVE
 
 ---
 During testing there was a bug where prediction went backwards, do not know the cause of this rn.
+    Likely this is caused by a username disappearing but being tracked again (play line bug?)
+
 
 
 # Goal - Track Every Username
+---
 The Goals is to track every username, when it appears, disappears, OCR and obstacles.
 I want to provide a 960/1000 names verified in my final build.
 This requires a heavy rewrite and multiple new ways to approach the issue.

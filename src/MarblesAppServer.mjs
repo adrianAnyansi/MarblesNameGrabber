@@ -6,7 +6,7 @@ import axios from 'axios'
 import fs from 'fs/promises'
 
 import { UserNameBinarization } from './UserNameBinarization.mjs'
-import {UsernameAllTracker, UsernameTracker} from './UsernameTrackerClass.mjs'
+import {UsernameAllTracker, UsernameTracker, TrackedUsername} from './UsernameTrackerClass.mjs'
 
 import { createWorker, createScheduler } from 'tesseract.js'
 import { humanReadableTimeDiff, msToHUnits } from './DataStructureModule.mjs'
@@ -14,6 +14,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
 // import { setInterval } from 'node:timers'
 import { setTimeout } from 'node:timers/promises'
 import { XMLParser } from 'fast-xml-parser'
+import { SharpImg } from './UtilModule.mjs'
 
 /** Server state */
 export const SERVER_STATE_ENUM = {
@@ -80,7 +81,7 @@ export class MarblesAppServer {
     static STREAMLINK_LOC = 'streamlink' // on PATH
 
     /** FPS to view stream */
-    static FFMPEG_FPS = '30' //'2'
+    static FFMPEG_FPS = '20' //'2'
     /** number of frames/seconds without any valid names on them */
     static EMPTY_PAGE_COMPLETE = 5 * parseInt(MarblesAppServer.FFMPEG_FPS)
 
@@ -204,7 +205,7 @@ export class MarblesAppServer {
      * Native tesseract process */
     async nativeTesseractProcess(imgBinBuffer) {
         // console.debug(`Running native Tesseract process`)
-        const tessProcess = spawn(this.tesseractCmd, ["-", "-"], {//TESSERACT_ARGS, {
+        const tessProcess = spawn(this.tesseractCmd, TESSERACT_ARGS, {
             stdio: ["pipe", "pipe", "pipe"]
         })          //stdin //stdout //stderr
 
@@ -234,8 +235,8 @@ export class MarblesAppServer {
         tessProcess.stdout.on('end', () => {
             // This should be the XML format HOCR
             // Parsing into a usable line/bbox/symbol for the final text
-            // let tesseractData = this.parseHOCRResponse(outputText)
-            let tesseractData = outputText
+            let tesseractData = this.parseHOCRResponse(outputText)
+            // let tesseractData = outputText
 
             // I don't know what's actually here so just say you got it
             // console.warn(`Tesseract process complete; ${tesseractData}`)
@@ -708,22 +709,44 @@ export class MarblesAppServer {
         }
         // Now do length checks for visible names
         // TODO: Len check clashes with amount allowed for upper check
-        const LEN_LIMIT_PER_FRAME = 27; // NOTE: Maxing this for testing
+        const LEN_LIMIT_PER_FRAME = 10; // NOTE: Maxing this for testing
         let len_checks = 0
         for (const {vidx, vUser} of visibleUsers) {
-            if (predictedUsers[vidx].length) continue;
+            const pUser = predictedUsers[vidx]
+            if (pUser.length) continue;
+            // if (vidx == 23) continue; // dont get length for idx 23
             if (!vUser.length) {
                 // TODO: Do multiple checks at once
                 const resultObj = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
                 if (resultObj[vidx].length)
                     vUser.length = resultObj[vidx].length
+                else
+                    continue;
             }
-            predictedUsers[vidx].length = vUser.length
+            pUser.length = vUser.length 
+            // queue for OCR, dont wait
+             /*
+            Require to start: Appear + length 
+            Additional check reasons
+                Confidence is low
+                Image unclear
+                Just have extra time to do so
+            */
+            if (pUser.readyForOCR() && vidx != 23) {
+                this.queueIndividualOCR(pUser, vidx, mng)
+            }
 
             if (len_checks++ > LEN_LIMIT_PER_FRAME) break;
         }
+
+        // TODO: Check if vUser.length exists,
+        // if OCR ready, check for length again
+        for (const {vidx, vUser} of visibleUsers) {
+            const pUser = predictedUsers[vidx]
+
+        }
         
-        // TODO: Sync/register OCR queries and send mng per each user
+       
 
         // console.log(`Matched offset to ${offset} ${offsetMatch}`)
         if (len_checks > 0) {
@@ -734,6 +757,50 @@ export class MarblesAppServer {
         if (!this.screenState.knownScreen)
             this.screenState.knownScreen = true // flip this when screen cannot be seen & top user is unknown
 
+    }
+
+    /**
+     * Queue individual OCR 
+     * @param {TrackedUsername} user 
+     * @param {number} visibleIdx current index on this frame
+     * @param {UserNameBinarization} mng binarization object
+     */
+    async queueIndividualOCR (user, visibleIdx, mng) {
+        // crop image
+        user.ocr_processing = true;
+        const sharpBuffer = await mng.cropTrackedUserName(visibleIdx, user.length)
+        // user.addImage(imgBuffer)
+        console.log(`Queuing OCR user vidx: ${visibleIdx} index ${user.index}`)
+
+        const binUserImg = await mng.binTrackedUserName([sharpBuffer])
+        const pngSharp = await (new SharpImg(null, binUserImg)).toSharp(true, {toPNG:true})
+        const pngBuffer = await pngSharp.toBuffer()
+
+        
+        await this.nativeTesseractProcess(pngBuffer)
+        .then( ({data, info, jobId}) => {
+
+            if (data.lines.length == 0) {
+                console.warn('got nothing')
+                return
+            }
+            for (const line of data.lines) {
+                // if (line.text.length <= 4) continue;
+                const text = line.text.trim()
+                const confidence = line.confidence
+                user.addImage(sharpBuffer.toSharp(null, {toJPG:true}),
+                    text,
+                    confidence);
+            }  
+            
+            console.log(`Recongized name @ ${user.index} as ${user.name} conf:${user.confidence.toFixed(1)}%`)
+        })
+        .finally(
+            _ => {
+                user.ocr_processing = false;
+            }
+        )
+        
     }
 
 
@@ -1193,10 +1260,15 @@ export class MarblesAppServer {
     }
 
     list () {
-        const userListConvert = this.usernameList.usersInOrder.map(username => {
-            username.aliasArray = Array.from(username.aliases)
-        })
-        return this.usernameList.usersInOrder
+        const userListConvert = this.usernameAdvObject.usersInOrder.map(username => {
+            return {
+            name: username.name,
+            len: username.length,
+            index: username.index,
+            conf: username.confidence
+        }})
+        // return this.usernameList.usersInOrder
+        return userListConvert
     }
 
     async debug (filename, withLambda, waitTest=false, raceTest=false) {

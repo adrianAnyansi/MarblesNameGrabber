@@ -44,7 +44,7 @@ async function test_userbox() {
 
 async function test_userbox_appear() {
     // const filename = file2;
-    const page = 362
+    const page = 471
     const filename = `testing/vod_dump/${page}.png`
 
     const mng = new UserNameBinarization(filename, true);
@@ -69,9 +69,11 @@ async function test_chat_detect() {
 async function old_bin() {
     // const filename = chatTestingFolder+'chat_t2 (7).png'
     
-    const filename = chatTestingFolder+'chat_t (4).png'
+    // const filename = chatTestingFolder+'chat_t (4).png'
+    const page = 471
+    const file2 = `testing/vod_dump/${page}.png`
     
-    let imageLike = await sharp(filename).ensureAlpha().png().toBuffer()
+    let imageLike = await sharp(file2).ensureAlpha().png().toBuffer()
     let mng = new UserNameBinarization(imageLike, true);
     mng.buildBuffer()
     mng.isolateUserNames()
@@ -115,7 +117,7 @@ async function numberRead() {
 
     let imgBuffer = await new SharpImg(filename).buildBuffer()
 
-    let outBuffer = imgBuffer.clone() // output clone buffer
+    let outBuffer = imgBuffer.cloneDims() // output clone buffer
     let mng = new UserNameBinarization() // only using colorspace functionality, should move this
     
     const COLORSPACE_JSON = JSON.parse(fs.readFileSync(resolve("data/colorspace.json"), 'utf8'))
@@ -147,23 +149,53 @@ async function numberRead() {
     Mathy.inRange(3, 5, [-3,3]);
 }
 
+async function test_userbox_cropnbin() {
+    const page = 332;
+    const user = 11;
+    const filename = `testing/vod_dump/${page}.png`
+
+    const mng = new UserNameBinarization(filename, true);
+    performance.mark('s')
+    let users = await mng.getUNBoundingBox([user], {appear:true, length:true})
+    const userObj = users[user]
+    
+    // crop image
+    const userCropImg = await mng.cropTrackedUserName(user, userObj.length)
+    userCropImg.toSharp(null, {toPNG:true}).toFile(`testing/indv_user_crop.png`)
+    
+    // bin image
+    const binUserImg = await mng.binTrackedUserName([userCropImg])
+    new SharpImg(null, binUserImg).toSharp(true, {toPNG:true}).toFile(`testing/indv_user_bin.png`)
+}
+
+async function test_colorspace_rot() {
+
+    const point = [115,145,245]
+
+    console.log("in range", 
+        ColorSpace.COLORS.SUB_BLUE.check(point))
+}
+
 // TESTING HERE
 (async () => {
 
     // math_range_check()
 
     // await test_userbox();
-    // console.log('hi')
     await test_userbox_appear();
     // await test_line_test();
     
     // await test_chat_detect();
-    // await old_bin();
+    await old_bin();
 
     // await objectTest();
     // await userCountTest();
     
     // await numberRead();
+
+    await test_userbox_cropnbin();
+
+    // test_colorspace_rot();
     
     // Done! Print success
     console.log("Success! Everything looks good!")
