@@ -914,4 +914,15 @@ export class UsernameAllTracker {
 
         // TODO: Clear multiple things properly
     }
+
+    getReadableList () {
+        return this.usersInOrder.map(username => {
+            return {
+            name: username.name,
+            len: username.length,
+            index: username.index,
+            conf: username.confidence,
+            aliases: Array.from(username.aliases.keys())
+        }})
+    }
 }

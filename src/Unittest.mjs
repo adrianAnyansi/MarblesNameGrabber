@@ -42,9 +42,9 @@ async function test_userbox() {
     console.log("Finished line detection in "+ (performance.now()-boundingStart)+'ms')
 }
 
-async function test_userbox_appear() {
+async function test_userbox_appear_n_len(inpage) {
     // const filename = file2;
-    const page = 471
+    const page = inpage ?? 471
     const filename = `testing/vod_dump/${page}.png`
 
     const mng = new UserNameBinarization(filename, true);
@@ -149,9 +149,9 @@ async function numberRead() {
     Mathy.inRange(3, 5, [-3,3]);
 }
 
-async function test_userbox_cropnbin() {
-    const page = 332;
-    const user = 11;
+async function test_userbox_cropnbin(inpage, inuser) {
+    const page = inpage ?? 710;
+    const user = inuser ?? 10;
     const filename = `testing/vod_dump/${page}.png`
 
     const mng = new UserNameBinarization(filename, true);
@@ -182,20 +182,26 @@ async function test_colorspace_rot() {
     // math_range_check()
 
     // await test_userbox();
-    await test_userbox_appear();
+    // await test_userbox_appear_n_len();
     // await test_line_test();
     
     // await test_chat_detect();
-    await old_bin();
+    // await old_bin();
 
     // await objectTest();
     // await userCountTest();
     
     // await numberRead();
 
-    await test_userbox_cropnbin();
+    // await test_userbox_cropnbin();
 
     // test_colorspace_rot();
+
+
+    // new bin check
+    const page = 318;
+    await test_userbox_appear_n_len(page)
+    // await test_userbox_cropnbin(page, 10)
     
     // Done! Print success
     console.log("Success! Everything looks good!")

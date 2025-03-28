@@ -403,11 +403,12 @@ export class MarblesAppServer {
             // NOTE: Data is a buffer with partial image data
             
             this.pngChunkBufferArr.push(partialPngBuffer)
+            if (partialPngBuffer.length < 8) return; // too short to modify
             // PNG chunk is 12 BYTES (but since length is 0, first 4 bytes are 0)
             if (partialPngBuffer.readUInt32BE(partialPngBuffer.length-8) == PNG_IEND_CHUNK) {
                 // close png
                 const pngBuffer = Buffer.concat(this.pngChunkBufferArr)
-                this.pngChunkBufferArr.length = 0 // clear array
+                this.pngChunkBufferArr = [] // clear array
                 // this.parseImgFile(pngBuffer)
                 this.handleImage(pngBuffer)
             }
@@ -649,8 +650,8 @@ export class MarblesAppServer {
             for (const vobj of visibleUsers) {
                 const {vidx, vUser} = vobj
                 // calculate length from current prediction
-                const vlen = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
-                vUser.length = vlen[vidx].length
+                const vlenArr = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
+                vUser.length = vlenArr[vidx].length
                 currLenList.push(vobj)
                 if (currLenList.length > LEN_CHECK_MATCH) break;
             }
@@ -707,48 +708,47 @@ export class MarblesAppServer {
             const predLenStr = predictedUsers.map(user => user.length ? 'L':'?').join('')
             console.warn(`${predLenStr.padEnd(24, ' ')}| Offset is ${offsetMatch} | Total: ${this.usernameAdvObject.usersInOrder.length}`)
         }
+
         // Now do length checks for visible names
-        // TODO: Len check clashes with amount allowed for upper check
-        const LEN_LIMIT_PER_FRAME = 10; // NOTE: Maxing this for testing
+        const LEN_LIMIT_PER_FRAME = 25; // NOTE: Maxing this for testing
         let len_checks = 0
         for (const {vidx, vUser} of visibleUsers) {
             const pUser = predictedUsers[vidx]
             if (pUser.length) continue;
-            // if (vidx == 23) continue; // dont get length for idx 23
-            if (!vUser.length) {
+
+            if (vUser.length === undefined) {
                 // TODO: Do multiple checks at once
                 const resultObj = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
-                if (resultObj[vidx].length)
-                    vUser.length = resultObj[vidx].length
-                else
-                    continue;
-            }
-            pUser.length = vUser.length 
-            // queue for OCR, dont wait
-             /*
-            Require to start: Appear + length 
-            Additional check reasons
-                Confidence is low
-                Image unclear
-                Just have extra time to do so
-            */
-            if (pUser.readyForOCR() && vidx != 23) {
-                this.queueIndividualOCR(pUser, vidx, mng)
-            }
+                vUser.length = resultObj[vidx].length
+                if (!vUser.length) continue; // length not found
 
-            if (len_checks++ > LEN_LIMIT_PER_FRAME) break;
+                pUser.length = vUser.length 
+                len_checks++
+            }
+            if (len_checks > LEN_LIMIT_PER_FRAME) break;
         }
 
-        // TODO: Check if vUser.length exists,
-        // if OCR ready, check for length again
+        // if OCR ready, check for length again and send
         for (const {vidx, vUser} of visibleUsers) {
+            if (vidx == 23) continue; // don't do OCR for last index, cropping fails this
+            if (vUser.length === null) continue; // Already failed to calc length this frame
+
             const pUser = predictedUsers[vidx]
+            if (pUser.readyForOCR()) {
+                if (vUser.length === undefined) { // must have a valid length this frame
+                    const resultObj = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
+                    vUser.length = resultObj[vidx].length
+                }
+                if (vUser.length) {
+                    pUser.length = vUser.length
+                    this.queueIndividualOCR(pUser, vidx, mng)
+                }
+            }
 
         }
         
-       
-
         // console.log(`Matched offset to ${offset} ${offsetMatch}`)
+        // Output offset only if len_checks were done this frame
         if (len_checks > 0) {
             const screenAppearStr = screenUsersArr.map(sUser => sUser.appear ? 'V': '?').join('')
             console.log(`${screenAppearStr.padEnd(24, ' ')}| frame_num: ${funcImgId.toString().padStart(5, ' ')}`)
@@ -769,8 +769,7 @@ export class MarblesAppServer {
         // crop image
         user.ocr_processing = true;
         const sharpBuffer = await mng.cropTrackedUserName(visibleIdx, user.length)
-        // user.addImage(imgBuffer)
-        console.log(`Queuing OCR user vidx: ${visibleIdx} index ${user.index}`)
+        // console.log(`Queuing OCR user vidx: ${visibleIdx} index ${user.index}`)
 
         const binUserImg = await mng.binTrackedUserName([sharpBuffer])
         const pngSharp = await (new SharpImg(null, binUserImg)).toSharp(true, {toPNG:true})
@@ -785,7 +784,7 @@ export class MarblesAppServer {
                 return
             }
             for (const line of data.lines) {
-                // if (line.text.length <= 4) continue;
+                if (line.text.length < 4) continue; // Twitch limits
                 const text = line.text.trim()
                 const confidence = line.confidence
                 user.addImage(sharpBuffer.toSharp(null, {toJPG:true}),
@@ -1260,15 +1259,7 @@ export class MarblesAppServer {
     }
 
     list () {
-        const userListConvert = this.usernameAdvObject.usersInOrder.map(username => {
-            return {
-            name: username.name,
-            len: username.length,
-            index: username.index,
-            conf: username.confidence
-        }})
-        // return this.usernameList.usersInOrder
-        return userListConvert
+        return this.usernameAdvObject.getReadableList()
     }
 
     async debug (filename, withLambda, waitTest=false, raceTest=false) {

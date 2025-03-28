@@ -25,6 +25,16 @@ OCR needs extra improvement and testing-
 Need a better state mechanicism 
 Also run testing with the new binarization to check for accuracy
 
+## Tested in prod
+Finally tested in live- yup server is too slow.
+Good news, my ffmpeg query was trash, testing that now.
+
+JPEG is much faster than PNG so need to swap
+JPEG-LS slower slightly 
+JPEG-2000 way too slow
+BMP slow and eats memory like a horse
+PNG also slow, so JPEG high quality it is-
+
 # Focus today
 Many fixes are needed
 - Need to skip vidx 23, but also check that user after
@@ -34,10 +44,14 @@ Many fixes are needed
 - Test on AWS to see if that explodes
 - Need some kind of lag testing to check how far behind from LIVE
 
+- Add more checks on how long the name was seen for debugging
+
 ---
 During testing there was a bug where prediction went backwards, do not know the cause of this rn.
     Likely this is caused by a username disappearing but being tracked again (play line bug?)
 
+Really long names offset the !PLAY icon and for some reason don't get read by OCR or length
+Ignore offsets of >3 in either direction as they are rare
 
 
 # Goal - Track Every Username

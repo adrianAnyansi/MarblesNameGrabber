@@ -1309,6 +1309,8 @@ export class UserNameBinarization {
                         // console.log(`Left-corner took ${performance.measure('left-corner', userstart).duration}`)
                     }
                 }
+                if (userBoxList[userIndex].length == undefined) 
+                    userBoxList[userIndex].length = null
             } // userbox if-length check
         } // per user check
 
