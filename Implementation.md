@@ -1,4 +1,31 @@
-# Testing
+# Implementation
+---
+Writing down stuff thats not actionable but descriptive here
+
+
+# Server summary
+How the server works
+## Tracking Summary
+---
+Ok quick summary of how the overall name tracking works
+
+1. Open stream when the stream game is Marbles On Stream
+2. Wait until the pre-race screen is detected
+3. Start the per-frame tracking
+4. If no names are detected for N seconds, go to stop (or other system)
+
+## Server Interact Summary
+---
+I'm gonna put all the things the server can do or send as an overall
+
+But later
+
+## Frame-Summary
+Also do this later
+
+## Screen State stuff
+Also later
+
 
 # Rust testing
 ## Thoughts (on Rust)
@@ -28,6 +55,24 @@ The goal is a resilent, fast and testable accurate service for this job.
 2. Separate stream download/cutting so the main server can handle requests and crashes without comprimising the name grabbing process
 4. Improve name recognition by temporal adding of images and better name indexing
 5. Add Website features like better response time, time to recognize, etc
+
+## Rust Conclusion
+Testing Rust with a simple "extract white pixels" gave a x8-x10 speedup in Rust, however this is JUST for binarization. Since the OCR takes about 3/4th of the time, I don't think rewriting the parser to get about 350ms of time actually helps. 
+Similarily, OCR might become super fast, or it might be 10% time save.
+The project is a time-sink and I want to focus my time on per-name efficiency over accuracy so I'm focusing on that instead.
+
+## Timing
+The current time frame is 
+-  22ms to build the buffer in memory
+- 214ms to binarize the image from all sections
+- 591ms for local tesseract
+- Or 1.520s for lambda, which sucks but I have no clue why its so slow.
+
+Lets take the worst case scenario and say full timeline of a page recogn takes 2.2s
+The number of lambdas I use is a queuing problem since FPS will never be less than binarization time, meaning that the amount will increase, I have to keep track of expected queries and etc.
+
+Currently I have a max of 32 lambdas for testing, but I'm just going to increase it during testing and etc.
+
 
 
 ## Goals

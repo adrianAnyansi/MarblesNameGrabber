@@ -4,8 +4,27 @@ I've gone through the individual steps required to make this work way too many t
 Plan is validating individual steps then putting them together with heavy testing.
 Don't think about the obstacle detection validation right now.
 
-# Long thoughts
+# Goal - Track Every Username
+---
+The goal is every single name should be tracked even if I can't read it or get a good option.
+- Internal count should match on-screen count.
+- Should have an image with every name
+- Increase OCR percentage
+    - If OCR doesn't match the on-screen, this should fall back
+- Better admin page
+- Better fail-back when people enter their names to the UI
 
+## How to achieve this
+- Faster FPS to catch names especially when only a few names are available
+- ~~Burst processing when necessary~~ (turns out I have enough time to ignore this and can't change current FPS)
+- New Username class with more details and properties
+    - length tracking
+    - multiple images (temporal processing)
+    - better position/indexing
+- Custom OCR???
+
+# Long thoughts
+---
 ## Deprecating prediction
 Lets talk about the prediction logic.
 Why did I want the prediction in the first place? What purpose was it made for? Two reasons.
@@ -25,6 +44,17 @@ OCR needs extra improvement and testing-
 Need a better state mechanicism 
 Also run testing with the new binarization to check for accuracy
 
+### Handgrown OCR
+Making one of these would be significantly faster, and also much more accurate than normal.
+This however is a blackhole that I'm avoiding if possible.
+But if I were to do it, I'll
+1. Make a program that can split glyphs apart vertically
+2. Pull each glpyh into an image and save on file
+3. Use some dumb algorithm to build a program for detecting these images quickly
+4. Actually time and use it in the server
+
+Will put more details if I ever get to doing this (it would be useful) but just no right now.
+
 ## Tested in prod
 Finally tested in live- yup server is too slow.
 Good news, my ffmpeg query was trash, testing that now.
@@ -35,17 +65,28 @@ JPEG-2000 way too slow
 BMP slow and eats memory like a horse
 PNG also slow, so JPEG high quality it is-
 
+
+
 # Focus today
-Many fixes are needed
-- Need to skip vidx 23, but also check that user after
-- Update all calls to the old class when adding/returning
-- OCR might take too long to respond to a bit-crushed name, need something to do temporal over?
-- Figure out the best stopping mechanism for this (probably keep old code logic)
-- Test on AWS to see if that explodes
-- Need some kind of lag testing to check how far behind from LIVE
+---
+I gotta make some refactors and underlying changes so some things are easier to do
+- Based on prod, move to jpeg convert and update ffmpeg
+- write debug/test so I can run live-video testing and check against a list on file
+- fix the subset list bug? (I think the edge-case just has to exist imo, unless I prio closer offset somehow)
+- clean up server stuff
+- update calls
 
-- Add more checks on how long the name was seen for debugging
+## Think about
+- When to do temporal, and is this accurate?
+- Stopping mechanism without OCR? Oh I can just match the 1000/1000 check
+    - Just use old check, time-based after first name read
+- See if there's a pattern for name timing
+- How to detect and solve for image compression issues
+- How to detect lag from LIVE (particularly with AWS)
+    - thinking the number of frames per second imo
+- Move OCR out of the server, so I can have a generic class and not 15 million functions
 
+## Bugs
 ---
 During testing there was a bug where prediction went backwards, do not know the cause of this rn.
     Likely this is caused by a username disappearing but being tracked again (play line bug?)
@@ -53,18 +94,10 @@ During testing there was a bug where prediction went backwards, do not know the 
 Really long names offset the !PLAY icon and for some reason don't get read by OCR or length
 Ignore offsets of >3 in either direction as they are rare
 
+## Implementation Notes
 
-# Goal - Track Every Username
----
-The Goals is to track every username, when it appears, disappears, OCR and obstacles.
-I want to provide a 960/1000 names verified in my final build.
-This requires a heavy rewrite and multiple new ways to approach the issue.
-- Faster FPS with quicker parsing
-- New Username class with better tracking of position
-- New server states for custom parsing per frame @ 60FPS
-    - Burst processing when visible names is very small
-    - Temporal processing if partially obscured
-- Custom OCR for even faster parsing for single lines*
+
+# Server 
 
 # Server Summary
 I'm gonna summarize this as I've written this too many times
@@ -196,35 +229,6 @@ Currently some thoughts
 NOTE: that burst processing is triggered when there's a low number of UNs visible, but assuming no overlap change only names blocked by highest overlap matter.
 
 NOTE: Uncertain how often to check for overlay changes as alerts are hard to track. Might be triggered by non-visible UNs.
-
-## Burst processing
-This is a little contenious right now.
-If I can improve the chat overlay, I can tell read those names and burst processing isnt necessary.
-But if alerts AND barb block names, then this is the only way to get as many as possible.
-
-Essentially through tracking I'll send images of the names when changes are expected to occur
-(tracking name length is great for this) and have an extremely accurate username list.
-Since SOME part of the screen will be clear, I can enable burst processing whenever username changes and I know I need to get part of the scrren cleanly.
-
-
-# Old optimization summary
-## Rust 
-Testing Rust with a simple "extract white pixels" gave a x8-x10 speedup in Rust, however this is JUST for binarization. Since the OCR takes about 3/4th of the time, I don't think rewriting the parser to get about 350ms of time actually helps. 
-Similarily, OCR might become super fast, or it might be 10% time save.
-The project is a time-sink and I want to focus my time on per-name efficiency over accuracy so I'm focusing on that instead.
-
-## Timing
-The current time frame is 
--  22ms to build the buffer in memory
-- 214ms to binarize the image from all sections
-- 591ms for local tesseract
-- Or 1.520s for lambda, which sucks but I have no clue why its so slow.
-
-Lets take the worst case scenario and say full timeline of a page recogn takes 2.2s
-The number of lambdas I use is a queuing problem since FPS will never be less than binarization time, meaning that the amount will increase, I have to keep track of expected queries and etc.
-
-Currently I have a max of 32 lambdas for testing, but I'm just going to increase it during testing and etc.
-
 
 
 # Disaster Recovery PLAN

@@ -1,7 +1,7 @@
 // Node Server that manages, saves and processes images for MarblesNameGrabber
 
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { ChildProcess, spawn } from 'node:child_process'
 import axios from 'axios'
 import fs from 'fs/promises'
 
@@ -15,6 +15,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
 import { setTimeout } from 'node:timers/promises'
 import { XMLParser } from 'fast-xml-parser'
 import { SharpImg } from './UtilModule.mjs'
+import { ServerImageFormat, ServerImageTracking } from './ServerClassModule.mjs'
 
 /** Server state */
 export const SERVER_STATE_ENUM = {
@@ -29,7 +30,7 @@ const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s'
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
 
 const PNG_MAGIC_NUMBER = 0x89504e47 // Number that identifies PNG file
-const PNG_IEND_CHUNK = 0x49454E44   // End/Footer for PNG file
+
 
 const NUM_LIVE_WORKERS = 12 // Num Tesseract workers
 const WORKER_RECOGNIZE_PARAMS = {
@@ -62,29 +63,29 @@ const TESSERACT_ARGS = [
 ];
 
 class ScreenState {
-
     constructor () {
         this.knownScreen = false
+        this.chat_overlap = null
+        this.barb_overlap = null
+        this.unknown_overlap = null
     }
 }
 
 export class MarblesAppServer {
 
-    /** Not being used right now */
+    /** Determines some programs/settings */
     static ENV = 'dev' // set from router
 
     static TESSERACT_LOC = String.raw`C:\Program Files\Tesseract-OCR\tesseract.exe`
     
-    // TODO: Get value from streamlink config
     // Needs to handle both linux for prod and windows for dev
     static FFMPEG_LOC = String.raw`C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe` // NOTE: should work on all streamlink installations
     static STREAMLINK_LOC = 'streamlink' // on PATH
 
     /** FPS to view stream */
-    static FFMPEG_FPS = '20' //'2'
+    static FFMPEG_FPS = '20'
     /** number of frames/seconds without any valid names on them */
     static EMPTY_PAGE_COMPLETE = 5 * parseInt(MarblesAppServer.FFMPEG_FPS)
-
     
     static DEFAULT_STEAM_URL = LIVE_URL
 
@@ -103,6 +104,7 @@ export class MarblesAppServer {
             lag_time: 0                         // time behind from 
         }
         this.screenState = new ScreenState()
+        this.serverImageObj = new ServerImageTracking()
 
         // debug variables
         this.debugTesseract = false;
@@ -112,20 +114,33 @@ export class MarblesAppServer {
         this.enableMonitor = false;
 
         // Processors & Commands
-        this.streamlinkCmd = [MarblesAppServer.STREAMLINK_LOC, MarblesAppServer.DEFAULT_STEAM_URL, 'best', '--stdout']   // Streamlink shell cmd
-        this.ffmpegCmd = [MarblesAppServer.FFMPEG_LOC, '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
-        this.streamlinkProcess = null   // Node process for streamlink
-        this.ffmpegProcess = null       // Node process for ffmpeg
-        this.tesseractCmd = MarblesAppServer.TESSERACT_LOC
-        this.pngChunkBufferArr = []     // Maintained PNG buffer over iterations
+        /** Streamlink command-line */
+        this.streamlinkCmd = [MarblesAppServer.STREAMLINK_LOC, MarblesAppServer.DEFAULT_STEAM_URL, 'best', '--stdout']
+        // old PNG format
+        // this.ffmpegCmd = [MarblesAppServer.FFMPEG_LOC, '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
+        this.streamImgFormat = ServerImageFormat.PNG_FORMAT
+        this.ffmpegCmd = [MarblesAppServer.FFMPEG_LOC, '-re', '-i','pipe:0', '-f','image2pipe', 
+                            '-c:v', ...this.streamImgFormat.ffmpeg_cmd,
+                            '-vf', `fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
+        /** @type {ChildProcess} Node process for streamlink */
+        this.streamlinkProcess = null
+        /** @type {ChildProcess} Node process for ffmpeg */
+        this.ffmpegProcess = null
+        /** PNG buffer maintained over iterations */
+        this.imgPrgsvBufferArr = []     // Maintained PNG buffer over iterations
 
         // Tesseract variables
+        /** Tesseract command-line location */
+        this.tesseractCmd = MarblesAppServer.TESSERACT_LOC
+        /** OCR Worker object */
         this.OCRScheduler = null
         this.numOCRWorkers = 0
 
         /** @type {UsernameTracker} Userlist for server */
         this.usernameList = new UsernameTracker() 
+        /** @type {UsernameAllTracker} Userlist but better */
         this.usernameAdvObject = new UsernameAllTracker()
+        this.secondsWithoutNames = 0
         this.emptyListPages = 0 // Number of images without any names
 
         // Twitch tokens
@@ -140,6 +155,7 @@ export class MarblesAppServer {
         if (this.debugLambda)  AWS_LAMBDA_CONFIG["logger"] = console
         // this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
         this.uselambda = USE_LAMBDA
+        /** @type {LambdaClient} AWS lambda */
         this.lambdaClient = null
         this.lambdaQueue = 0    // Keep track of images sent to lambda for processing
         
@@ -183,7 +199,7 @@ export class MarblesAppServer {
     }
 
     // LAMBDA Functions
-    // ------------------
+    // -------------------------------------------------------
 
     /** Warmup lambda by sending an empty file */
     async warmupLambda (workers) {
@@ -329,6 +345,7 @@ export class MarblesAppServer {
     // -------------------------
     /**
      * Start downloading channel or vod to read
+     * starts streamlink -> ffmpeg processing
      * Note this also setups variables assuming a state changing going to START
      * @param {String} twitch_channel 
      * @returns 
@@ -347,6 +364,7 @@ export class MarblesAppServer {
         this.imageProcessQueueLoc = 0
         this.imageProcessQueue = []
 
+        this.serverImageObj.reset()
 
         if (twitch_channel)
             this.streamlinkCmd[1] = TWITCH_URL + twitch_channel
@@ -399,19 +417,34 @@ export class MarblesAppServer {
             })
         }
 
-        this.ffmpegProcess.stdout.on('data', (partialPngBuffer) => {
+        /**
+         * @param 
+         */
+        this.ffmpegProcess.stdout.on('data', (/** @type {Buffer}*/ partialImgBuffer) => {
             // NOTE: Data is a buffer with partial image data
             
-            this.pngChunkBufferArr.push(partialPngBuffer)
-            if (partialPngBuffer.length < 8) return; // too short to modify
-            // PNG chunk is 12 BYTES (but since length is 0, first 4 bytes are 0)
-            if (partialPngBuffer.readUInt32BE(partialPngBuffer.length-8) == PNG_IEND_CHUNK) {
-                // close png
-                const pngBuffer = Buffer.concat(this.pngChunkBufferArr)
-                this.pngChunkBufferArr = [] // clear array
-                // this.parseImgFile(pngBuffer)
-                this.handleImage(pngBuffer)
+            // this.imgPrgsvBufferArr.push(partialImgBuffer)
+            // this.serverImageObj.prgBuffer.push(partialImgBuffer)
+            
+            
+            // if (partialImgBuffer.length < this.streamImgFormat.end_buffer.length) return;
+            // if (partialImgBuffer.length < 8) return; // too short to modify
+
+            // let [bufferList, remainingBuffer] = this.streamImgFormat.splitBufferByEOF(partialImgBuffer)
+            // this.serverImageObj.prgBuffer.push(remainingBuffer)
+            const bufferList = this.streamImgFormat.progressiveBuffer(partialImgBuffer)
+            for (const imgBuffer of bufferList) {
+                this.handleImage(imgBuffer)
             }
+
+            // if (partialImgBuffer.readUInt32BE(partialImgBuffer.length-8) == PNG_IEND_CHUNK) {
+            // if (this.streamImgFormat.checkBufferForEOF(partialImgBuffer)) {
+            //     // close png
+            //     const imgBuffer = Buffer.concat(this.imgPrgsvBufferArr)
+            //     this.imgPrgsvBufferArr = [] // clear array
+            //     // this.parseImgFile(pngBuffer)
+            //     this.handleImage(imgBuffer)
+            // }
 
         })
 
@@ -593,7 +626,7 @@ export class MarblesAppServer {
         if (this.debugVODDump) {
             console.debug(`Stream is dumped to location ${VOD_DUMP_LOC}`)
             fs.mkdir(`${VOD_DUMP_LOC}`, {recursive: true})
-            fs.writeFile(`${VOD_DUMP_LOC}${imgId}.png`, imageLike)
+            fs.writeFile(`${VOD_DUMP_LOC}${imgId}.${this.streamImgFormat.file_format}`, imageLike)
             return
         }
 
@@ -602,6 +635,7 @@ export class MarblesAppServer {
 
     /** Parse advanced image
      * Need a complex state machine to handle this
+     * @param {*} imageLike 
      */
     async parseAdvImg(imageLike) {
         
@@ -626,7 +660,8 @@ export class MarblesAppServer {
         // Warm-up text recognition
         // console.debug(`Queuing LIVE image queue: ${this.getTextRecgonQueue()}; total: ${this.usernameAdvObject.usersInOrder.length}`)
 
-        const funcImgId = this.imageProcessId++
+        // const funcImgId = this.imageProcessId++
+        const funcImgId = this.serverImageObj.imageProcessId++
         
         // Check all username appearance
         const screenUsersArr = await mng.getUNBoundingBox([], {appear:true, length:false})
@@ -1161,9 +1196,7 @@ export class MarblesAppServer {
 
         if (this.serverStatus.state != SERVER_STATE_ENUM.STOPPED) {
             this.spinDown()
-        // const stopped = this.shutdownStreamMonitor()
 
-        // if (stopped) {
             resp_text = "Stopped image parser"
             this.serverStatus.state = SERVER_STATE_ENUM.STOPPED
         }

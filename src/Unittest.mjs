@@ -199,9 +199,9 @@ async function test_colorspace_rot() {
 
 
     // new bin check
-    const page = 318;
+    const page = 1082;
     await test_userbox_appear_n_len(page)
-    // await test_userbox_cropnbin(page, 10)
+    await test_userbox_cropnbin(page, 9)
     
     // Done! Print success
     console.log("Success! Everything looks good!")
