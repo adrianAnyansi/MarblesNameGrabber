@@ -633,6 +633,7 @@ export class TrackedUsername {
         /** @type {number} ingest timestamp in ms */
         this.enterFrameTime = enterFrameTime
         // this.exitFrameTime = undefined
+        this.debugexitFrame = null
 
         /** @type {UserImage<>} images of the user */
         this.partialImgList = []
@@ -658,6 +659,12 @@ export class TrackedUsername {
     get exitingFrameTime () {
         if (!this.enterFrameTime) return undefined
         return this.enterFrameTime + UsernameAllTracker.BeginExitTime
+    }
+
+    set exitingFrameTime (time) {
+        // NOTE: Set the enteringFrameTime
+        // also should have some flag to confirm if this is top of frame disappear or overlay disappear
+        this.debugexitFrame = time
     }
 
 
@@ -924,5 +931,9 @@ export class UsernameAllTracker {
             conf: username.confidence,
             aliases: Array.from(username.aliases.keys())
         }})
+    }
+
+    get count() {
+        return this.usersInOrder.length
     }
 }

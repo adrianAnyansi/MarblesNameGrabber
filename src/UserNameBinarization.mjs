@@ -1142,9 +1142,9 @@ export class UserNameBinarization {
     /**
      * @typedef TrackedUsernameDetection
      * @type {Object}
-     * @prop {?boolean} appear 
-     * @prop {?number} length
-     * @prop {?boolean} quickLen
+     * @prop {?boolean} appear did user appear this frame
+     * @prop {?number} length get user length this frame. undefined
+     * @prop {?boolean} quickLen boolean to check if length matches here
      */
 
     /**
