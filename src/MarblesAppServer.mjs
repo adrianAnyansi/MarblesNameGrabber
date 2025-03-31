@@ -83,7 +83,7 @@ export class MarblesAppServer {
     static DEFAULT_STEAM_URL = LIVE_URL
 
     constructor () {
-        this.serverStatus = {
+        this.serverStatus_obj = {
             state: SERVER_STATE_ENUM.STOPPED,   // current state
             // chat_overlap: false,
             // barb_overlap: false,
@@ -111,7 +111,7 @@ export class MarblesAppServer {
         this.debugTesseract = false;
         this.debugProcess = false;
         this.debugLambda = false;
-        this.debugVODDump = false;
+        /** enable twitch monitoring */
         this.enableMonitor = false;
 
         // Processors & Commands
@@ -144,7 +144,6 @@ export class MarblesAppServer {
         /** @type {UsernameAllTracker} Userlist but better */
         this.usernameAdvObject = new UsernameAllTracker()
 
-        this.emptyListPages = 0 // Number of images without any names
 
         // Twitch tokens
         this.twitch_access_token = null
@@ -161,11 +160,6 @@ export class MarblesAppServer {
         /** @type {LambdaClient} AWS lambda */
         this.lambdaClient = null
         this.lambdaQueue = 0    // Keep track of images sent to lambda for processing
-        
-        this.imageProcessQueue = []    // Queue for image processing
-        this.imageProcessQueueLoc = 0    // Where the first element of imageProcessQueue points to
-        this.imageProcessId = 0          // Current id for image
-        this.imageProcessTime = []
 
         // Start up the Twitch game monitor
         if (this.enableMonitor)
@@ -358,19 +352,7 @@ export class MarblesAppServer {
 
         if (this.streamlinkProcess) return // TODO: Return error
 
-        // this.clear() // also redundant
-
         this.ServerState.enterWaitState()
-
-        // Setup variables
-        // this.emptyListPages = 0
-        // this.serverStatus.state = SERVER_STATE_ENUM.WAITING
-        
-        // reset image queue
-        // this.imageProcessId = 0
-        // this.imageProcessQueueLoc = 0
-        // this.imageProcessQueue = []
-
 
         if (twitch_channel)
             this.streamlinkCmd[1] = TWITCH_URL + twitch_channel
@@ -379,7 +361,7 @@ export class MarblesAppServer {
 
         console.debug(`Starting monitor in directory: ${process.cwd()}\n`+
                         `Watching stream url: ${this.streamlinkCmd[1]}`)
-        if (this.debugVODDump || this.debug_obj.vod_dump) {
+        if (this.debug_obj.vod_dump) {
             console.debug(`Stream is dumped to location ${VOD_DUMP_LOC}`)
             fs.mkdir(`${VOD_DUMP_LOC}`, {recursive: true})
         }
@@ -450,13 +432,11 @@ export class MarblesAppServer {
             console.debug('Streamlink process has closed.')
             this.spinDown()
             this.ServerState.enterStopState()
-            // this.serverStatus.state = SERVER_STATE_ENUM.STOPPED
         })
         this.ffmpegProcess.on('close', () => {
             console.debug('FFMpeg process has closed.')
             // NOTE: Ignoring the spinDown server state as both shutdown each other
             this.ServerState.enterStopState()
-            // this.serverStatus.state = SERVER_STATE_ENUM.STOPPED
         })
 
         console.debug("Finished up streamlink->ffmpeg startup process")
@@ -484,11 +464,12 @@ export class MarblesAppServer {
     }
 
     /**
+     * @deprecated
      * Parse an image for names
      * @param {*} imageLike 
      * @returns 
      */
-    async parseImgFile(imageLike) {
+     async parseImgFile(imageLike) {
         if (this.serverStatus.state == SERVER_STATE_ENUM.COMPLETE) {
             console.debug(`In COMPLETE/STOP state, ignoring.`)
             return
@@ -611,17 +592,15 @@ export class MarblesAppServer {
 
     /**
      * Handle image before per-frame calculations
+     * Stops processing if not available
      */
     async handleImage(imageLike) {
-        if (this.ServerState.notProcessed) {
+        if (this.ServerState.notRunning) {
             console.debug(`In COMPLETE/STOP state, dropping image.`)
             return
         }
 
-        // const imgId = this.serverStatus.imgs_downloaded++
         const imgId = this.StreamImage.imgs_downloaded++
-        
-        // console.log(`Parse img download ${imgId}`)
 
         if (this.debug_obj.vod_dump) {
             fs.writeFile(`${VOD_DUMP_LOC}${imgId}.${this.streamImgFormat.file_format}`, imageLike)
@@ -661,8 +640,6 @@ export class MarblesAppServer {
             if (validMarblesImgBool) {
                 console.log("Found Marbles Pre-Race header, starting read")
                 this.ServerState.enterReadState()
-                // this.serverStatus.state = SERVER_STATE_ENUM.READING
-                // this.serverStatus.started_stream_ts = new Date()
             } else {
                 return
             }
@@ -949,8 +926,6 @@ export class MarblesAppServer {
         this.shutdownStreamMonitor()
         if (this.OCRScheduler)
             this.OCRScheduler.jobQueue = 0
-        this.emptyListPages = 0
-        this.serverStatus.ended_stream_ts = new Date()
     }
 
     /**
@@ -1194,7 +1169,6 @@ export class MarblesAppServer {
 
         if (this.streamlinkProcess == null) {
             this.clear()
-            this.imageProcessTime.length = 0;
             
             if (!this.uselambda)
                 this.setupWorkerPool(NUM_LIVE_WORKERS)
@@ -1204,8 +1178,6 @@ export class MarblesAppServer {
             
             this.startStreamMonitor(channel)
 
-            // this.serverStatus.started_stream_ts = new Date()
-            // this.serverStatus.state = SERVER_STATE_ENUM.WAITING
             retText = "Waiting for names"
         }
         return {"state": this.ServerState.state, "text": retText}
@@ -1214,16 +1186,13 @@ export class MarblesAppServer {
     stop () {
         let resp_text = "Already Stopped"
 
-        if (this.serverStatus.stopped) {
+        if (this.ServerState.stopped) {
             this.spinDown()
 
             resp_text = "Stopped image parser"
             this.ServerState.enterStopState()
-            // this.serverStatus.state = SERVER_STATE_ENUM.STOPPED
         }
 
-        this.imageProcessTime.length = 0;
-        // this.debugVODDump = false;
         this.debug_obj.vod_dump = false;
 
         return {"state": this.ServerState.state, "text": resp_text}
@@ -1247,6 +1216,10 @@ export class MarblesAppServer {
     /** User ping for getting server status */
     status (req) {
 
+        // TODO: Rewrite this
+
+        // TODO: Add up the total amount of people visiting
+
         const curr_dt = Date.now()
         while (this.monitoredViewers && this.monitoredViewers[0] < curr_dt)
             this.monitoredViewers.shift()
@@ -1256,21 +1229,21 @@ export class MarblesAppServer {
             // TODO: Use a different page + endpoint
         } else {
             // Track viewers
-            this.monitoredViewers.push(Date.now() + this.serverStatus.interval) // TODO: Link client to this value
+            this.monitoredViewers.push(Date.now() + this.serverStatus_obj.interval) // TODO: Link client to this value
         }
         
-        this.serverStatus.viewers = this.monitoredViewers.length
+        this.ServerState.site_viewers = this.monitoredViewers.length
         
         let streaming_time = 'X'
-        if (this.serverStatus.started_stream_ts) {
-            if (this.serverStatus.ended_stream_ts)
-                streaming_time = msToHUnits(this.serverStatus.ended_stream_ts - this.serverStatus.started_stream_ts)
+        if (this.serverStatus_obj.started_stream_ts) {
+            if (this.serverStatus_obj.ended_stream_ts)
+                streaming_time = msToHUnits(this.serverStatus_obj.ended_stream_ts - this.serverStatus_obj.started_stream_ts)
             else
-                streaming_time = msToHUnits(Date.now() - this.serverStatus.started_stream_ts)
+                streaming_time = msToHUnits(Date.now() - this.serverStatus_obj.started_stream_ts)
         }
 
         return {
-            'status': this.serverStatus,
+            'status': this.serverStatus_obj,
             'job_queue': this.getTextRecgonQueue(),
             'streaming': streaming_time,
             'userList': this.usernameList.status(),

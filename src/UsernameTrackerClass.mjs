@@ -833,7 +833,7 @@ export class UsernameAllTracker {
      * Finds the best match for 2 lists of users with same length
      * Match minimum is a percentage of the testLength, current 70%
      * @param {TrackedUsername[]} predictedUsers 
-     * @param {TrackedUsernameDetection[]} testLenList 
+     * @param {import('./UserNameBinarization.mjs').TrackedUsernameDetection[]} testLenList 
      */
     static findBestShiftMatch (predictedUsers, testLenList) {
 

@@ -26,7 +26,7 @@ export class ColorSpace {
         this.center = center
         this.rot = rot
 
-        /**  @type {Map<String, number[]>} internal cache of colors, which can be toggled class wide */
+        /**  @type {Map<number, number[]>} internal cache of colors, which can be toggled class wide */
         this.cache = new Map();
     }
     
@@ -52,6 +52,22 @@ export class ColorSpace {
 
     static CACHE_ACTIVE = true;
 
+    translatePoint(point) {
+        // translation
+        const t_point = 
+            [this.center[0] - point[0],
+            this.center[1] - point[1],
+            this.center[2] - point[2]];
+        // return t_point
+
+        // rotation
+        let r_point = undefined;
+        // TODO: If identity matrix, skip this
+        // NOTE: This rotation is kills performance, by like a LOT
+        r_point = rotPoint(this.rot, t_point)
+        return r_point
+    }
+
     /**
      * Checks if sent point is within the colorSpace
      * NOTE: alpha is discarded
@@ -59,26 +75,17 @@ export class ColorSpace {
      * @returns {boolean} if point is within this color space
      */
     check (point) {
-        // const t_point = point.slice(0,3)
-
-        // translate first
-        const t_point = 
-            [this.center[0] - point[0],
-            this.center[1] - point[1],
-            this.center[2] - point[2]];
-
-        // then rotation
         let r_point = undefined;
         // retrieve cache
         if (ColorSpace.CACHE_ACTIVE) {
-            const hashColor = Color.hashRGB(point)
+            const hashColor = Color.toHex(point)
             r_point = this.cache.get(hashColor)
             if (r_point === undefined) {
-                r_point = rotPoint(this.rot, t_point)
+                r_point = this.translatePoint(point)
                 this.cache.set(hashColor, r_point)
             }
         } else {
-            r_point = rotPoint(this.rot, t_point)
+            r_point = this.translatePoint(point)
         }
         
         for (const idx in this.min) {
@@ -99,8 +106,12 @@ export class ColorSpace {
     }
 
     getPoint(rgba) {
-        const hashColor = Color.hashRGB(rgba)
-        return this.cache.get(hashColor)
+        if (ColorSpace.CACHE_ACTIVE) {
+            const hashColor = Color.toHex(rgba)
+            return this.cache.get(hashColor)
+        } else {
+            return this.translatePoint(rgba)
+        }
     }
 
     static distMax = ((255**2) * 3)**0.5
@@ -248,7 +259,29 @@ class UserNameConstant {
     static ALPHA_UNVISITED = 0xFF;
     static ALPHA_MATCH = 0xFE;
     static ALPHA_NO_MATCH = 0xFD;
+
+    static MATCH_FLAG = 0x1;
+    static NO_MATCH_FLAG = 0x2;
+
+    /**
+     * Helper function to hash coordinate from 
+     * @param {number} x 
+     * @param {number} y 
+     * @returns {number} hash of both coordinates
+     */
+    static hashCoord (x,y) {
+        return x * 2_000 + y
+    }
 }
+
+
+/**
+ * @typedef TrackedUsernameDetection
+ * @type {Object}
+ * @prop {?boolean} appear did user appear this frame
+ * @prop {?number} length get user length this frame. undefined
+ * @prop {?boolean} quickLen boolean to check if length matches here
+ */
 
 // CLASS
 /**
@@ -406,12 +439,16 @@ export class UserNameBinarization {
         }
     }
 
+    /**
+     * @deprecated
+     */
     toPixelOffset (x_coord, y_coord) {
         // Get the pixel_offset to a location
         return (y_coord * this.bufferSize.w + x_coord) * this.bufferSize.channels;
     }
 
     /**
+     * @deprecated
      * @returns {[Number, Number, Number, Number]} 
      * Returns pixel rgba value from cropped buffer */
     getPixel (x,y) {
@@ -434,6 +471,7 @@ export class UserNameBinarization {
      * @param {Buffer} buffer 
      * @param {*} info 
      * @returns {[Number, Number, Number, Number]} RGBA
+     * @deprecated
      */
     static getPixelStatic (x, y, buffer, info) {
         const px_off = UserNameBinarization.toPixelOffsetStatic(x, y, info)
@@ -454,12 +492,16 @@ export class UserNameBinarization {
      * @param {Number} y 
      * @param {*} info
      * @returns {Number} px_offset
+     * @deprecated
      */
     static toPixelOffsetStatic (x_coord, y_coord, info) {
         const w_pixels = info?.w ?? info?.width
         return (y_coord * w_pixels + x_coord) * info.channels;
     }
 
+    /**
+     * @deprecated
+     */
     static setPixel(x, y, rgba, buffer, info) {
         const px_off = UserNameBinarization.toPixelOffsetStatic(x,y, info)
         buffer.writeUInt8(rgba[0], px_off+0)
@@ -469,6 +511,9 @@ export class UserNameBinarization {
             buffer.writeUInt8(rgba[3], px_off+3)
     }
 
+    /**
+     * @deprecated
+     */
     setPixel(x,y, rgba) {
         // Set pixel colour @ x,y to [RGBA]
         let px_off = this.toPixelOffset(x,y)
@@ -479,6 +524,9 @@ export class UserNameBinarization {
             this.buffer.writeUInt8(rgba[3], px_off+3)
     }
 
+    /**
+     * @deprecated
+     */
     setBinPixel(x,y, rgba) {
          // Set pixel colour @ x,y to [RGBA]
          let px_off = this.toPixelOffset(x,y)
@@ -508,7 +556,8 @@ export class UserNameBinarization {
     /**
      * Performs the large task of separating background from names & isolating thresholds to
      * create a binarized image for OCR.
-     * @returns Binarized PNG imatge
+     * @returns Binarized PNG image
+     * @deprecated
      */
     async isolateUserNames () {
         // First, ensure buffer exists
@@ -666,6 +715,9 @@ export class UserNameBinarization {
     }
 
     // search out diagonally 
+    /**
+     * @deprecated old floodfill
+     */
     floodFillSearch (x, y, colorKey, colorCache, yBoundSet, expand=2) {
 
         let breathIterCount = 0
@@ -738,6 +790,9 @@ export class UserNameBinarization {
     }
 
     // flood fill but only visited
+    /**
+     * @deprecated
+     */
     antiFloodFillSearch (x, y) {
 
         let breathIterCount = 0
@@ -805,63 +860,58 @@ export class UserNameBinarization {
         return newSharp.crop(cropRect)
     }
 
-    static ALPHA_UNVISITED = 0xFF;
-    static ALPHA_MATCH = 0xFE;
-    static ALPHA_NO_MATCH = 0xFD;
 
     /**
      * Using a cropped sharp image, binarizes and returns a png buffer with a valid image.
      * Can accept multiple images to overlay.
-     * Do not send 24 into this if possible
+     * Do not send index 23 into this if possible
      * @param {SharpImg[]} sharpImgs 
      * @returns {Promise<ImageBuffer>} raw image buffer
      */
     async binTrackedUserName(sharpImgs) {
 
+        const binMarkName = 'bin-idv-user-start'
+        // TODO: Merge multiple images, just using first one rn
         const baseBuffer = await sharpImgs[0].buildBuffer()
-        // Just using the 1st one right now
+        performance.mark(binMarkName)
 
-        const imgBuffer = baseBuffer.clone()
+        const imgBuffer = baseBuffer
         const binBuffer = baseBuffer.cloneDims()
+        /** @type {Map<number, number>} Check when pixel has been visited on not */
+        const pxVisitMap = new Map();
 
-        // TODO: Cut the start/end ranges to exclude the outlines
-        // Also need to ignore line 24 when taking the image
-        // let x_start = imgBuffer.width-1;
-
-        // iterate from right to left across the image. Ignore top 2 lines
+        /** @type {ColorSpace[]} list of all available color spaces  */
         const COLOR_TEST = Object.values(ColorSpace.COLORS);
 
-        // while (x_start >= 0) {
-        for (let x_coord=0; x_coord < imgBuffer.width; x_coord++) {
+        /** @type {ColorSpace} Detected colorspace for current username */
+        let currColorSpace = undefined; // note saved 10ms cause it was in for-loop
 
-            let currColorSpace = null;
-            
-            for (let y_coord = 0; y_coord < imgBuffer.height; y_coord++ ) {
+        const USER_Y_BUFFER = 6 // buffer to ignore white outside lines
+        const UN_LEFT_BUFFER = 8 // better to ignore from the left
+        const UN_RIGHT_BUFFER = 3
 
-                const px_rgba = imgBuffer.getPixel(x_coord, y_coord)
+        // iterate from right to left across the image. Ignore 5 pixels from left
+        for (let x_coord=imgBuffer.width-UN_RIGHT_BUFFER; 
+                x_coord > UN_LEFT_BUFFER; x_coord--) {
+            for (let y_coord = USER_Y_BUFFER; y_coord < imgBuffer.height-USER_Y_BUFFER; y_coord++ ) {
 
-                if (px_rgba[3] < UserNameConstant.ALPHA_UNVISITED) continue; // skip, pixel already visited
+                if (pxVisitMap.get(UserNameConstant.hashCoord(x_coord,y_coord)) !== undefined) continue;
+                const px_rgb = imgBuffer.getPixel(x_coord, y_coord)
 
                 // check if any colors match
                 let colorMatch = false;
-                if (currColorSpace) {
-                    // test against this color
-                    colorMatch = currColorSpace.check(px_rgba)
-                } else {
-                    // find test all colors
-                    const matchedColorSpace = COLOR_TEST.find(
-                        colorSpace => colorSpace.check(px_rgba)
-                    )
-                    if (matchedColorSpace) {
-                        currColorSpace = matchedColorSpace
-                        colorMatch = true
-                    }
+                if (currColorSpace) {   // test against this color
+                    colorMatch = currColorSpace.check(px_rgb)
+                } else {    // test against all colors
+                    currColorSpace = COLOR_TEST.find(cs => cs.check(px_rgb))
+                    if (currColorSpace) colorMatch = true
                 }
 
                 // do a flood-fill against this color
                 if (colorMatch) {
                     this.floodFillTracked(x_coord, y_coord,
-                        imgBuffer, binBuffer, currColorSpace
+                        imgBuffer, binBuffer, currColorSpace,
+                        pxVisitMap
                     )
                 } 
                 // else if (this.debug) // set color if pixel checked but no match
@@ -869,6 +919,8 @@ export class UserNameBinarization {
 
             }
         }
+        
+        console.log(`Bin completed in ${performance.measure(binMarkName, binMarkName).duration}ms`)
 
         if (this.debug) {
             new SharpImg(null, imgBuffer).toSharp(null, {toPNG:true}).toFile('testing/indv_user_bin_color.png')
@@ -885,9 +937,10 @@ export class UserNameBinarization {
      * @param {ImageBuffer} imgBuffer Expect buffer to be edited during iteration
      * @param {ImageBuffer} binBuffer Buffer containing the B&W result
      * @param {ColorSpace} colorSpace Matching colorSpace to check against
+     * @param {Map<number, number>} pxVisitMap Map to track visited pixels
      * @param {number} expand Continue N pixels past a successful match
      */
-    floodFillTracked(x,y, imgBuffer, binBuffer, colorSpace, expand=3) {
+    floodFillTracked(x,y, imgBuffer, binBuffer, colorSpace, pxVisitMap, expand=3) {
         let px_visited = 0
 
         /** @type {Array[number[]]} */
@@ -897,36 +950,46 @@ export class UserNameBinarization {
         floodFillQueue.push(...offsetCoord.map( ([tx,ty]) => [x+tx, y+ty, expand]))
 
         // Set initial match
-        binBuffer.setPixel(x,y, Color.BLACK, Color.MATCH_ALPHA)
-        imgBuffer.setPixel(x,y, this.debug ? Color.RED : imgBuffer.getPixel(x,y), Color.MATCH_ALPHA)
+        binBuffer.setPixel(x,y, Color.BLACK)
+        pxVisitMap.set(UserNameConstant.hashCoord(x,y), UserNameConstant.MATCH_FLAG)
+        if (this.debug)
+            imgBuffer.setPixel(x,y, Color.RED)
+        // imgBuffer.setPixel(x,y, this.debug ? Color.RED : imgBuffer.getPixel(x,y), Color.MATCH_ALPHA)
 
         while (floodFillQueue.length > 0) {
             const [cx, cy, expand] = floodFillQueue.pop(0)
             if (cx < 0 || cy < 0) continue;
             if (cx >= imgBuffer.width || cy >= imgBuffer.height) continue;
 
-            const px_rgba = imgBuffer.getPixel(cx, cy)
-            if (px_rgba[3] != UserNameBinarization.ALPHA_UNVISITED) continue; // visited
+            const coordHash = UserNameConstant.hashCoord(cx, cy)
+            if (pxVisitMap.get(coordHash) !== undefined) continue; //visited
+            // if (px_rgba[3] != UserNameBinarization.ALPHA_UNVISITED) continue; // visited
 
             px_visited += 1;
 
-            const matchColorSpaceBool = colorSpace.check(px_rgba);
+            const px_rgb = imgBuffer.getPixel(cx, cy)
+            const matchColorSpaceBool = colorSpace.check(px_rgb);
             
             // calculate the fall-off based on range
-            const chOffset = 1 - (ColorSpace.sqDist(colorSpace.getPoint(px_rgba)) / ColorSpace.distMax);
-            const EXP_FALLOFF = 2 + (matchColorSpaceBool ? 0 : 1)
+            const chOffset = 1 - (ColorSpace.sqDist(colorSpace.getPoint(px_rgb)) / ColorSpace.distMax);
+            const EXP_FALLOFF = 3 + (matchColorSpaceBool ? 1 : 3)
             const avgRatio = (chOffset ** EXP_FALLOFF)
             // const bw_rgba = Color.weightedBW(px_rgba.map(ch => ch * avgCh))
             const avgCh = Math.round((1-avgRatio) * 0xFF) // invert cause BLACK is 0
-            const bw_rgba = [avgCh, avgCh, avgCh, 0xFF];
+            // const bw_rgba = [avgCh, avgCh, avgCh, 0xFF];
+            const bw_rgb = [avgCh, avgCh, avgCh];
 
-            binBuffer.setPixel(cx, cy, bw_rgba)
+            binBuffer.setPixel(cx, cy, bw_rgb)
             
             if (this.debug) {
-                Color.copyTo(px_rgba, (matchColorSpaceBool ? Color.MAHOGANY : Color.MAHOGANY_DARK))
+                // Color.copyTo(px_rgb, (matchColorSpaceBool ? Color.MAHOGANY : Color.MAHOGANY_DARK))
+                imgBuffer.setPixel(cx, cy, 
+                    matchColorSpaceBool ? Color.MAHOGANY : Color.MAHOGANY_DARK
+                )
             }
-            px_rgba[3] = matchColorSpaceBool ? Color.MATCH_ALPHA : Color.NO_MATCH_ALPHA
-            imgBuffer.setPixel(cx, cy, px_rgba)
+            // px_rgba[3] = matchColorSpaceBool ? Color.MATCH_ALPHA : Color.NO_MATCH_ALPHA
+            pxVisitMap.set(coordHash, matchColorSpaceBool ? UserNameConstant.MATCH_FLAG : UserNameConstant.NO_MATCH_FLAG)
+            // imgBuffer.setPixel(cx, cy, px_rgba)
 
             if (expand > 0 || matchColorSpaceBool ) { // queue adjacent squares
                 const nextExpand = matchColorSpaceBool ? expand : expand - 1
@@ -938,10 +1001,13 @@ export class UserNameBinarization {
     }
 
 
+    // ==============================================================================
+    // Template and other image matching
+
     /**
      * Returns true if matches the px of Marbles pre-race screen
      * DEPRECATED; UI changed
-     * @deprecated
+     * @deprecated UI changed, use 
      * @returns {Boolean}
      */
     async checkValidMarblesNamesImg() {
@@ -1071,7 +1137,11 @@ export class UserNameBinarization {
         const visitedSet = new Set();
 
         // cut the same image out from the main buffer to keep same x/y
-        const cropBufferView = await BufferView.Build(this.imageLike, rectObj)
+        // const cropBufferView = await BufferView.Build(this.imageLike, rectObj)
+        // await this.buildFullFrameBuffer();
+        this.sharpImg = new SharpImg(this.imageLike)
+        const croppedImg = this.sharpImg.crop(rectObj)
+        const cropBufferView = await croppedImg.buildBuffer()
         // Get bufferView
         /** @type {BufferView} */
         const imgView = await imgTemplate.getBufferView();
@@ -1140,14 +1210,6 @@ export class UserNameBinarization {
     }
 
     /**
-     * @typedef TrackedUsernameDetection
-     * @type {Object}
-     * @prop {?boolean} appear did user appear this frame
-     * @prop {?number} length get user length this frame. undefined
-     * @prop {?boolean} quickLen boolean to check if length matches here
-     */
-
-    /**
      * Search image for white username bounding box at locations
      * @param {number[]} usersToCheck check slots [0-23]. Empty list is 0-23, ignore exceptions
      * @param {Object} checkDetails 
@@ -1159,9 +1221,6 @@ export class UserNameBinarization {
      */
     async getUNBoundingBox(usersToCheck=[], {appear=true, length=true, quickLength=[]}) {
 
-        // const {data, info} = await sharp(this.imageLike).raw().toBuffer( { resolveWithObject: true })
-        // const imgBuffer = new ImageBuffer(data, info.width, info.height, info.channels)
-        // const buffer = data
         await this.buildFullFrameBuffer()
         const imgBuffer = this.sharpImg.imgBuffer;
 
@@ -1172,19 +1231,15 @@ export class UserNameBinarization {
         const UN_RIGHT_X = 1574+120; // leftEdge is at 1694* 
         const UN_BOX_HEIGHT = UserNameBinarization.USERNAME_HEIGHT;
         
-        // let user_y_start = username_top;
         /** @type {TrackedUsernameDetection[]} */
         const userBoxList = []
         for (let i=0; i<24; i++) {
             userBoxList[i] = {}
         }
-        // const userBoxLenList = []
         
-        // let userIndex = 0;
         if (usersToCheck.length == 0)
             usersToCheck = Array.from(Array(24).keys())
 
-        // while (user_y_start < 1080 - username_box_height) { // per username
         for (const userIndex of usersToCheck) {
 
             const user_y_start = UN_TOP_Y + UN_BOX_HEIGHT * userIndex
@@ -1240,7 +1295,6 @@ export class UserNameBinarization {
 
                 // NOTE: The first item is mirrored on the bottom, do this programmatically
                 // TODO: Tweak this with actual math & testing
-                // [username_y_offset, x_offset, range]
                 const cornerMatchTemplate = {
                     [1]: [8, 2],
                     [2]: [7, 2],
@@ -1316,7 +1370,7 @@ export class UserNameBinarization {
 
         // 13ms
         if (this.debug)
-            console.log("Finished box detect in "+(performance.measure(startMarkName, startMarkName).duration)+'ms')
+            console.log("Finished UN box detect in "+(performance.measure(startMarkName, startMarkName).duration)+'ms')
 
 
         if (this.debug)

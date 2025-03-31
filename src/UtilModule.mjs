@@ -129,14 +129,15 @@ export class Color {
     }
 
     /**
-     * Copy RGBA to another RGBA without duplicating
-     * @param {*} rgba1 
-     * @param {*} rgba2 
+     * Copy RGB to another RGB without duplicating
+     * Alpha is ignored
+     * @param {RGB} rgb1 
+     * @param {RGB} rgb2 
      */
-    static copyTo(rgba1, rgba2) {
-        rgba1[0] = rgba2[0]
-        rgba1[1] = rgba2[1]
-        rgba1[2] = rgba2[2]
+    static copyTo(rgb1, rgb2) {
+        rgb1[0] = rgb2[0]
+        rgb1[1] = rgb2[1]
+        rgb1[2] = rgb2[2]
     }
 
     /**
@@ -306,7 +307,7 @@ export class ImageBuffer {
 
         const alpha_value = alpha ?? rgba[3] ?? 0xFF
         if (this.channels == 4 && alpha_value)
-            this.buffer.writeUInt8(rgba[3], px_off+3)
+            this.buffer.writeUInt8(alpha_value, px_off+3)
     }
 }
 

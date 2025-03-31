@@ -23,6 +23,52 @@ The goal is every single name should be tracked even if I can't read it or get a
     - better position/indexing
 - Custom OCR???
 
+
+# Focus today
+---
+After a long and difficult fight with PNG buffers, I got it under control I think.
+
+- Ok I've done the non-alpha, time to test the jpg output :O
+
+- Use non-alpha for binarization so I can use other formats
+- Move OCR to a class so its reusable (especially for lambda)
+- Upgrade debug/test for better testing 
+- More clean-up and polish for release
+
+
+## Bugs
+
+
+
+I gotta make some refactors and underlying changes so some things are easier to do
+- Based on prod, move to jpeg convert and update ffmpeg
+- write debug/test so I can run live-video testing and check against a list on file
+- fix the subset list bug? (I think the edge-case just has to exist imo, unless I prio closer offset somehow)
+- clean up server stuff
+- update calls
+
+## Think about
+- When to do temporal, and is this accurate?
+- Stopping mechanism without OCR? Oh I can just match the 1000/1000 check
+    - Just use old check, time-based after first name read
+- See if there's a pattern for name timing
+- How to detect and solve for image compression issues
+- How to detect lag from LIVE (particularly with AWS)
+    - thinking the number of frames per second imo
+- Move OCR out of the server, so I can have a generic class and not 15 million functions
+
+## Bugs
+---
+- PNG still has a bug, debug this (header not found, was off by 2)
+
+- Still inaccuracies with offset (negative), usually because there's not enough testing name lengths to test with
+- Really long names offset the !play and don't get read by OCR or length
+- Some lengths are not detectable because the smear for the line is too much
+- sometimes the blue background can override the name and cause a blank read
+    - need to look at the black pixels to determine colour imo
+
+
+
 # Long thoughts
 ---
 ## Deprecating prediction
@@ -65,41 +111,19 @@ JPEG-2000 way too slow
 BMP slow and eats memory like a horse
 PNG also slow, so JPEG high quality it is-
 
-
-
-# Focus today
----
-I gotta make some refactors and underlying changes so some things are easier to do
-- Based on prod, move to jpeg convert and update ffmpeg
-- write debug/test so I can run live-video testing and check against a list on file
-- fix the subset list bug? (I think the edge-case just has to exist imo, unless I prio closer offset somehow)
-- clean up server stuff
-- update calls
-
-## Think about
-- When to do temporal, and is this accurate?
-- Stopping mechanism without OCR? Oh I can just match the 1000/1000 check
-    - Just use old check, time-based after first name read
-- See if there's a pattern for name timing
-- How to detect and solve for image compression issues
-- How to detect lag from LIVE (particularly with AWS)
-    - thinking the number of frames per second imo
-- Move OCR out of the server, so I can have a generic class and not 15 million functions
-
-## Bugs
----
-During testing there was a bug where prediction went backwards, do not know the cause of this rn.
-    Likely this is caused by a username disappearing but being tracked again (play line bug?)
-
-Really long names offset the !PLAY icon and for some reason don't get read by OCR or length
-Ignore offsets of >3 in either direction as they are rare
-
-## Implementation Notes
-
-
 # Server 
 
-# Server Summary
+Refactoring this to be a little less huge
+Server should focus on only a few things
+
+1. The state of processing, and managing the classes to do so
+2. Managing the state / frame for what and when to process
+3. Getting the data to the front-end when requested
+4. Managing twitch monitoring 
+
+So I need to move OCR out of this to be cleaner
+
+# ScreenState summary
 I'm gonna summarize this as I've written this too many times
 
 Server needs to do the following
@@ -241,13 +265,10 @@ What is needed to get marbles site running?
 [ ] Admin stuff + page
 
 
-# Notes
+## Website Verify
+Verify image can't happen when tesseract "confidence" is so wack.
+Wait for more info and testing for this
 
-## Website
-Verify image logic isn't going to happen, also with the new tech it's going to be fairly accurate in the fact it can handle aliases.
-I just wish I had better text recogn to check when letters are covered by something
-
-The other thing is judging by how people use it, I doubt anyone will crowd source the capctha. 
 
 ---
 

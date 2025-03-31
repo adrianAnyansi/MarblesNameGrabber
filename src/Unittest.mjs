@@ -44,8 +44,9 @@ async function test_userbox() {
 
 async function test_userbox_appear_n_len(inpage) {
     // const filename = file2;
-    const page = inpage ?? 471
-    const filename = `testing/vod_dump/${page}.png`
+    // const page = inpage ?? 471
+    // const filename = `testing/vod_dump/${page}.png`
+    const filename = `testing/livejpgtest.jpg`
 
     const mng = new UserNameBinarization(filename, true);
     performance.mark('s')
@@ -66,17 +67,21 @@ async function test_chat_detect() {
     mng.verifyChatBlockingNames(imgBuffer)
 }
 
-async function old_bin() {
+async function old_bin(pageN) {
     // const filename = chatTestingFolder+'chat_t2 (7).png'
     
     // const filename = chatTestingFolder+'chat_t (4).png'
-    const page = 471
+    const page = pageN ?? 471
     const file2 = `testing/vod_dump/${page}.png`
+
+    performance.mark('a')
     
     let imageLike = await sharp(file2).ensureAlpha().png().toBuffer()
     let mng = new UserNameBinarization(imageLike, true);
     mng.buildBuffer()
     mng.isolateUserNames()
+
+    console.log(`Old bin Took this ${performance.measure('a', 'a').duration}ms`)
 }
 
 async function objectTest () {
@@ -160,10 +165,16 @@ async function test_userbox_cropnbin(inpage, inuser) {
     const userObj = users[user]
     
     // crop image
+    if (!userObj.length) {
+        console.warn(`No length was found for this user ${userObj}`)
+        return
+    }
     const userCropImg = await mng.cropTrackedUserName(user, userObj.length)
     userCropImg.toSharp(null, {toPNG:true}).toFile(`testing/indv_user_crop.png`)
+    // userCropImg.buildBuffer()
     
     // bin image
+    mng.debug = true
     const binUserImg = await mng.binTrackedUserName([userCropImg])
     new SharpImg(null, binUserImg).toSharp(true, {toPNG:true}).toFile(`testing/indv_user_bin.png`)
 }
@@ -176,32 +187,42 @@ async function test_colorspace_rot() {
         ColorSpace.COLORS.SUB_BLUE.check(point))
 }
 
+async function test_validate_image() {
+
+    const filename = `testing/livejpgtest.jpg`
+
+    const mng = new UserNameBinarization(filename, true);
+    await mng.validateMarblesPreRaceScreen()
+}
+
 // TESTING HERE
 (async () => {
+
+    // await test_validate_image()
 
     // math_range_check()
 
     // await test_userbox();
     // await test_userbox_appear_n_len();
-    // await test_line_test();
     
     // await test_chat_detect();
-    // await old_bin();
 
     // await objectTest();
     // await userCountTest();
     
     // await numberRead();
 
-    // await test_userbox_cropnbin();
-
     // test_colorspace_rot();
 
+    const page = 1280;
+    const user = 18;
+
+    // old bin check
+    // await old_bin(page);
 
     // new bin check
-    const page = 1082;
     await test_userbox_appear_n_len(page)
-    await test_userbox_cropnbin(page, 9)
+    // await test_userbox_cropnbin(page, user)
     
     // Done! Print success
     console.log("Success! Everything looks good!")

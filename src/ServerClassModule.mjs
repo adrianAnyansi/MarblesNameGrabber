@@ -35,7 +35,7 @@ export class ServerImageFormat {
 
     static PNG_FORMAT = new ServerImageFormat(
         ImageFormatConstants.PNG_FILE_FORMAT,
-        ['png', '-pix_fmt', 'rgba'],
+        ['png'], // '-pix_fmt', 'rgba'],
         ImageFormatConstants.PNG_IEND_CHUNK,
         // ImageFormatConstants.PNG_FULL_IEND_CHUNK,
         // ImageFormatConstants.PNG_AFTER_IEND_OFFSET
@@ -288,6 +288,8 @@ export class ServerStatus {
 
         /** @type {number} number of viewers on the site */
         this.site_viewers = 0
+        /** @type {number} total number of viewers on the site */
+        this.total_viewers = 0
         this.monitoredViewers = []
     }
 
@@ -330,9 +332,17 @@ export class ServerStatus {
         return this.state == SERVER_STATE_ENUM.STOPPED
     }
 
-    get notProcessed () {
+    /** Server is not running now */
+    get notRunning () {
         return this.complete || this.stopped
     }
+
+    jsonReadyObj () {
+        return {
+            'viewers': this.site_viewers
+        }
+    }
+    
 }
 
 export class ScreenState {
@@ -372,7 +382,7 @@ export class ScreenState {
 
     /**
      * Add logs for visible on-screen users this frame
-     * @param {TrackedUsernameDetection} visibleUsers 
+     * @param {import('./UserNameBinarization.mjs').TrackedUsernameDetection[]} visibleUsers 
      */
     addVisibleFrame(visibleUsers) {
         this.visibleScreenFrame.push(
@@ -381,7 +391,7 @@ export class ScreenState {
     }
 
     /**
-     * @param {TrackedUsernameDetection} vUser
+     * @param {import('./UserNameBinarization.mjs').TrackedUsernameDetection} vUser
      */
     static visibleStr(vUser) {
         
