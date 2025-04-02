@@ -7,7 +7,7 @@ Removes canvas elements and uses sharp instead
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
 import { rotPoint, toPct } from './DataStructureModule.mjs'
-import { PixelMeasure, Color, BufferView, 
+import { PixelMeasure, Color,
     ImageTemplate, ImageBuffer, Direction2D, SharpImg } from './UtilModule.mjs'
 import {resolve} from 'node:path'
 import fs from 'fs'
@@ -307,10 +307,11 @@ export class UserNameBinarization {
     static USERNAME_HEIGHT = 40;
 
     // Vertical Pixels from the top of the username box
+    /** @deprecated */
     static CHECK_LINES = [
         3, 5, 7, 9, 11,12, 14, 15, 16, 20, 22, 24, 28, 30, 32
     ]
-    /** Lines to ignore (check for non letter colours) to indicate end of line */ 
+    /** @deprecated Lines to ignore (check for non letter colours) to indicate end of line */ 
     static ANTI_LINES = [
         2, 37
     ]
@@ -319,16 +320,15 @@ export class UserNameBinarization {
     DEBUG_NAME_RECOGN_FILE = 'testing/name_match.png'
     DEBUG_NAME_BIN_FILE     = 'testing/name_bin.png'
 
-    constructor(imageLike=null, debug=false, imgOptions={}) {
+    constructor(imageLike=null, debug=false) {
         // Get references, etc
-        /** @type {ImageLike} image being read */
+        /** @type {import('./UtilModule.mjs').ImageLike} image being read */
         this.imageLike = imageLike
         /** @type {SharpImg} original Sharp image without cropping */
-        this.sharpImg = null;
+        this.sharpImg = new SharpImg(imageLike);
 
         /** @type {import('./UtilModule.mjs').RectBounds} {w,h} for rect of original image */
         this.imageSize = null
-
         /** @type {Buffer} buffer used to write the orig buffer before edits because PROD makes little edits, only DEBUG makes a full-copy at isolateUserNames */
         this.orig_buffer = null
         /** @type {Buffer} cropped buffer of raw name pixel data */
@@ -407,19 +407,8 @@ export class UserNameBinarization {
     }
 
     /**
-     * Rebuilds the sharpImg and builds the buffer (if not already exists)
-     * @returns {Promise<ImageBuffer>}
-     */
-    async buildFullFrameBuffer () {
-        if (this.sharpImg) return this.sharpImg
-        // rebuild frame buffer since extract causes
-
-        this.sharpImg = new SharpImg(this.imageLike); // I assumed this is heavy, but it might not be
-        return this.sharpImg.buildBuffer();
-    }
-
-    /**
      * This dumps the buffer & metadata for the cropped image
+     * @deprecated
      */
     async dumpInternalBuffer () {
         return {
@@ -429,130 +418,6 @@ export class UserNameBinarization {
         }
     }
 
-    normalizeRect (rect, width, height) {
-        // Expand pctRect to width/height
-        return {
-            x: parseInt(rect.x * width),
-            y: parseInt(rect.y * height),
-            w: parseInt(rect.w * width),
-            h: parseInt(rect.h * height),
-        }
-    }
-
-    /**
-     * @deprecated
-     */
-    toPixelOffset (x_coord, y_coord) {
-        // Get the pixel_offset to a location
-        return (y_coord * this.bufferSize.w + x_coord) * this.bufferSize.channels;
-    }
-
-    /**
-     * @deprecated
-     * @returns {[Number, Number, Number, Number]} 
-     * Returns pixel rgba value from cropped buffer */
-    getPixel (x,y) {
-        const px_off = this.toPixelOffset(x,y)
-        const rgba = this.buffer.readUInt32LE(px_off)
-        const int8mask = 0xFF
-
-        return [
-            (rgba & int8mask),
-            (rgba >> 8*1) & int8mask,
-            (rgba >> 8*2) & int8mask,
-            (rgba >> 8*3) & int8mask,
-        ]
-    }
-
-    /**
-     * Static get RGBA value of pixel at particular location
-     * @param {Number} x 
-     * @param {Number} y 
-     * @param {Buffer} buffer 
-     * @param {*} info 
-     * @returns {[Number, Number, Number, Number]} RGBA
-     * @deprecated
-     */
-    static getPixelStatic (x, y, buffer, info) {
-        const px_off = UserNameBinarization.toPixelOffsetStatic(x, y, info)
-        const rgba = buffer.readUInt32LE(px_off)
-        const int8mask = 0xFF
-
-        return [
-            (rgba & int8mask),
-            (rgba >> 8*1) & int8mask,
-            (rgba >> 8*2) & int8mask,
-            (rgba >> 8*3) & int8mask,
-        ]
-    }
-
-    /**
-     * Get flat pixel offset from x,y values
-     * @param {Number} x 
-     * @param {Number} y 
-     * @param {*} info
-     * @returns {Number} px_offset
-     * @deprecated
-     */
-    static toPixelOffsetStatic (x_coord, y_coord, info) {
-        const w_pixels = info?.w ?? info?.width
-        return (y_coord * w_pixels + x_coord) * info.channels;
-    }
-
-    /**
-     * @deprecated
-     */
-    static setPixel(x, y, rgba, buffer, info) {
-        const px_off = UserNameBinarization.toPixelOffsetStatic(x,y, info)
-        buffer.writeUInt8(rgba[0], px_off+0)
-        buffer.writeUInt8(rgba[1], px_off+1)
-        buffer.writeUInt8(rgba[2], px_off+2)
-        if (rgba[3])
-            buffer.writeUInt8(rgba[3], px_off+3)
-    }
-
-    /**
-     * @deprecated
-     */
-    setPixel(x,y, rgba) {
-        // Set pixel colour @ x,y to [RGBA]
-        let px_off = this.toPixelOffset(x,y)
-        this.buffer.writeUInt8(rgba[0], px_off+0)
-        this.buffer.writeUInt8(rgba[1], px_off+1)
-        this.buffer.writeUInt8(rgba[2], px_off+2)
-        if (rgba[3])
-            this.buffer.writeUInt8(rgba[3], px_off+3)
-    }
-
-    /**
-     * @deprecated
-     */
-    setBinPixel(x,y, rgba) {
-         // Set pixel colour @ x,y to [RGBA]
-         let px_off = this.toPixelOffset(x,y)
-         this.binBuffer.writeUInt8(rgba[0], px_off+0)
-         this.binBuffer.writeUInt8(rgba[1], px_off+1)
-         this.binBuffer.writeUInt8(rgba[2], px_off+2)
-         if (rgba[3])
-             this.binBuffer.writeUInt8(rgba[3], px_off+3)
-    }
-
-    /*
-    Lines are also removed without smooth animation, meaning that the lines do
-    accurately sit on the line boundaries
-    */
-
-    /*
-    Logic, using the offset and box size.
-    Look from right->left. Multiple passes
-        1. Move right to left with the dot check, mark for flood-fill
-        2. When reaching 4 vertical lines without userColor, exit
-        3. Flood-fill to black respecting intensity, copy to new imgData
-
-
-    Initution: Simply move from right->left looking for a big color gap
-        Ignore anything that matches BLACK or user colors
-    */
     /**
      * Performs the large task of separating background from names & isolating thresholds to
      * create a binarized image for OCR.
@@ -560,6 +425,18 @@ export class UserNameBinarization {
      * @deprecated
      */
     async isolateUserNames () {
+
+        /*
+        Logic, using the offset and box size.
+        Look from right->left. Multiple passes
+            1. Move right to left with the dot check, mark for flood-fill
+            2. When reaching 4 vertical lines without userColor, exit
+            3. Flood-fill to black respecting intensity, copy to new imgData
+
+        Initution: Simply move from right->left looking for a big color gap
+            Ignore anything that matches BLACK or user colors
+        */
+    
         // First, ensure buffer exists
         await this.buildBuffer()
 
@@ -843,10 +720,9 @@ export class UserNameBinarization {
      * @returns {Promise<SharpImg>} cropped username
      */
     async cropTrackedUserName(idx, negativeLen) {
-        const newSharp = new SharpImg(this.imageLike)
+        // const newSharp = new SharpImg(this.imageLike)
         // There are race conditions if I reuse this.sharpImg with extract, instead 
         // I'll just recreate the sharp (since buffer is not needed) and leave a comment
-        // await this.buildFullFrameBuffer(); // build buffer
 
         const UN_ENTRY_PADDING = UserNameConstant.RIGHT_EDGE_X - UserNameConstant.PX_BEFORE_PLAY_X;
         const UN_Y = UserNameConstant.FIRST_TOP_Y + idx * UserNameConstant.HEIGHT
@@ -857,7 +733,7 @@ export class UserNameBinarization {
             h: UserNameConstant.HEIGHT,
             w: -1*negativeLen - UN_ENTRY_PADDING,
         }
-        return newSharp.crop(cropRect)
+        return this.sharpImg.crop(cropRect)
     }
 
 
@@ -920,10 +796,9 @@ export class UserNameBinarization {
             }
         }
         
-        console.log(`Bin completed in ${performance.measure(binMarkName, binMarkName).duration}ms`)
-
         if (this.debug) {
-            new SharpImg(null, imgBuffer).toSharp(null, {toPNG:true}).toFile('testing/indv_user_bin_color.png')
+            console.log(`Bin completed in ${performance.measure(binMarkName, binMarkName).duration}ms`)
+            new SharpImg(null, imgBuffer).toSharp({toPNG:true}).toFile('testing/indv_user_bin_color.png')
         }
 
         return binBuffer
@@ -1003,87 +878,7 @@ export class UserNameBinarization {
 
     // ==============================================================================
     // Template and other image matching
-
-    /**
-     * Returns true if matches the px of Marbles pre-race screen
-     * DEPRECATED; UI changed
-     * @deprecated UI changed, use 
-     * @returns {Boolean}
-     */
-    async checkValidMarblesNamesImg() {
-        // pick random px in box, then test range
-        const {data, info} = await sharp(this.imageLike).raw().toBuffer( { resolveWithObject: true })
-
-        const normOrangeRect = this.normalizeRect(PRE_RACE_RECT_ORANGE, info.width, info.height)
-        const normGrayRect = this.normalizeRect(PRE_RACE_RECT_GRAY, info.width, info.height)
-
-        // const getPxOffset = (x_coord, y_coord) => (y_coord * info.width + x_coord) * info.channels;
-        // const getPx = (pxOffset) => 
-
-        // Test at least 50%
-        function testRect (rect, colorRange) {
-            let testResult = 0
-            let testTotal = 0
-            const iw = Math.ceil(rect.w * (1/60))
-            const ih = Math.ceil(rect.h * (1/60))
-
-            for (let i=0; i<rect.w; i+=iw) {
-                for (let j=0; j<rect.h; j+=ih) {
-                    testTotal += 1
-                    if ( Color.redmean(UserNameBinarization.getPixelStatic(rect.x+i, rect.y+j, data, info), colorRange[0]) < colorRange[1] ) {
-                        testResult += 1
-                    }
-                }
-            }
-            return (testResult/testTotal) > 0.6
-        }
-
-        if (testRect(normOrangeRect, screenColorRanges.ORANGE) && testRect(normGrayRect, screenColorRanges.DARK_GRAY)) {
-            return true
-        }
-        return false
-    }
-
-    /**
-     * Returns true if the white "Waiting for Start" is visible
-     * @deprecated
-     */
-    async checkWaitingForStartImg() {
-
-        // get buffer of specific area
-        const {data, info} = await sharp(this.imageLike).raw().toBuffer( { resolveWithObject: true })
-
-        // const waitingForStartBox = this.normalizeRect(RECT.WAITING_FOR_RECT, info.width, info.height)
-
-        // Now check all pixels in range with that colorspace
-        const minMatch = 0.9
-        let matchCount = 0
-        let totalCount = 0
-        // let failSet = new Set()
-        // const setStr = () => {
-        //     let str = ''
-        //     for (let px of failSet) str += `${px}, `
-        //     return str.trim()
-        // }
-
-        for (const px_loc of START_NAME_LOCS) {
-            const px_val = UserNameBinarization.getPixelStatic(px_loc[0], px_loc[1], data, info)
-            totalCount += 1
-            if (COLORSPACE_OBJ.WHITE.check(px_val)) 
-                matchCount += 1
-            // else
-            //     failSet.add(`${px_val}`)
-
-            if ((totalCount - matchCount) / START_NAME_LOCS.length > (1-minMatch)) {
-                // console.log(`FAILED: ${setStr()}`)
-                return false
-            }
-        }
-        // console.log(`FAILED: ${setStr()}`)
-        return true
-    }
-
-    
+    // ==============================================================================
     static START_BUTTON_TEMPLATE = new ImageTemplate(
         'data/start_btn.png',
         {x:1136, y:1030, w:104, h:46},
@@ -1137,14 +932,12 @@ export class UserNameBinarization {
         const visitedSet = new Set();
 
         // cut the same image out from the main buffer to keep same x/y
-        // const cropBufferView = await BufferView.Build(this.imageLike, rectObj)
-        // await this.buildFullFrameBuffer();
-        this.sharpImg = new SharpImg(this.imageLike)
         const croppedImg = this.sharpImg.crop(rectObj)
-        const cropBufferView = await croppedImg.buildBuffer()
-        // Get bufferView
-        /** @type {BufferView} */
-        const imgView = await imgTemplate.getBufferView();
+
+        /** @type {[ImageBuffer, ImageBuffer]} cropped and imageTemplate buffers */
+        const [cropImgBuffer, imgBuffer] = await Promise.all([croppedImg.buildBuffer(),
+            imgTemplate.sharpImg.buildBuffer()
+        ])
 
         const incrCurrPxCounter = () => {currPx = (currPx + magicNum) % fixedTotal};
         
@@ -1162,14 +955,14 @@ export class UserNameBinarization {
             }
             visitedSet.add(currPx);
 
-            const [x, y] = imgView.getCoord(currPx)
-            const rgba = imgView.getPixel(x,y);
+            const [x, y] = imgBuffer.toCoord(currPx)
+            const rgba = imgBuffer.getPixel(x,y);
             
             if (rgba[3] < ALPHA_THRESHOLD) {
                 imgPxTotal -= 1; // ignore pixel from total
             } else {
                 checkedPxTotal += 1;
-                const c_rgba = cropBufferView.getPixel(x, y)
+                const c_rgba = cropImgBuffer.getPixel(x, y)
 
                 // compare color values
                 let ch_mean = Color.compareMean(rgba, c_rgba);
@@ -1221,8 +1014,7 @@ export class UserNameBinarization {
      */
     async getUNBoundingBox(usersToCheck=[], {appear=true, length=true, quickLength=[]}) {
 
-        await this.buildFullFrameBuffer()
-        const imgBuffer = this.sharpImg.imgBuffer;
+        const imgBuffer = await this.sharpImg.buildBuffer();
 
         const startMarkName = "userbox-start"
         performance.mark(startMarkName)
@@ -1374,7 +1166,7 @@ export class UserNameBinarization {
 
 
         if (this.debug)
-            this.sharpImg.toSharp(false, {toPNG:true}).toFile("testing/line_testing.png")
+            this.sharpImg.toSharp({toPNG:true}).toFile("testing/line_testing.png")
 
         return userBoxList
     }
@@ -1494,37 +1286,6 @@ export class UserNameBinarization {
             console.log("Chat not on screen")
         }
         return Color.sumColor(checkPx)/3 > cleanMin;
-    }
-
-    /**
-     * Turn raw buffer into PNG buffer
-     * @param {*} buffer        Buffer that will be converted
-     * @param {*} scaleForOCR   Scale buffer up/down for OCR (specific to marbles name)
-     * @param {*} toPNG         Turn buffer into PNG
-     * @returns 
-     */
-    bufferToPNG(buffer=this.buffer, scaleForOCR=true, toPNG=true) {
-        // let retPromise = null
-        let bufferPromise = sharp(buffer, {
-            raw: {  width: this.bufferSize.w, 
-                    height: this.bufferSize.h, 
-                    channels: this.bufferSize.channels, 
-                    premultiplied: this.bufferSize.premultiplied}
-        })
-        if (scaleForOCR) {
-            bufferPromise = bufferPromise.resize({width:UserNameBinarization.OCR_WIDTH, kernel:'mitchell'})
-                                        .blur(1)
-                                        .withMetadata({density: 300})
-        }
-        
-        if (toPNG)
-            return bufferPromise.png()
-        else
-            return bufferPromise
-    }
-
-    bufferToFile(filename, buffer=this.buffer, scaleForOCR=true) {
-        return this.bufferToPNG(buffer, scaleForOCR).toFile(filename)
     }
 
 }

@@ -15,7 +15,7 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
 import { setTimeout } from 'node:timers/promises'
 import { XMLParser } from 'fast-xml-parser'
 import { SharpImg } from './UtilModule.mjs'
-import { ServerImageFormat, ServerStatus, StreamImageTracking, ScreenState } from './ServerClassModule.mjs'
+import { StreamingImageBuffer, ServerStatus, StreamImageTracking, ScreenState } from './ServerClassModule.mjs'
 
 /** Server state enum */
 export const SERVER_STATE_ENUM = {
@@ -85,13 +85,6 @@ export class MarblesAppServer {
     constructor () {
         this.serverStatus_obj = {
             state: SERVER_STATE_ENUM.STOPPED,   // current state
-            // chat_overlap: false,
-            // barb_overlap: false,
-            // unknown_overlap: false,
-            // imgs_downloaded: 0,                 // downloaded images from the stream
-            // imgs_read: 0,                       // images read from stream (that are valid marbles names)
-            // started_stream_ts: null,            // how long the program has ingested data
-            // ended_stream_ts: null,              // when stream ingest ended
             viewers: 0,                         // current viewers on the site
             interval: 1_000 * 3,                 // interval to refresh status
             lag_time: 0                         // time behind from 
@@ -104,7 +97,8 @@ export class MarblesAppServer {
             tesseract: false,
             process: false,
             lambda: false,
-            vod_dump: false
+            vod_dump: false,
+            screenStateLog: false,
         }
 
         // debug variables
@@ -118,16 +112,17 @@ export class MarblesAppServer {
         // ================================
         /** Streamlink command-line */
         this.streamlinkCmd = [MarblesAppServer.STREAMLINK_LOC, MarblesAppServer.DEFAULT_STEAM_URL, 'best', '--stdout']
-        // old PNG format
-        // this.ffmpegCmd = [MarblesAppServer.FFMPEG_LOC, '-re', '-f','mpegts', '-i','pipe:0', '-f','image2pipe', '-pix_fmt','rgba', '-c:v', 'png', '-vf',`fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
-        this.streamImgFormat = ServerImageFormat.PNG_FORMAT
+        /** Format to output images to ffmpeg */
+        this.streamImgFormat = StreamingImageBuffer.JPG_FORMAT
+        /** ffmpeg command-line */
         this.ffmpegCmd = [MarblesAppServer.FFMPEG_LOC, '-re', '-i','pipe:0', '-f','image2pipe', 
-                            '-c:v', ...this.streamImgFormat.ffmpeg_cmd,
+                            '-c:v', ...this.streamImgFormat[1],
                             '-vf', `fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
         /** Tesseract command-line location */
         this.tesseractCmd = MarblesAppServer.TESSERACT_LOC
 
-
+        // Processors
+        // ========================================================
         /** @type {ChildProcess} Node process for streamlink */
         this.streamlinkProcess = null
         /** @type {ChildProcess} Node process for ffmpeg */
@@ -412,10 +407,9 @@ export class MarblesAppServer {
         this.ffmpegProcess.stdout.on('data', (/** @type {Buffer}*/ streamImgBuffer) => {
             // NOTE: Data is a buffer with partial image data
             
-            const newFrameBuffer = this.streamImgFormat.progressiveBuffer(streamImgBuffer)
-            if (newFrameBuffer !== null) {
-            // for (const imgBuffer of bufferList) {
+            if (this.StreamImage.addToBuffer(streamImgBuffer) !== null) {
                 this.handleImage(newFrameBuffer)
+                console.log(`Current FPS ${this.StreamImage.fps}`)
             }
         })
 
@@ -439,7 +433,7 @@ export class MarblesAppServer {
             this.ServerState.enterStopState()
         })
 
-        console.debug("Finished up streamlink->ffmpeg startup process")
+        console.debug("Set up streamlink->ffmpeg processes")
     }
 
     /**
@@ -600,15 +594,15 @@ export class MarblesAppServer {
             return
         }
 
-        const imgId = this.StreamImage.imgs_downloaded++
+        const imgId = this.StreamImage.imgs_downloaded
 
         if (this.debug_obj.vod_dump) {
             fs.writeFile(`${VOD_DUMP_LOC}${imgId}.${this.streamImgFormat.file_format}`, imageLike)
         }
 
         const EMPTY_IMAGE_NUM = parseInt(MarblesAppServer.FFMPEG_FPS) * 3
-        if (this.StreamImage.emptyImages > EMPTY_IMAGE_NUM) {
-            console.log(`Found ${EMPTY_IMAGE_NUM}+ empty frames @ ${imgId};
+        if (this.ScreenState.frames_without_names > EMPTY_IMAGE_NUM) {
+            console.log(`Found ${EMPTY_IMAGE_NUM} empty frames @ ${imgId};
                 Dumping remaining images and changing to COMPLETE state.`)
             this.ServerState.enterCompleteState()
             this.spinDown()
@@ -649,11 +643,9 @@ export class MarblesAppServer {
         // Warm-up text recognition
         // console.debug(`Queuing LIVE image queue: ${this.getTextRecgonQueue()}; total: ${this.usernameAdvObject.usersInOrder.length}`)
 
-        // const funcImgId = this.imageProcessId++
-
         // Determine the visible & predicted users on this frame
         // ==============================================================================
-        const funcImgId = this.StreamImage.img_processed++
+        const processImgId = this.StreamImage.img_processed++
         
         /** All on-screen users with their appearance checked */
         const screenUsersArr = await mng.getUNBoundingBox([], {appear:true, length:false})
@@ -670,7 +662,7 @@ export class MarblesAppServer {
 
         // Get prediction from usernameList
         const setEnterFrame = this.ScreenState.knownScreen
-        let {predictedUsers, offset} = this.usernameAdvObject.predict(funcImgId, 
+        let {predictedUsers, offset} = this.usernameAdvObject.predict(processImgId, 
             {totalUsers:null, predictFullScreen:true}, setEnterFrame)
         
         /** Num of users to use for length check against prediction */
@@ -713,7 +705,7 @@ export class MarblesAppServer {
                 // FYI this is a load-bearing semi-colon due to destructure object {o1, o2} below
 
                 // Predicted users is inaccurate, recalc
-                ({predictedUsers, offset} = this.usernameAdvObject.predict(funcImgId, 
+                ({predictedUsers, offset} = this.usernameAdvObject.predict(processImgId, 
                     {totalUsers:null, predictFullScreen:true}, setEnterFrame))
             } else if (offsetMatch < 0) {
                 console.error("Offset is negative! This is a DO NOTHING", offsetMatch)
@@ -774,7 +766,7 @@ export class MarblesAppServer {
                 }
                 if (vUser.length) {
                     pUser.length = vUser.length
-                    this.queueIndividualOCR(pUser, vidx, mng)
+                    this.queueIndividualOCR(pUser, vidx, mng, processImgId)
                 }
             }
         }
@@ -783,7 +775,7 @@ export class MarblesAppServer {
         
         if (this.ScreenState.shouldDisplaySmth || len_checks > 0) {
             console.log(
-                `Frame_num ${funcImgId.toString().padStart(5, ' ')} | Offset: ${offsetMatch} | User: ${this.usernameAdvObject.count}\n`+
+                `Frame_num ${processImgId.toString().padStart(5, ' ')} | Offset: ${offsetMatch} | User: ${this.usernameAdvObject.count}\n`+
                 `V: ${this.ScreenState.visibleScreenFrame.at(-1)}`+'\n'+
                 `P: ${this.ScreenState.predictedFrame.at(-1)}`
             )
@@ -800,14 +792,15 @@ export class MarblesAppServer {
      * @param {number} visibleIdx current index on this frame
      * @param {UserNameBinarization} mng binarization object
      */
-    async queueIndividualOCR (user, visibleIdx, mng) {
+    async queueIndividualOCR (user, visibleIdx, mng, processImgId) {
         // crop image
+        // TODO: Time/Queue this OCR
         user.ocr_processing = true;
         const sharpBuffer = await mng.cropTrackedUserName(visibleIdx, user.length)
         // console.log(`Queuing OCR user vidx: ${visibleIdx} index ${user.index}`)
 
         const binUserImg = await mng.binTrackedUserName([sharpBuffer])
-        const pngSharp = await (new SharpImg(null, binUserImg)).toSharp(true, {toPNG:true})
+        const pngSharp = SharpImg.FromRawBuffer(binUserImg).toSharp({toPNG:true, scaleForOCR:true})
         const pngBuffer = await pngSharp.toBuffer()
 
         
@@ -815,23 +808,23 @@ export class MarblesAppServer {
         .then( ({data, info, jobId}) => {
 
             if (data.lines.length == 0) {
-                console.warn('got nothing')
+                console.warn('got nothing for @ '+user.index)
                 return
             }
             for (const line of data.lines) {
                 if (line.text.length < 4) continue; // Twitch limits
                 const text = line.text.trim()
                 const confidence = line.confidence
-                user.addImage(sharpBuffer.toSharp(null, {toJPG:true}),
+                user.addImage(sharpBuffer.toSharp({toJPG:true}),
                     text,
                     confidence);
             }  
             
-            console.log(`Recongized name @ ${user.index} as ${user.name} conf:${user.confidence.toFixed(1)}%`)
+            console.log(`Recongized name #${processImgId} @ ${user.index} as ${user.name} conf:${user.confidence.toFixed(1)}%`)
         })
         .finally(
             _ => {
-                user.ocr_processing = false;
+                user.ocr_processing = false; // finished processing OCR
             }
         )
         
@@ -1157,7 +1150,8 @@ export class MarblesAppServer {
 
     /**
      * Setup worker pool
-     * @param {String} channel
+     * @param {String} channel URL to start streamlink download
+     * @param {boolean} [vodDumpFlag=false] dump images to disk for debug
      */
     start (channel, vodDumpFlag=false) {
         let retText = 'Already started'
@@ -1167,7 +1161,7 @@ export class MarblesAppServer {
             this.debug_obj.vod_dump = vodDumpFlag
         }
 
-        if (this.streamlinkProcess == null) {
+        if (this.streamlinkProcess === null) {
             this.clear()
             
             if (!this.uselambda)
@@ -1186,7 +1180,7 @@ export class MarblesAppServer {
     stop () {
         let resp_text = "Already Stopped"
 
-        if (this.ServerState.stopped) {
+        if (!this.ServerState.stopped) {
             this.spinDown()
 
             resp_text = "Stopped image parser"
@@ -1203,7 +1197,6 @@ export class MarblesAppServer {
      * To be used when clearing all usernames & state for a brand-new reading
      */
     clear () {
-
         console.log("Clearing server state")
         this.StreamImage.reset()
         this.ServerState.clear()
@@ -1217,7 +1210,6 @@ export class MarblesAppServer {
     status (req) {
 
         // TODO: Rewrite this
-
         // TODO: Add up the total amount of people visiting
 
         const curr_dt = Date.now()
@@ -1235,11 +1227,11 @@ export class MarblesAppServer {
         this.ServerState.site_viewers = this.monitoredViewers.length
         
         let streaming_time = 'X'
-        if (this.serverStatus_obj.started_stream_ts) {
-            if (this.serverStatus_obj.ended_stream_ts)
-                streaming_time = msToHUnits(this.serverStatus_obj.ended_stream_ts - this.serverStatus_obj.started_stream_ts)
+        if (this.ServerState.started_read_ts) {
+            if (this.ServerState.ended_read_ts)
+                streaming_time = msToHUnits(this.ServerState.ended_read_ts - this.ServerState.started_read_ts)
             else
-                streaming_time = msToHUnits(Date.now() - this.serverStatus_obj.started_stream_ts)
+                streaming_time = msToHUnits(Date.now() - this.serverStatus_obj.started_read_ts)
         }
 
         return {
@@ -1254,38 +1246,13 @@ export class MarblesAppServer {
         return this.usernameList.find(reqUsername)
     }
 
-    userFind (reqUsername) {
-        const userObj = this.usernameList.hash.get(reqUsername)
-        if (userObj) {
-            // return actual object
-            // TODO: Return 0 if userVerified
-            return {'userObj': userObj, 'match': 1 }
-        } else {
-            // return best matches [levenDist, userObj]
-            // TODO: Weigh based on input name length (long names are lenient, short vice versa)
-            let users = this.usernameList.find(reqUsername, 7, false)
-            
-            let levDist = users.at(0) ? users.at(0)[0] : Infinity
-            let matchDist = 4
-            // now score based on distance
-            if (levDist < 2) 
-                matchDist = 1
-            else if (levDist < 5)
-                matchDist = 2
-            else if (levDist < 8)
-                matchDist = 3
-            
-            return {'userObj': users.at(0)?.[1], 'match': matchDist, 'levenDist': levDist}
-        }
-    }
-
     getImage (reqUsername) {
         return this.usernameList.getImage(reqUsername)
     }
 
-    getFullImg(reqId) {
-        return this.usernameList.getImageFromFullList(reqId)
-    }
+    // getFullImg(reqId) {
+    //     return this.usernameList.getImageFromFullList(reqId)
+    // }
 
     list () {
         return this.usernameAdvObject.getReadableList()

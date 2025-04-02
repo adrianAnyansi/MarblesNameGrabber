@@ -4,14 +4,13 @@
 import sharp from 'sharp'
 import {Buffer} from 'node:buffer'
 
+/**
+ * @typedef {Uint8Array[]} RGBA
+ * @typedef {Uint8Array[]} RGB
+ */
+
 /** Color utility class */
 export class Color {
-
-    /**
-     * @typedef {Uint8Array[]} RGBA
-     * @typedef {Uint8Array[]} RGB
-     */
-
 
     static BLACK           = Color.toRGBA(0x000000);
     static DARKGRAY        = Color.toRGBA(0x555555);
@@ -39,7 +38,7 @@ export class Color {
 
     /** 
      * @param {RGB} rgb array of uint8, alpha is ignored
-     * @returns hex value in numbers
+     * @returns {number} hex value in decimal
      */
     static toHex(rgb) {
         return (rgb[0] << 8*2) + (rgb[1] << 8*1) + rgb[2];
@@ -210,7 +209,7 @@ export class Color {
 }
 
 /**
- * @typedef RectObj
+ * @typedef {Object} RectObj
  * @property {number} x
  * @property {number} y
  * @property {number} w
@@ -223,6 +222,10 @@ export class Color {
  * @property {number} h
  */
 
+/**
+ * @typedef {string | ArrayBuffer} ImageLike 
+ * filename or file buffer (with header)
+ */
 
 export class ImageBuffer {
     /**
@@ -256,13 +259,15 @@ export class ImageBuffer {
 
     /**
      * Create a copy of the ImageBuffer with the same dimensions and num of channels
+     * @returns {ImageBuffer}
      */
     cloneDims() {
         return ImageBuffer.Build(this.width, this.height, this.channels);
     }
 
     /**
-     * Clone the contents of this ImageBuffer to a new ArrayBuffer
+     * Clone the contents of this ImageBuffer to a new ImageBuffer
+     * @returns {ImageBuffer}
      */
     clone() {
         const cloneBuffer = Buffer.copyBytesFrom(this.buffer)
@@ -270,11 +275,24 @@ export class ImageBuffer {
     }
 
     /**
+     * Convert x,y coordinate to pixel offset (internal use-case)
      * @param {number} x_coord 
      * @param {number} y_coord
+     * @returns {number} px_offset from 0
      */
     toPixelOffset (x_coord, y_coord) {
         return (y_coord * this.width + x_coord) * this.channels
+    }
+
+    /**
+     * @param {number} px_offset 
+     * @returns {[number, number]} [x,y]
+     */
+    toCoord (px_offset) {
+        return [
+            px_offset % this.width,
+            Math.trunc(px_offset / this.width)
+        ]
     }
 
     /**
@@ -297,7 +315,7 @@ export class ImageBuffer {
      * @param {number} x 
      * @param {number} y
      * @param {RGB | RGBA} rgba 
-     * @param {null} [alpha=null] NOTE: alpha > rgba alpha > 0xFF 
+     * @param {number | null} [alpha=null] NOTE: alpha > rgba alpha > 0xFF 
      */
     setPixel (x,y, rgba, alpha=null) {
         const px_off = this.toPixelOffset(x,y)
@@ -320,10 +338,20 @@ export class SharpImg {
      * Takes a buffer/etc and turns it into a sharp object
      */
     constructor(imageLike=null, imgBuffer=null) {
-        /** sharp image on file */
+        /** @type {ImageLike} root data for the sharp image */
+        this.rootData = imageLike
+        /** @type {sharp.Sharp} sharp image on file */
         this.sharpImg = imageLike ? sharp(imageLike) : null
-        /** @type {ImageBuffer} arrayBuffer with info. This is a copy of the sharp image */
+        /** @type {ImageBuffer} raw arrayBuffer with info. copy of sharp image */
         this.imgBuffer = imgBuffer
+    }
+
+    /**
+     * Helper function to build SharpImg from a raw Buffer
+     * @returns {SharpImg} new sharpImg from raw buffer
+     */
+    static FromRawBuffer(rawBuffer) {
+        return new SharpImg(null, rawBuffer)
     }
 
     /**
@@ -349,19 +377,27 @@ export class SharpImg {
             })
     }
 
-    /** Return a cropped SharpImg object.
+    /**
+     * Clear imgBuffer (set to null)
+     */
+    deleteBuffer () {
+        this.imgBuffer = null
+    }
+
+    /** 
+     * Return a cropped SharpImg object.
+     * NOTE: There is a race condition if I don't clone the sharpImage per instance of crop
+     * Therefore I always clone the rootData unless the flaf is used
      * Note that because this is NOT a Promise, do not use this across multiple threads
      * or async without creating a new Sharp object per child cropped object
-     * @param {Object} cropRect 
-     * @param {number} cropRect.x 
-     * @param {number} cropRect.y
-     * @param {number} cropRect.w 
-     * @param {number} cropRect.h 
+     * @param {RectObj} cropRect 
+     * @param {boolean} [cloneRootData=true]
      * @returns {SharpImg} cropped SharpImg
      */
-    crop(cropRect) {
-        let new_obj = new SharpImg()
-        new_obj.sharpImg = this.sharpImg.extract({
+    crop(cropRect, cloneRootData=true) {
+        const parentSharpClone = cloneRootData ? new SharpImg(this.rootData) : this.sharpImg
+        const new_obj = new SharpImg()
+        new_obj.sharpImg = parentSharpClone.sharpImg.extract({
                 left:   cropRect.x,
                 top:    cropRect.y,
                 width:  cropRect.w,
@@ -373,16 +409,14 @@ export class SharpImg {
     /**
      * Convert current buffer to a valid sharp object.
      * NOTE: Will use this.imgBuffer or this.sharpImg as source, throwing error if none
-     * @param {boolean} [scaleForOCR=false] 
      * @param {Object} param1 
+     * @param {boolean} [param1.scaleForOCR=false] 
      * @param {boolean} [param1.toPNG=false] 
      * @param {boolean} [param1.toJPG=false] 
      * @param {boolean} [param1.toRaw=false] 
      * @returns {sharp.Sharp}
      */
-    toSharp(scaleForOCR=false, {toPNG=false, toJPG=false, toRaw=false}) {
-
-        // TODO: Remove scaleForOCR here and make it similar to crop (own function)
+    toSharp({toPNG=false, toJPG=false, toRaw=false, scaleForOCR=false}) {
         
         // NOTE: changes to buffer are not reflected in array, use array first
         let bufferPromise = null
@@ -408,7 +442,9 @@ export class SharpImg {
 
         if (toPNG) return bufferPromise.png()
         if (toJPG) return bufferPromise.jpeg({quality:100})
-        if (toRaw) return bufferPromise
+        if (toRaw) return bufferPromise.raw()
+
+        // TODO: if supporting file (with format), use toFile
 
         throw Error("Did not specify output")
     }
@@ -489,138 +525,23 @@ export class PixelMeasure {
 
 }
 
-/** Helper class to access pixels in image buffer */
-export class BufferView {
-    
-    /**
-     * @param {Buffer} buffer 
-     * @param {number} width 
-     * @param {number} height
-     * @param {number} channels
-     */
-    constructor(buffer, width, height, channels) {
-        /** @prop {Buffer} buffer */
-        this.buffer = buffer;
-        /** @prop {number} width Width of the buffer */
-        this.width = width;
-        /** @prop {number} height Height of the buffer */
-        this.height = height;
-        /** @prop {number} channels Number of color channels (4 = RGBA) */
-        this.channels = channels;
-    }
-
-    /**
-     * Builds a full BufferView from imgLike (filename/buffer)
-     * Helper function
-     * @param {*} imgLike 
-     * @returns {Promise<BufferView>} bufferView containing cropped* image
-     */
-    static async Build(imgLike, cropRect=null) {
-        let sharpImg = sharp(imgLike)
-
-        if (cropRect) {
-            sharpImg = sharpImg.extract({left: cropRect.x, top:cropRect.y, 
-                width:cropRect.w, height:cropRect.h})
-        }
-
-        return sharpImg
-            .raw() // raw pixel data
-            .toBuffer({resolveWithObject: true}) // to ArrayBuffer + metadata
-            .then( ({data, info}) => {
-                if (data) {
-                    let bufferView = new BufferView(data, info.width, info.height, info.channels);
-                    return bufferView
-                }
-            })
-            .catch( err => {
-                console.warn(`Unable to make BufferView; err${err}:${err.stack}`)
-                throw err
-            })
-    }
-
-    get size() {
-        return this.buffer.byteLength;
-    }
-
-
-    /**
-     * Static get RGBA value of pixel at particular location
-     * @param {Number} x 
-     * @param {Number} y
-     * @returns {Uint8Array[Number, Number, Number, Number]} RGBA
-     */
-    getPixel (x, y) {
-        const px_off = this.toPixelOffset(x, y)
-        if (this.channels == 4) 
-            return this.getRGBAPixel(px_off)
-    }
-
-    getRGBAPixel(px_off) {
-        const rgba = this.buffer.readUInt32LE(px_off);
-        const int8mask = 0xFF;
-        return new Uint8ClampedArray([
-            (rgba & int8mask),
-            (rgba >> 8*1) & int8mask,
-            (rgba >> 8*2) & int8mask,
-            (rgba >> 8*3) & int8mask,
-        ]);
-    }
-
-    /**
-     * Get flat pixel offset from x,y values
-     * @param {Number} x 
-     * @param {Number} y
-     * @returns {Number} px_offset
-     */
-    toPixelOffset (x_coord, y_coord) {
-        return (y_coord * this.width + x_coord) * this.channels;
-    }
-
-    /**
-     * Get coord array from pixel offset
-     * @param {*} px 
-     */
-    getPx(px) {
-        return this.getRGBAPixel(px * this.channels)
-    }
-
-    /**
-     * Get pixels from top-left corner
-     * @param {*} px 
-     * @returns {[Number, Number]}
-     */
-    getCoord(px) {
-        return [
-            px % this.width,
-            Math.trunc(px / this.width)
-        ]
-    }
-
-    setPixel(x, y, rgba) {
-        const px_off = BufferView.toPixelOffset(x,y)
-        this.buffer.writeUInt8(rgba[0], px_off+0)
-        this.buffer.writeUInt8(rgba[1], px_off+1)
-        this.buffer.writeUInt8(rgba[2], px_off+2)
-        if (rgba[3])
-            this.buffer.writeUInt8(rgba[3], px_off+3)
-    }
-    
-}
-
 /** Helper class for Image Comparisons */
 export class ImageTemplate {
 
     constructor(imageLike, rectObj, name='') {
         this.imageLike = imageLike;
         this.rectObj = rectObj;
-        this.bufferView = null;
-        this.bufferViewPromise = BufferView.Build(imageLike)
+        this.sharpImg = new SharpImg(imageLike)
+        // this.bufferView = null;
+        // this.bufferViewPromise = BufferView.Build(imageLike)
         this.name = name
+
+        this.sharpImg.buildBuffer() // NOTE: Build during pre-process
     }
 
-    async getBufferView() {
-        return this.bufferViewPromise
-    }
+    // async getBufferView() {
+    //     return this.bufferViewPromise
+    // }
 }
 
 

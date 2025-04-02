@@ -11,7 +11,7 @@ export class ImageFormatConstants {
     /** PNG start of image */
     static PNG_MAGIC_NUMBER = Uint8Array.from([0x89, 0x50, 0x4E, 0x47])
     /** PNG end of image */
-    static PNG_IEND_CHUNK = Uint8Array.from([0x49, 0x45, 0x4E, 0x44])
+    static PNG_IEND = Uint8Array.from([0x49, 0x45, 0x4E, 0x44])
 
     static PNG_CHUNK_SIZE = 4
     static PNG_CRC_SIZE = 4
@@ -25,21 +25,31 @@ export class ImageFormatConstants {
 
 }
 
-export class ServerImageFormat {
+/**
+ * @typedef {[string, string[], Buffer]} ImageFormat
+ * @type {[]}
+ */
 
-    static JPG_FORMAT = new ServerImageFormat(
+/**
+ * 
+ */
+export class StreamingImageBuffer {
+
+    /** @type {ImageFormat} JPG list of constants */
+    static JPG_FORMAT = [
         ImageFormatConstants.JPG_FILE_FORMAT,
         ["mjpeg", "-qscale:v", "1", "-qmin", "1", "-qmax", "1"],
         ImageFormatConstants.JPG_END_OF_FILE,
-    )
+    ]
 
-    static PNG_FORMAT = new ServerImageFormat(
+    /** @type {ImageFormat} PNG list of constants */
+    static PNG_FORMAT = [
         ImageFormatConstants.PNG_FILE_FORMAT,
         ['png'], // '-pix_fmt', 'rgba'],
-        ImageFormatConstants.PNG_IEND_CHUNK,
+        ImageFormatConstants.PNG_IEND,
         // ImageFormatConstants.PNG_FULL_IEND_CHUNK,
         // ImageFormatConstants.PNG_AFTER_IEND_OFFSET
-    )
+    ]
 
     /**
      * @param {string} file_format 
@@ -48,7 +58,7 @@ export class ServerImageFormat {
      * @param {Uint8Array} end_buffer 
      * @param {number} chunkSize
      */
-    constructor(file_format, ffmpeg_cmd, end_buffer, chunkSize=null, start_buffer=null) {
+    constructor(file_format, ffmpeg_cmd, end_buffer) {
         /** @type {string} file_format to save on disk */
         this.file_format = file_format
         /** @type {string[]} format & etc for ffmpeg codec */
@@ -56,91 +66,115 @@ export class ServerImageFormat {
         /** @type {Uint8Array} the magic number to indicate end of image file */
         this.end_buffer = end_buffer
 
-        this.chunk_size = chunkSize
+        // this.chunk_size = chunkSize
 
         /** @type {Buffer[]} progressive buffer of the image */
         this.prgBufferArr = []
 
         /** progressive chunk details */
-        this.chunkDetails = {
+        this.pngChunk = {
             /** add N bytes from previous buffer */
             addPrev: 0,
             /** len+crc of the chunk */
             len_n_crc: 0,
-            /** chunk type */
+            /** @type {string} chunk type as string */
             type: null,
+            /** @type {Buffer} chunk type as buffer */
+            typeBuffer: null,
             /** has png_header been identified */
-            png_header: false,
+            found_png_header: false,
+        }
+
+        /** JPG progressive chunk state */
+        this.jpgChunk = {
+            jpeg_header: false,
+            type: null,
+            typeBuffer: null,
+            len: 0,
+            within_SOS: false
         }
 
     }
 
     static updatePNGFormat(ffmpeg_cmd) {
-        ServerImageFormat.PNG_FORMAT.ffmpeg_cmd = ffmpeg_cmd
+        StreamingImageBuffer.PNG_FORMAT.ffmpeg_cmd = ffmpeg_cmd
     }
 
     static updateJPGFormat(ffmpeg_cmd) {
-        ServerImageFormat.JPG_FORMAT.ffmpeg_cmd = ffmpeg_cmd
+        StreamingImageBuffer.JPG_FORMAT.ffmpeg_cmd = ffmpeg_cmd
     }
 
 
     /**
-     * Iterate through PNG file structure
+     * Iterate through PNG file chunks (state saved in object)
      * This assumes there is only 1 EOF in this buffer, otherwise why are you using a stream 
+     * TODO: For multiple cuts, just return array and handle cuts in top array
      * @param {Buffer} buffer
-     * @returns {number[]} end of PNG
+     * @returns {number} index indicating end of PNG
      */
     iteratePNGChunks(buffer) {
         /** iteration index */
         let iterIdx = 0
         /** remove N from cut indexes since a join with previous index was performed */
-        let negaIdxOffset = 0
+        let prevBuffIdxOffset = 0
         /** @type {number[]} byte index to cut for end of PNG */
         let retCutIdx = -1
 
         // If prev buffer was not parsed to completion, add to this buffer
-        if (this.chunkDetails.addPrev) {
+        if (this.pngChunk.addPrev) {
             const prevBuffer = this.prgBufferArr.at(-1)
-            negaIdxOffset = this.chunkDetails.addPrev
+            prevBuffIdxOffset = -this.pngChunk.addPrev
             buffer = Buffer.concat(
-                [prevBuffer.subarray(-this.chunkDetails.addPrev), buffer])
-            this.chunkDetails.addPrev = 0
+                [prevBuffer.subarray(this.pngChunk.addPrev), buffer])
+            this.pngChunk.addPrev = 0
         }
 
         // Cannot read chunk/length if < 8 bytes, then concat the prev one
+        // TODO: Handle no prev buffer with addPrev across multiple
         if (buffer.length < ImageFormatConstants.PNG_CHUNK_SIZE*2) {
-            const diff = ImageFormatConstants.PNG_CHUNK_SIZE*2 - buffer.length
-            buffer = Buffer.concat([this.prgBufferArr.at(-1).subarray(-diff), buffer])
-            negaIdxOffset -= diff
+            const bytesNeeded = ImageFormatConstants.PNG_CHUNK_SIZE*2 - buffer.length
+            buffer = Buffer.concat([this.prgBufferArr.at(-1).subarray(-bytesNeeded), buffer])
+            prevBuffIdxOffset -= bytesNeeded
         }
 
-        // Buffer must be greater than 8 bytes
-        while (iterIdx < buffer.length) {
-            if (this.chunkDetails.len_n_crc > 0) {// iterate by chunk length
-                const iterMov = Math.min(this.chunkDetails.len_n_crc, buffer.length-iterIdx)
+        
+        while (iterIdx < buffer.length) { // iterate to end of buffer
+
+            if (this.pngChunk.len_n_crc > 0) { // iterate to chunk_length
+                const iterMov = Math.min(this.pngChunk.len_n_crc, buffer.length-iterIdx)
                 iterIdx += iterMov
-                this.chunkDetails.len_n_crc -= iterMov
-            } 
+                this.pngChunk.len_n_crc -= iterMov
+                
+                if (this.pngChunk.len_n_crc == 0) { // at end of chunk
+                    if (this.pngChunk.typeBuffer.equals(ImageFormatConstants.PNG_IEND)) {
+                        this.pngChunk.found_png_header = false
+                        retCutIdx = iterIdx + prevBuffIdxOffset
+                    }
+                    this.pngChunk.type = null
+                    this.pngChunk.typeBuffer = null
+                }
+            }
 
             // defer if not enough bytes to read header remaining
             if (iterIdx + ImageFormatConstants.PNG_CHUNK_SIZE*2 >= buffer.length) {
-                this.chunkDetails.addPrev = buffer.length - iterIdx
+                this.pngChunk.addPrev = buffer.length - iterIdx
                 break
             }
 
             // find PNG header first
-            if (this.chunkDetails.png_header == false) {
+            if (!this.pngChunk.found_png_header) {
                 const png_header = buffer.subarray(iterIdx,
                     iterIdx + ImageFormatConstants.PNG_CHUNK_SIZE*2
                 )
-                if (!png_header.equals(ImageFormatConstants.PNG_HEADER))
-                    throw Error("Header was not found!!")
-                else {
-                    this.chunkDetails.png_header = true
+
+                if (png_header.equals(ImageFormatConstants.PNG_HEADER)) {
+                    this.pngChunk.found_png_header = true
                     iterIdx += ImageFormatConstants.PNG_HEADER.length
-                }
+                } else 
+                    throw Error("Header was not found!!!")
             }
             else { // read chunk details
+
                 const chunk_len = buffer.readUInt32BE(iterIdx)
                 const chunk_type = buffer.subarray(
                     iterIdx + ImageFormatConstants.PNG_CHUNK_SIZE,
@@ -148,22 +182,10 @@ export class ServerImageFormat {
                 )
                 iterIdx += ImageFormatConstants.PNG_CHUNK_SIZE*2
 
-                // check for end of file
-                if (chunk_type.equals(ImageFormatConstants.PNG_IEND_CHUNK)) {
-                    this.chunkDetails.png_header = false
-                    this.chunkDetails.len_n_crc = 0
-                    this.chunkDetails.type = null
-                    // NOTE: Assuming chunk_len is always 0, therefore chunk is 8 bytes
-                    // TODO: If this errors, add another defer
-                    retCutIdx = iterIdx - negaIdxOffset 
-                        + chunk_len + ImageFormatConstants.PNG_CRC_SIZE
-                    iterIdx += chunk_len + ImageFormatConstants.PNG_CRC_SIZE
-                    if (chunk_len > 0)
-                        throw Error(`chunk_len ${chunk_len} is not 0`)
-                } else {
-                    this.chunkDetails.len_n_crc = chunk_len + ImageFormatConstants.PNG_CRC_SIZE
-                    this.chunkDetails.type = chunk_type.toString()
-                }
+                this.pngChunk.len_n_crc = chunk_len + ImageFormatConstants.PNG_CRC_SIZE
+                this.pngChunk.type = chunk_type.toString() // Disable after testing
+                this.pngChunk.typeBuffer = chunk_type
+                
                 // console.log(`chunk type ${this.chunkDetails.type}, length_crc ${this.chunkDetails.len_n_crc}`)
             }
         }
@@ -181,11 +203,14 @@ export class ServerImageFormat {
         let cutIdx = -1
         if (this.file_format == ImageFormatConstants.PNG_FILE_FORMAT)
             cutIdx = this.iteratePNGChunks(buffer)
-        else // JPG Format
-            cutIdx = buffer.indexOf(this.end_buffer) // TODO: Test hard
+        else { // JPG Format
+            cutIdx = buffer.indexOf(this.end_buffer)
+            cutIdx += cutIdx == -1 ? 0 : ImageFormatConstants.JPG_END_OF_FILE.length
+        }
+
         
         if (cutIdx != -1) {
-            const rmBuffer = cutIdx != buffer.length 
+            const rmBuffer = cutIdx < buffer.length 
                 ? buffer.subarray(cutIdx) 
                 : null
             return [buffer.subarray(0, cutIdx), rmBuffer] 
@@ -223,39 +248,34 @@ export class ServerImageFormat {
  */
 export class StreamImageTracking {
 
-    constructor() {
-        /** @type {number} Number of empty pages consecutively */
-        this.emptyImages = 0
+    /**
+     * @param {Array[]} img_format 
+     */
+    constructor(img_format) {
         /** @type {number} current image being processed*/
         this.img_processed = 0
-        this.imageProcessQueueLoc = 0
-        this.imageProcessQueue = []
+
+        /** @type {StreamingImageBuffer} */
+        this.streamingBuffer = new StreamingImageBuffer(...img_format)
 
         /** @type {number} images downloaded from stream */
         this.imgs_downloaded = 0
-        /** @deprecated @type {number} images read by OCR */
-        this.imgs_read = 0
+        // /** @deprecated @type {number} images read by OCR */
+        // this.imgs_read = 0
 
         /** @type {number} Lag time is recognize a user image */
         this.lag_time = 0
-
-        /** @type {Buffer[]} Progressive Image stream */
-        // this.prgBufferArr = []
-        
-        // this.prgBuffer = Buffer.allocUnsafe(10 * 1028 * 1028)
-        // this.prgBufferIdx = 0
-        // this.prgBufferLen = 0
 
         /** @type {DOMHighResTimeStamp} time when 1st image was retrieved */
         this.start_time = null
     }
 
-    /** Reset all objects to normal  */
+    /** Reset all objects to default  */
     reset() {
-        this.emptyImages = 0
+        // this.emptyImages = 0
         this.img_processed = 0
-        this.imageProcessQueueLoc = 0
-        this.imageProcessQueue = []
+        // this.imageProcessQueueLoc = 0
+        // this.imageProcessQueue = []
 
         this.imgs_downloaded = 0
         this.imgs_read = 0
@@ -263,8 +283,26 @@ export class StreamImageTracking {
         this.start_time = null
     }
 
-    setStartTime() {
-        this.start_time = performance.now()
+    /**
+     * Add buffer to streaming image and increment variables
+     * @param {Buffer} buffer 
+     */
+    addToBuffer (buffer) {
+        const newFrameBuffer = this.streamingBuffer.progressiveBuffer(buffer)
+        if (newFrameBuffer) {
+            this.imgs_downloaded += 1
+            if (this.imgs_downloaded == 1)
+                this.start_time = Date.now()
+        }
+        return newFrameBuffer
+    }
+
+    /**
+     * Return the imgs_downloaded/ms
+     */
+    get fps() {
+        const timeToStart = Date.now() - this.start_time;
+        return timeToStart / (this.imgs_downloaded)
     }
 }
 
@@ -276,15 +314,17 @@ export class ServerStatus {
         /** @type {string} current server state */
         this.state = SERVER_STATE_ENUM.STOPPED
 
-        this.started_game_ts = null
-        this.started_read_ts = null
-        this.ended_read_ts = null
-        this.started_race_ts = null
+        /** @type {Date} game start/open time */
+        this.started_game_ts = null 
 
-        // this.debug_process = false;
-        // this.debug_vod_dump = false;
-        // /** @type {boolean} enable twitch monitoring  */
-        // this.enableMonitor = false;
+        /** @type {Date} name start read time */
+        this.started_read_ts = null
+
+        /** @type {Date} name end read time */
+        this.ended_read_ts = null
+
+        /** @type {Date} race start time */
+        this.started_race_ts = null
 
         /** @type {number} number of viewers on the site */
         this.site_viewers = 0

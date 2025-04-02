@@ -44,9 +44,9 @@ async function test_userbox() {
 
 async function test_userbox_appear_n_len(inpage) {
     // const filename = file2;
-    // const page = inpage ?? 471
-    // const filename = `testing/vod_dump/${page}.png`
-    const filename = `testing/livejpgtest.jpg`
+    const page = inpage ?? 471
+    const filename = `testing/vod_dump/${page}.jpg`
+    // const filename = `testing/livejpgtest.jpg`
 
     const mng = new UserNameBinarization(filename, true);
     performance.mark('s')
@@ -92,8 +92,8 @@ async function objectTest () {
     
     buffer.setPixel(10, 10, Color.RED)
 
-    let [fileObj, file_ext] = [{toPNG:true}, '.png']
-    sharpImg.toSharp(false, fileObj).toFile(testingFolder+'test_buffer'+file_ext)
+    let [fileObjProps, file_ext] = [{toPNG:true}, '.png']
+    sharpImg.toSharp(fileObjProps).toFile(testingFolder+'test_buffer'+file_ext)
 
     // Red pixel should show in the top-left corner
 }
@@ -105,7 +105,7 @@ async function userCountTest() {
     // let sharpImg = new SharpImg(filename).crop({x:191, y:9, w:107, h:28})
     let sharpImg = new SharpImg(filename)
     let buffer = await sharpImg.buildBuffer()
-    let imgBuffer = await sharpImg.toSharp(true, {toPNG:true}).toBuffer()
+    let imgBuffer = await sharpImg.toSharp({toPNG:true, scaleForOCR:true}).toBuffer()
     // sharpImg.toSharp(true, {toPNG:true}).toFile('test.png')
 
     const mas = new MarblesAppServer()
@@ -146,7 +146,7 @@ async function numberRead() {
         }
     }
 
-    new SharpImg(null, outBuffer).toSharp(false, {toPNG:true}).toFile(testingFolder+'oneLet.png')
+    new SharpImg(null, outBuffer).toSharp({toPNG:true}).toFile(testingFolder+'oneLet.png')
 }
  function math_range_check () {
 
@@ -157,7 +157,7 @@ async function numberRead() {
 async function test_userbox_cropnbin(inpage, inuser) {
     const page = inpage ?? 710;
     const user = inuser ?? 10;
-    const filename = `testing/vod_dump/${page}.png`
+    const filename = `testing/vod_dump/${page}.jpg`
 
     const mng = new UserNameBinarization(filename, true);
     performance.mark('s')
@@ -170,13 +170,13 @@ async function test_userbox_cropnbin(inpage, inuser) {
         return
     }
     const userCropImg = await mng.cropTrackedUserName(user, userObj.length)
-    userCropImg.toSharp(null, {toPNG:true}).toFile(`testing/indv_user_crop.png`)
+    userCropImg.toSharp({toPNG:true}).toFile(`testing/indv_user_crop.png`)
     // userCropImg.buildBuffer()
     
     // bin image
     mng.debug = true
     const binUserImg = await mng.binTrackedUserName([userCropImg])
-    new SharpImg(null, binUserImg).toSharp(true, {toPNG:true}).toFile(`testing/indv_user_bin.png`)
+    new SharpImg(null, binUserImg).toSharp({toPNG:true, scaleForOCR:true}).toFile(`testing/indv_user_bin.png`)
 }
 
 async function test_colorspace_rot() {
@@ -198,7 +198,7 @@ async function test_validate_image() {
 // TESTING HERE
 (async () => {
 
-    // await test_validate_image()
+    await test_validate_image()
 
     // math_range_check()
 
@@ -221,8 +221,10 @@ async function test_validate_image() {
     // await old_bin(page);
 
     // new bin check
-    await test_userbox_appear_n_len(page)
-    // await test_userbox_cropnbin(page, user)
+    // await test_userbox_appear_n_len(page)
+    await test_userbox_cropnbin(page, user)
+    // for (let i=0; i<23; i++ )
+    //     await test_userbox_cropnbin(page, i)
     
     // Done! Print success
     console.log("Success! Everything looks good!")

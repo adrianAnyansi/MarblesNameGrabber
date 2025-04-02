@@ -97,12 +97,12 @@ server.get('/find/:userName', (req, res) => {
     return res.json(app_server.find(reqUsername))
 })
 
-server.get('/user_find/:userId', (req, res) => {
-    const reqUsername = req.params.userId
-    // console.debug(`User-Find user ${reqUsername}`)
+// server.get('/user_find/:userId', (req, res) => {
+//     const reqUsername = req.params.userId
+//     // console.debug(`User-Find user ${reqUsername}`)
 
-    return res.json(app_server.userFind(reqUsername))
-})
+//     return res.json(app_server.userFind(reqUsername))
+// })
 
 /**
  * Return image to request, or 404 if not found
@@ -114,11 +114,12 @@ server.get(['/img/:userName', '/fullimg/:id'], (req, res) => {
         const reqUsername = req.params.userName
         console.debug(`Returning user image ${reqUsername}`)
         userImage = app_server.getImage(reqUsername)
-    } else {
-        const reqId = req.params.id
-        console.debug(`Returning image num: ${reqId}`)
-        userImage = app_server.getFullImg(reqId)
     }
+    // } else {
+    //     const reqId = req.params.id
+    //     console.debug(`Returning image num: ${reqId}`)
+    //     userImage = app_server.getFullImg(reqId)
+    // }
 
     // return image if exists
     if (userImage) {

@@ -26,26 +26,19 @@ The goal is every single name should be tracked even if I can't read it or get a
 
 # Focus today
 ---
-After a long and difficult fight with PNG buffers, I got it under control I think.
+Jpeg & png work.
+I want to do a perf test on prod (I can lower the FPS but will node handle the stress?)
+I also need to think about OCR for that test; perhaps I should just do that next
 
-- Ok I've done the non-alpha, time to test the jpg output :O
+Did the process lag, now want to do processing & OCR lag
+Then move OCR so I can disable it on prod
 
-- Use non-alpha for binarization so I can use other formats
+
 - Move OCR to a class so its reusable (especially for lambda)
-- Upgrade debug/test for better testing 
+- Upgrade debug/test routes for better testing 
 - More clean-up and polish for release
 
 
-## Bugs
-
-
-
-I gotta make some refactors and underlying changes so some things are easier to do
-- Based on prod, move to jpeg convert and update ffmpeg
-- write debug/test so I can run live-video testing and check against a list on file
-- fix the subset list bug? (I think the edge-case just has to exist imo, unless I prio closer offset somehow)
-- clean up server stuff
-- update calls
 
 ## Think about
 - When to do temporal, and is this accurate?
@@ -71,6 +64,34 @@ I gotta make some refactors and underlying changes so some things are easier to 
 
 # Long thoughts
 ---
+## Overall
+
+There are a couple things to focus on that branch out
+I want to write them so I can prioritize and stop getting distracted
+
+- OCR
+    - Compart OCR and push into class
+    - Add queuing to native OCR
+    - Deprecated Node native worker?
+- Custom OCR
+    - Write demo OCR and time against current
+- Binarization
+    - Reduce time for binarization to complete, ~9-20ms (actually goes down with caching)
+    - Fix bug with blue BG overriding colorSpace?
+    - Clean-up old code
+- Unit-testing
+    - Add a unittest framework for a bit of speed and sanity
+- Server
+    - Clean-up server routes
+    - Deprecate debug/test
+    - Figure out some framework to start server, send test url, and test names
+    - Clean-up internal variables
+- Name-run
+    - Work on overlap detection and handling
+    - Work on end of read state detection
+- Frame
+    - Work on length matching
+
 ## Deprecating prediction
 Lets talk about the prediction logic.
 Why did I want the prediction in the first place? What purpose was it made for? Two reasons.

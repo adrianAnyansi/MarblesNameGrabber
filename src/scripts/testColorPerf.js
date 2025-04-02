@@ -37,3 +37,9 @@ for (let color of testArr) {
     color.toString()
 }
 console.log(`Native tostring: Finished in ${performance.now() - start}ms`)
+
+start = performance.now()
+for (let color of testArr) {
+    color[0] * 100 + color[1] * 10 + color[2]
+}
+console.log(`Multiply: Finished in ${performance.now() - start}ms`)
