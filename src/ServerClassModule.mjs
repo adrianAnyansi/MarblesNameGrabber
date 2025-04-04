@@ -1,3 +1,4 @@
+import { msToHUnits } from "./DataStructureModule.mjs"
 import { SERVER_STATE_ENUM } from "./MarblesAppServer.mjs"
 
 /** Contains all the image format info for this program */
@@ -309,7 +310,8 @@ export class StreamImageTracking {
 
 export class ServerStatus {
 
-    static DEFAULT_VIEWER_INTERVAL = 1_000 * 3
+    static DEFAULT_VIEWER_INTERVAL = 1_000 * 3;
+    static LAG_TIME_MAX = 20;
 
     constructor () {
         /** @type {string} current server state */
@@ -327,11 +329,18 @@ export class ServerStatus {
         /** @type {Date} race start time */
         this.started_race_ts = null
 
+        /** @type {number[]} how long on average to identify a user from first appearance */
+        this.lagTimeArray = []
+
         /** @type {number} number of viewers on the site */
         this.site_viewers = 0
-        /** @type {number} total number of viewers on the site */
-        this.total_viewers = 0
+        // /** @type {number} total number of viewers on the site */
+        // this.total_viewers = 0
+        /** @type {Date[]} just track user date */
         this.monitoredViewers = []
+        /** @type {Set<string>} list of all viewer ips */
+        this.allViewers = new Set()
+
     }
 
     /** Clear all tracked values */
@@ -378,9 +387,37 @@ export class ServerStatus {
         return this.complete || this.stopped
     }
 
-    jsonReadyObj () {
+    get currentViewers () {
+        return this.monitoredViewers.length
+    }
+
+    /**
+     * Get amount of streaming time
+     */
+    get streamingTime () {
+        if (this.started_race_ts) {
+            if (this.ended_read_ts)
+                return msToHUnits(Date.now() - this.started_race_ts)
+            else
+                return msToHUnits(this.ended_read_ts - this.started_race_ts)
+        } else {
+            return 'X'
+        }
+    }
+
+    addUserReconLagTime (time) {
+        this.lagTimeArray.push(time)
+
+        while (this.lagTimeArray.length > ServerStatus.LAG_TIME_MAX) {
+            this.lagTimeArray.shift()
+        }
+    }
+
+    toJSON () {
         return {
-            'viewers': this.site_viewers
+            'viewers': this.currentViewers,
+            'total_viewers': this.allViewers.size(),
+            'marbles_date': this.started_game_ts
         }
     }
     

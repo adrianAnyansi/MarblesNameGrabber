@@ -26,18 +26,19 @@ The goal is every single name should be tracked even if I can't read it or get a
 
 # Focus today
 ---
-Jpeg & png work.
-I want to do a perf test on prod (I can lower the FPS but will node handle the stress?)
-I also need to think about OCR for that test; perhaps I should just do that next
+More testing & refactoring, trying to get things to testing/debugging for accuracy.
 
-Did the process lag, now want to do processing & OCR lag
-Then move OCR so I can disable it on prod
+User lag time
+- when image first showed on screen - save this to user object
+- user was first recognized to be visible - makes more sense as thats when user first sees their name (if possible)
+- user OCR finally returned
 
+I have all the ingredients for prod test, but want a bit more hardening
+also Lambda should work so I can test without cpu load if necessary, then I only do 1 pass
 
-- Move OCR to a class so its reusable (especially for lambda)
+OCR manager is done so once Lambda is tested, I can write the new lambda code to be much better
+
 - Upgrade debug/test routes for better testing 
-- More clean-up and polish for release
-
 
 
 ## Think about
@@ -46,21 +47,15 @@ Then move OCR so I can disable it on prod
     - Just use old check, time-based after first name read
 - See if there's a pattern for name timing
 - How to detect and solve for image compression issues
-- How to detect lag from LIVE (particularly with AWS)
-    - thinking the number of frames per second imo
-- Move OCR out of the server, so I can have a generic class and not 15 million functions
 
 ## Bugs
 ---
-- PNG still has a bug, debug this (header not found, was off by 2)
 
 - Still inaccuracies with offset (negative), usually because there's not enough testing name lengths to test with
 - Really long names offset the !play and don't get read by OCR or length
 - Some lengths are not detectable because the smear for the line is too much
 - sometimes the blue background can override the name and cause a blank read
-    - need to look at the black pixels to determine colour imo
-
-
+    - need to look at the black pixels to determine colour imo?
 
 # Long thoughts
 ---

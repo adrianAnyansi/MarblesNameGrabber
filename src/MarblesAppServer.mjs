@@ -147,7 +147,7 @@ export class MarblesAppServer {
         // Tesseract variables
         // ======================================================
         /** @type {OCRManager} OCR to manage */
-        this.OCRManager = new NativeTesseractOCRManager(10, 
+        this.OCRManager = new NativeTesseractOCRManager(3, 
             this.debug_obj.native_tesseract, true)
 
         /** OCR Worker object */
@@ -164,50 +164,20 @@ export class MarblesAppServer {
 
         // Username Tracking
         // ==================================================
-        /** @type {UsernameTracker} Userlist for server */
-        this.usernameList = new UsernameTracker() 
+        // /** @type {UsernameTracker} Userlist for server */
+        // this.usernameList = new UsernameTracker() 
         /** @type {UsernameAllTracker} Userlist but better */
-        this.usernameAdvObject = new UsernameAllTracker()
+        this.usernameTracker = new UsernameAllTracker()
 
         // Server Variables
         // ================================================
         this.serverStatus_obj = {
             // state: SERVER_STATE_ENUM.STOPPED,   // current state
-            viewers: 0,                         // current viewers on the site
-            interval: 1_000 * 3,                 // interval to refresh status
-            lag_time: 0                         // time behind from 
+            // viewers: 0,                         // current viewers on the site
+            // interval: 1_000 * 3,                 // interval to refresh status
+            // lag_time: 0                         // time behind from 
         }
-        this.monitoredViewers = [] // keep track of viewers on website
 
-    }
-
-    // ---------------
-    // OCR functions
-    // ---------------
-
-    /**
-     * Setup schedulers & workers for OCR reading
-     * @param {Number} workers 
-     * @returns {Promise}
-     */
-    async setupWorkerPool (workers=1) {
-        if (this.OCRScheduler == null)
-            this.OCRScheduler = createScheduler()
-
-        let promList = []
-        while (this.numOCRWorkers < workers) {
-            promList.push(this.addOCRWorker(this.numOCRWorkers++))
-        }
-        
-        if (promList.length == 0) return Promise.resolve(true) // TODO: Worker list of something
-        return Promise.any(promList)
-    }
-
-    /** Terminate workers in scheduler */
-    async shutdownWorkerPool () {
-        this.numOCRWorkers = 0
-        return this.OCRScheduler.terminate()
-        // TODO: Change this to just terminate some workers?
     }
 
     // LAMBDA Functions
@@ -442,21 +412,21 @@ export class MarblesAppServer {
                 }
                 this.imageProcessQueueLoc++
 
-                let retList = this.usernameList.addPage(qdata, qmng.ocr_buffer, qmng.bufferSize, captureDt)
+                let retList = this.usernameTracker.addPage(qdata, qmng.ocr_buffer, qmng.bufferSize, captureDt)
                 if (retList.length == 0)
                     this.emptyListPages += 1
                 else
                     this.emptyListPages = 0
 
                 const processTS = performance.now() - perfCapture;
-                console.debug(`UserList is now: ${this.usernameList.length}, last added: ${retList.at(-1)}. Lag-time: ${msToHUnits(processTS, false)}`)
+                console.debug(`UserList is now: ${this.usernameTracker.length}, last added: ${retList.at(-1)}. Lag-time: ${msToHUnits(processTS, false)}`)
                 this.imageProcessTime.push(processTS);
                 while (this.imageProcessTime.length > 10)
                     this.imageProcessTime.shift();
                 this.serverStatus.lag_time = msToHUnits(
                     this.imageProcessTime.reduce((p,c) => p+c, 0)/this.imageProcessTime.length, true, 2, 's');
                 
-                if (this.emptyListPages >= MarblesAppServer.EMPTY_PAGE_COMPLETE && this.usernameList.length > 5) {
+                if (this.emptyListPages >= MarblesAppServer.EMPTY_PAGE_COMPLETE && this.usernameTracker.length > 5) {
                     console.log(`${this.emptyListPages} empty frames @ ${funcImgId}; 
                         dumping queue ${this.imageProcessQueue.length} & moving to COMPLETE state.`)
                     this.serverStatus.state = SERVER_STATE_ENUM.COMPLETE
@@ -473,6 +443,7 @@ export class MarblesAppServer {
     /**
      * Handle image before per-frame calculations
      * Stops processing if not available
+     * @param {import('./UtilModule.mjs').ImageLike} imageLike 
      */
     async handleImage(imageLike) {
         if (this.ServerState.notRunning) {
@@ -500,7 +471,7 @@ export class MarblesAppServer {
 
     /** Parse advanced image per frame
      * Need a complex state machine to handle this
-     * @param {*} imageLike 
+     * @param {import('./UtilModule.mjs').ImageLike} imageLike 
      */
     async parseAdvImg(imageLike) {
         
@@ -508,10 +479,6 @@ export class MarblesAppServer {
         performance.mark(frameStartMark);
         
         const mng = new UserNameBinarization(imageLike, false)
-        
-        // mng.getUNBoundingBox([2], {appear:true, length:false})
-        // console.log(`Parsed img ${this.StreamImage.imgs_downloaded}`)
-        // return
 
         // TODO: Rework this and also check for obstructions
         if (this.ServerState.wait) {
@@ -524,10 +491,6 @@ export class MarblesAppServer {
                 return
             }
         }
-
-
-        // Warm-up text recognition
-        // console.debug(`Queuing LIVE image queue: ${this.getTextRecgonQueue()}; total: ${this.usernameAdvObject.usersInOrder.length}`)
 
         // Determine the visible & predicted users on this frame
         // ==============================================================================
@@ -548,7 +511,7 @@ export class MarblesAppServer {
 
         // Get prediction from usernameList
         const setEnterFrame = this.ScreenState.knownScreen
-        let {predictedUsers, offset} = this.usernameAdvObject.predict(processImgId, 
+        let {predictedUsers, offset} = this.usernameTracker.predict(processImgId, 
             {totalUsers:null, predictFullScreen:true}, setEnterFrame)
         
         /** Num of users to use for length check against prediction */
@@ -587,11 +550,11 @@ export class MarblesAppServer {
             ))
 
             if (offsetMatch != null && offsetMatch > 0) {
-                this.usernameAdvObject.shiftOffset(offsetMatch); // update offset
+                this.usernameTracker.shiftOffset(offsetMatch); // update offset
                 // FYI this is a load-bearing semi-colon due to destructure object {o1, o2} below
 
                 // Predicted users is inaccurate, recalc
-                ({predictedUsers, offset} = this.usernameAdvObject.predict(processImgId, 
+                ({predictedUsers, offset} = this.usernameTracker.predict(processImgId, 
                     {totalUsers:null, predictFullScreen:true}, setEnterFrame))
             } else if (offsetMatch < 0) {
                 console.error("Offset is negative! This is a DO NOTHING", offsetMatch)
@@ -662,7 +625,7 @@ export class MarblesAppServer {
         if (this.debug_obj.screen_state_log && 
             (this.ScreenState.shouldDisplaySmth || post_match_len_checks > 0)) {
             console.log(
-                `Frame_num ${processImgId.toString().padStart(5, ' ')} | Offset: ${offsetMatch} | User: ${this.usernameAdvObject.count}\n`+
+                `Frame_num ${processImgId.toString().padStart(5, ' ')} | Offset: ${offsetMatch} | User: ${this.usernameTracker.count}\n`+
                 `V: ${this.ScreenState.visibleScreenFrame.at(-1)}`+'\n'+
                 `P: ${this.ScreenState.predictedFrame.at(-1)}`
             )
@@ -681,22 +644,24 @@ export class MarblesAppServer {
      */
     async queueIndividualOCR (user, visibleIdx, mng, processImgId) {
         // crop image
-        // TODO: Time/Queue this OCR
         user.ocr_processing = true;
+        const binPerf = performance.now()
         const sharpBuffer = await mng.cropTrackedUserName(visibleIdx, user.length)
         // console.log(`Queuing OCR user vidx: ${visibleIdx} index ${user.index}`)
 
         const binUserImg = await mng.binTrackedUserName([sharpBuffer])
+        console.log(`bin took ${performance.now() - binPerf}`)
+
         const binSharp = SharpImg.FromRawBuffer(binUserImg).toSharp({toJPG:true, scaleForOCR:true})
         const binBuffer = await binSharp.toBuffer()
-
 
         // await this.nativeTesseractProcess(pngBuffer)
         await this.OCRManager.queueOCR(binBuffer)
         .then( ({data, info, jobId, time}) => {
 
+            this.ServerState.addUserReconLagTime(time)
             if (data.lines.length == 0) {
-                console.warn('got nothing for @ '+user.index)
+                console.warn(`Got nothing for #${processImgId} @ ${user.index}`)
                 return
             }
             for (const line of data.lines) {
@@ -706,7 +671,7 @@ export class MarblesAppServer {
                 user.addImage(sharpBuffer.toSharp({toJPG:true}),
                     text,
                     confidence);
-            }  
+            }
             
             console.log(`Recongized name #${processImgId} @ ${user.index} as ${user.name} conf:${user.confidence.toFixed(1)}% in ${time.toFixed(0)}ms`)
         })
@@ -784,19 +749,6 @@ export class MarblesAppServer {
         return this.lambdaClient.send(command)
         .then(resp => resp['StatusCode'])
 
-    }
-    
-    /**
-     * Get current OCR image queue
-     * @returns {Number}
-     */
-    getTextRecgonQueue () {
-        if (this.uselambda)
-            return this.lambdaQueue
-        else if (this.OCRScheduler)
-            return this.OCRScheduler.getQueueLen()
-        else
-            return 0
     }
 
     /**
@@ -888,56 +840,6 @@ export class MarblesAppServer {
                 throw err
             }
         )
-    }
-
-
-    // Tesseract.js
-    /**
-     * Create new worker and add to scheduler
-     * @param {*} worker_num worker id
-     * @returns 
-     */
-    async addOCRWorker (worker_num) {
-        console.debug(`Creating Tesseract worker ${worker_num}`)
-
-        const options = {}
-        if (this.debugTesseract) {
-            options["logger"] = msg => console.debug(msg)
-            options["errorHandler"]  = msg => console.error(msg)
-        }
-
-        let tesseractWorker = await createWorker(options)
-        await tesseractWorker.loadLanguage('eng')
-        await tesseractWorker.initialize('eng');
-        await tesseractWorker.setParameters({
-            tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQKRSTUVWXYZ_0123456789', // only search a-z, _, 0-9
-            preserve_interword_spaces: '0', // discard spaces between words
-            tessedit_pageseg_mode: '6',      // read as vertical block of uniform text
-            // tessedit_pageseg_mode: '11',      // read individual characters (this is more likely to drop lines),
-            // tessjs_create_hocr: "0",
-            // tessjs_create_tsv: "0",
-            // tessjs_create_box: "1",
-            // tessjs_create_unlv: "0",
-            // tessjs_create_osd: "0"
-        })
-
-        console.debug(`Tesseract Worker ${worker_num} is built & init`)
-        this.OCRScheduler.addWorker(tesseractWorker)
-        return tesseractWorker
-
-    }
-
-    /**
-     * Schedule text recognition on the OCR scheduler
-     * @param {*} imageLike 
-     * @param {*} options 
-     * @returns 
-     */
-    async scheduleTextRecogn (imageLike, options) {
-        // Create OCR job on scheduler
-        if (!this.OCRScheduler) 
-            throw Error('OCRScheduler is not init')
-        return this.OCRScheduler.addJob('recognize', imageLike, options)
     }
 
     // --------------------------------------------------------------------
@@ -1090,62 +992,48 @@ export class MarblesAppServer {
         console.log("Clearing server state")
         this.StreamImage.reset()
         this.ServerState.clear()
-        this.usernameList.clear()
-        this.usernameAdvObject.clear()
+        this.usernameTracker.clear()
 
         return "Cleared server state."
     }
 
-    /** User ping for getting server status */
+    /** 
+     * User ping for getting server status 
+     * @param {*} req request
+     * @returns {Object} user-status object
+     */
     status (req) {
 
-        // TODO: Rewrite this
-        // TODO: Add up the total amount of people visiting
-
         const curr_dt = Date.now()
-        while (this.monitoredViewers && this.monitoredViewers[0] < curr_dt)
-            this.monitoredViewers.shift()
+        this.ServerState.allViewers.add(req.ip)
+        
+        while (this.ServerState.monitoredViewers.at(0) < curr_dt + 300)
+            this.ServerState.monitoredViewers.shift()
 
         if (req.query?.admin != undefined) {
-            // Dont add anything 
             // TODO: Use a different page + endpoint
         } else {
             // Track viewers
-            this.monitoredViewers.push(Date.now() + this.serverStatus_obj.interval) // TODO: Link client to this value
-        }
-        
-        this.ServerState.site_viewers = this.monitoredViewers.length
-        
-        let streaming_time = 'X'
-        if (this.ServerState.started_read_ts) {
-            if (this.ServerState.ended_read_ts)
-                streaming_time = msToHUnits(this.ServerState.ended_read_ts - this.ServerState.started_read_ts)
-            else
-                streaming_time = msToHUnits(Date.now() - this.serverStatus_obj.started_read_ts)
+            this.ServerState.monitoredViewers.push(Date.now() + ServerStatus.DEFAULT_VIEWER_INTERVAL) // TODO: Link client to this value
         }
 
         return {
-            'status': this.serverStatus_obj,
-            'job_queue': this.getTextRecgonQueue(),
-            'streaming': streaming_time,
-            'userList': this.usernameList.status(),
+            'status': this.ServerState.toJSON(),
+            'streaming': this.ServerState.streamingTime,
+            'userList': this.usernameTracker.status(),
         }
     }
 
     find (reqUsername) {
-        return this.usernameList.find(reqUsername)
+        return this.usernameTracker.find(reqUsername)
     }
 
     getImage (reqUsername) {
-        return this.usernameList.getImage(reqUsername)
+        return this.usernameTracker.getImage(reqUsername)
     }
 
-    // getFullImg(reqId) {
-    //     return this.usernameList.getImageFromFullList(reqId)
-    // }
-
     list () {
-        return this.usernameAdvObject.getReadableList()
+        return this.usernameTracker.getReadableList()
     }
 
     async debug (filename, withLambda, waitTest=false, raceTest=false) {
@@ -1155,7 +1043,7 @@ export class MarblesAppServer {
         .then( async ({mng, data}) => {
             // TODO: Fix resync
             console.log("Got data:", data)
-            let retList = await this.usernameList.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false), mng.bufferSize, Date.now())
+            let retList = await this.usernameTracker.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false), mng.bufferSize, Date.now())
             return {list: retList, debug:true}
         })
         

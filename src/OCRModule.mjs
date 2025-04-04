@@ -25,8 +25,7 @@ export class OCRManager {
     /**
      * Warm up N number of workers for this OCR
      */
-    warmUp(num_workers) {
-        this.workers = num_workers
+    warmUp() {
     }
 
     /**
@@ -160,7 +159,7 @@ export class NativeTesseractOCRManager extends OCRManager {
         /** @type {Promise<OCRResponse>} Promise maintaining the defer queue */
         this.queuePromise = null
 
-        /** Output the HOCR functions */
+        /** Output the HOCR  */
         this.hocr = hocr
     }
 
@@ -295,4 +294,182 @@ export class NativeTesseractOCRManager extends OCRManager {
         return retPromise
     }
 
+}
+
+export class LambdaOCRManager extends OCRManager {
+
+    static NAME = "LambdaTesseract"
+
+    constructor (concurrency=null, debug=false, hocr=true) {
+        super(concurrency, debug)
+
+        // this.lambdaQueue = 0
+        this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
+        this.lambdaQueueNum = 0
+
+        this.hocr = hocr
+    }
+    
+    get queueSize () {
+        return this.lambdaQueue
+    }
+
+    warmUp() {
+        let lambda_id = 0
+        while (lambda_id < workers) {
+            this.sendWarmupLambda(`warmup ${lambda_id++}`)
+        }
+    }
+
+    /** Send Warmup request to lambda */
+    async sendWarmupLambda(jobId='test') {
+
+        const payload = {
+            buffer: "",
+            jobId: jobId,
+            warmup: true
+        }
+
+        const input = { // Invocation request
+            FunctionName: "OCR-on-Marbles-Image",
+            InvocationType: "RequestResponse",
+            LogType: "Tail",
+            Payload: JSON.stringify(payload), // stringified value
+        }
+
+        const command = new InvokeCommand(input)
+        console.debug(`Sending lambda warmup ${jobId}`)
+        return this.lambdaClient.send(command)
+            .then(resp => resp['StatusCode'])
+
+    }
+
+    
+    queueOCR (input_buffer, jobId) {
+        this.lambdaQueueNum++
+        const prom = this.sendImgToLambda(input_buffer)
+        prom.finally(_ => this.lambdaQueueNum--)
+        return prom
+    }
+
+    /**
+     * Sends image file to lambda function, which returns a payload containing the tesseract information
+     * 
+     * @param {Buffer} input_buffer An buffer containing a image
+     * @returns {Promise} Promise containing lambda result with tesseract info. Or throws an error
+     */
+    async sendImgToLambda(input_buffer, imgMetadata, info, jobId='test', lambdaTest=false) {
+        const payload = {
+            buffer: input_buffer.toString('base64'),
+            imgMetadata: imgMetadata,
+            info: info,
+            jobId: jobId,
+            test: lambdaTest
+        }
+
+        const input = { // Invocation request
+            FunctionName: "OCR-on-Marbles-Image",
+            InvocationType: "RequestResponse",
+            LogType: "Tail",
+            // ClientContext: "Context",
+            Payload: JSON.stringify(payload), // stringified value
+            // Qualifier: "Qualifier"
+        }
+
+        
+        const command = new InvokeCommand(input)
+        if (this.debug)
+            console.debug(`Sending lambda request ${jobId}`)
+        let result = await this.lambdaClient.send(command)
+
+        if (result['StatusCode'] != 200)
+            throw Error(result["LogResult"])
+        else {
+            let resPayload = JSON.parse(Buffer.from(result["Payload"]).toString())
+            // let {data, info, jobId} = resPayload
+            return resPayload
+        }
+    }
+}
+
+/**
+ * Not mantaining this, but just want to keep my old code in here
+ */
+export class NodeOCRManager extends OCRManager {
+
+    static NAME = "NodeOCRManager"
+
+    /**
+     * Setup schedulers & workers for OCR reading
+     * @param {Number} workers 
+     * @returns {Promise}
+     */
+    async setupWorkerPool (workers=1) {
+        if (this.OCRScheduler == null)
+            this.OCRScheduler = createScheduler()
+
+        let promList = []
+        while (this.numOCRWorkers < workers) {
+            promList.push(this.addOCRWorker(this.numOCRWorkers++))
+        }
+        
+        if (promList.length == 0) return Promise.resolve(true) // TODO: Worker list of something
+        return Promise.any(promList)
+    }
+
+    /** Terminate workers in scheduler */
+    async shutdownWorkerPool () {
+        this.numOCRWorkers = 0
+        return this.OCRScheduler.terminate()
+        // TODO: Change this to just terminate some workers?
+    }
+
+    /**
+     * Schedule text recognition on the OCR scheduler
+     * @param {*} imageLike 
+     * @param {*} options 
+     * @returns 
+     */
+    async scheduleTextRecogn (imageLike, options) {
+        // Create OCR job on scheduler
+        if (!this.OCRScheduler) 
+            throw Error('OCRScheduler is not init')
+        return this.OCRScheduler.addJob('recognize', imageLike, options)
+    }
+
+    // Tesseract.js
+    /**
+     * Create new worker and add to scheduler
+     * @param {*} worker_num worker id
+     * @returns 
+     */
+    async addOCRWorker (worker_num) {
+        console.debug(`Creating Tesseract worker ${worker_num}`)
+
+        const options = {}
+        if (this.debugTesseract) {
+            options["logger"] = msg => console.debug(msg)
+            options["errorHandler"]  = msg => console.error(msg)
+        }
+
+        let tesseractWorker = await createWorker(options)
+        await tesseractWorker.loadLanguage('eng')
+        await tesseractWorker.initialize('eng');
+        await tesseractWorker.setParameters({
+            tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQKRSTUVWXYZ_0123456789', // only search a-z, _, 0-9
+            preserve_interword_spaces: '0', // discard spaces between words
+            tessedit_pageseg_mode: '6',      // read as vertical block of uniform text
+            // tessedit_pageseg_mode: '11',      // read individual characters (this is more likely to drop lines),
+            // tessjs_create_hocr: "0",
+            // tessjs_create_tsv: "0",
+            // tessjs_create_box: "1",
+            // tessjs_create_unlv: "0",
+            // tessjs_create_osd: "0"
+        })
+
+        console.debug(`Tesseract Worker ${worker_num} is built & init`)
+        this.OCRScheduler.addWorker(tesseractWorker)
+        return tesseractWorker
+
+    }
 }

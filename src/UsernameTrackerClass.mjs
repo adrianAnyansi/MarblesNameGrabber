@@ -7,7 +7,7 @@
 import sharp from "sharp"
 import { LimitedList } from "./DataStructureModule.mjs"
 import { ImageBuffer, Mathy, PixelMeasure } from "./UtilModule.mjs"
-import { UserNameBinarization } from "./UserNameBinarization.mjs"
+import { UserNameBinarization } from "./UsernameBinarization.mjs"
 
 class Username {
     /**
@@ -638,7 +638,7 @@ export class TrackedUsername {
         /** @type {UserImage<>} images of the user */
         this.partialImgList = []
 
-        /** @type {UserImage} Image to display to user */
+        /** @type {ArrayBuffer} Image to display to user */
         this.bestImg = null
 
         /** @type {Set<string>} set of usernames that are at this index */
@@ -700,7 +700,7 @@ export class TrackedUsername {
 
     /**
      * Add new image to the user
-     * @param {ImageBuffer} jpgBuffer 
+     * @param {Buffer} jpgBuffer 
      * @param {string} name 
      * @param {number} confidence 
      */
@@ -730,6 +730,18 @@ export class TrackedUsername {
             this.confidence < 85
         )
     }
+
+    toJSON () {
+        return {
+            name: this.name,
+            len: this.length,
+            index: this.index,
+            conf: this.confidence,
+            aliases: Array.from(this.aliases.keys()),
+            enterTime: this.enterFrameTime,
+            exitingTime: this?.debugexitFrame
+        }
+    }
 }
 
 /**
@@ -749,7 +761,7 @@ export class UsernameAllTracker {
     }
 
     constructor () {
-        /** @type {Map<string, Username>} hash of all names */
+        /** @type {Map<string, TrackedUsername>} hash of all names */
         this.hash = new Map()       // hash of names
         /** @type {Array<TrackedUsername>} */
         this.usersInOrder = []  // List of UserObj in order
@@ -833,7 +845,7 @@ export class UsernameAllTracker {
      * Finds the best match for 2 lists of users with same length
      * Match minimum is a percentage of the testLength, current 70%
      * @param {TrackedUsername[]} predictedUsers 
-     * @param {import('./UserNameBinarization.mjs').TrackedUsernameDetection[]} testLenList 
+     * @param {import('./UsernameBinarization.mjs').TrackedUsernameDetection[]} testLenList 
      */
     static findBestShiftMatch (predictedUsers, testLenList) {
 
@@ -910,30 +922,57 @@ export class UsernameAllTracker {
         return this.usersInOrder.at(relIdx)
     }
 
+    /**
+     * Move offset (must be positive)
+     * @param {number} positiveShift 
+     */
     shiftOffset (positiveShift) {
         this.currentScreenFirstIndex += positiveShift;
     }
 
+    /**
+     * Retrieve the best image for this username
+     */
+    getImage(username) {
+        if (this.hash.has(username)) {
+            const userObj = this.hash.get(username)
+            const imgObj = userObj.bestImg
+            return imgObj
+        }
+    }
+
+    /**
+     * Get image by index for testing*
+     * @param {number} userIndex 
+     */
+    getImageByIndex(userIndex) {
+        return this.usersInOrder[userIndex].bestImg
+    }
+
+    /** Clears the usernames and hash */
     clear() {
         this.usersInOrder = [];
 
         this.hash.clear()
 
-        // TODO: Clear multiple things properly
+        // NOTE: Anything else to clear? The entire state is in username now
     }
 
     getReadableList () {
-        return this.usersInOrder.map(username => {
-            return {
-            name: username.name,
-            len: username.length,
-            index: username.index,
-            conf: username.confidence,
-            aliases: Array.from(username.aliases.keys())
-        }})
+        return this.usersInOrder.map(username => username.toJSON())
     }
 
     get count() {
         return this.usersInOrder.length
+    }
+
+    status () {
+        return {
+            'user_count': this.usersInOrder.length,
+            'read_pages': this.read_imgs,
+            'unverified': {
+                'users': this.usersInOrder.map(user => user?.name != null)
+            }
+        }
     }
 }
