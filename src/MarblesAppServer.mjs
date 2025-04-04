@@ -5,7 +5,7 @@ import { ChildProcess, spawn } from 'node:child_process'
 import axios from 'axios'
 import fs from 'fs/promises'
 
-import { UserNameBinarization } from './UserNameBinarization.mjs'
+import { UserNameBinarization } from './UsernameBinarization.mjs'
 import {UsernameAllTracker, UsernameTracker, TrackedUsername} from './UsernameTrackerClass.mjs'
 
 import { createWorker, createScheduler } from 'tesseract.js'
@@ -16,6 +16,7 @@ import { setTimeout } from 'node:timers/promises'
 import { XMLParser } from 'fast-xml-parser'
 import { SharpImg } from './UtilModule.mjs'
 import { StreamingImageBuffer, ServerStatus, StreamImageTracking, ScreenState } from './ServerClassModule.mjs'
+import { NativeTesseractOCRManager, OCRManager } from './OCRModule.mjs'
 
 /** Server state enum */
 export const SERVER_STATE_ENUM = {
@@ -69,6 +70,7 @@ export class MarblesAppServer {
     /** Determines some programs/settings */
     static ENV = 'dev' // set from router
 
+    // TODO: Change tesseract cmd in object
     static TESSERACT_LOC = String.raw`C:\Program Files\Tesseract-OCR\tesseract.exe`
     
     // Needs to handle both linux for prod and windows for dev
@@ -83,37 +85,38 @@ export class MarblesAppServer {
     static DEFAULT_STEAM_URL = LIVE_URL
 
     constructor () {
-        this.serverStatus_obj = {
-            state: SERVER_STATE_ENUM.STOPPED,   // current state
-            viewers: 0,                         // current viewers on the site
-            interval: 1_000 * 3,                 // interval to refresh status
-            lag_time: 0                         // time behind from 
-        }
-        this.ScreenState = new ScreenState()
-        this.StreamImage = new StreamImageTracking()
-        this.ServerState = new ServerStatus()
+        // Server state objects
 
+        /** Format to output images to ffmpeg */
+        this.streamImgFormat = StreamingImageBuffer.JPG_FORMAT
+
+        /** @type {ScreenState} Keep track of state of screen during parsing */
+        this.ScreenState = new ScreenState()
+        /** @type {StreamImage} used to parse streaming buffer into images */
+        this.StreamImage = new StreamImageTracking(this.streamImgFormat)
+        /** @type {ServerStatus} Track overall server status for outside observation */
+        this.ServerState = new ServerStatus()
+        
+        // Debug variables ===========================================
         this.debug_obj = {
-            tesseract: false,
+            native_tesseract: false,
+            tesseract: true,
             process: false,
             lambda: false,
             vod_dump: false,
-            screenStateLog: false,
+            screen_state_log: false,
+            fps: false,
         }
 
         // debug variables
         this.debugTesseract = false;
-        this.debugProcess = false;
         this.debugLambda = false;
-        /** enable twitch monitoring */
-        this.enableMonitor = false;
 
         // Processors & Commands
         // ================================
         /** Streamlink command-line */
         this.streamlinkCmd = [MarblesAppServer.STREAMLINK_LOC, MarblesAppServer.DEFAULT_STEAM_URL, 'best', '--stdout']
-        /** Format to output images to ffmpeg */
-        this.streamImgFormat = StreamingImageBuffer.JPG_FORMAT
+        
         /** ffmpeg command-line */
         this.ffmpegCmd = [MarblesAppServer.FFMPEG_LOC, '-re', '-i','pipe:0', '-f','image2pipe', 
                             '-c:v', ...this.streamImgFormat[1],
@@ -127,26 +130,29 @@ export class MarblesAppServer {
         this.streamlinkProcess = null
         /** @type {ChildProcess} Node process for ffmpeg */
         this.ffmpegProcess = null
-
-        // Tesseract variables
-
-        /** OCR Worker object */
-        this.OCRScheduler = null
-        this.numOCRWorkers = 0
-
-        /** @type {UsernameTracker} Userlist for server */
-        this.usernameList = new UsernameTracker() 
-        /** @type {UsernameAllTracker} Userlist but better */
-        this.usernameAdvObject = new UsernameAllTracker()
-
-
-        // Twitch tokens
+        
+        // Twitch tokens & vars
+        // ==============================================
+        /** enable twitch monitoring */
+        this.enableTwitchMonitor = false;
         this.twitch_access_token = null
         this.game_type_monitor_interval = null
         this.broadcaster_id = TWITCH_DEFAULT_BROADCASTER_ID
         this.last_game_name = null
 
-        this.monitoredViewers = [] // keep track of viewers on website
+        // Start up the Twitch game monitor
+        if (this.enableTwitchMonitor)
+            this.setupTwitchMonitor()
+
+        // Tesseract variables
+        // ======================================================
+        /** @type {OCRManager} OCR to manage */
+        this.OCRManager = new NativeTesseractOCRManager(10, 
+            this.debug_obj.native_tesseract, true)
+
+        /** OCR Worker object */
+        this.OCRScheduler = null
+        this.numOCRWorkers = 0
 
         // Lambda state
         if (this.debugLambda)  AWS_LAMBDA_CONFIG["logger"] = console
@@ -156,9 +162,23 @@ export class MarblesAppServer {
         this.lambdaClient = null
         this.lambdaQueue = 0    // Keep track of images sent to lambda for processing
 
-        // Start up the Twitch game monitor
-        if (this.enableMonitor)
-            this.setupTwitchMonitor()
+        // Username Tracking
+        // ==================================================
+        /** @type {UsernameTracker} Userlist for server */
+        this.usernameList = new UsernameTracker() 
+        /** @type {UsernameAllTracker} Userlist but better */
+        this.usernameAdvObject = new UsernameAllTracker()
+
+        // Server Variables
+        // ================================================
+        this.serverStatus_obj = {
+            // state: SERVER_STATE_ENUM.STOPPED,   // current state
+            viewers: 0,                         // current viewers on the site
+            interval: 1_000 * 3,                 // interval to refresh status
+            lag_time: 0                         // time behind from 
+        }
+        this.monitoredViewers = [] // keep track of viewers on website
+
     }
 
     // ---------------
@@ -205,133 +225,6 @@ export class MarblesAppServer {
         }
     }
 
-    static XML_PARSER = new XMLParser({ignoreAttributes:false});
-
-    /**
-     * @param {Buffer} imgBinBuffer
-     * @returns {Promise<>} tesseractData output
-     * Native tesseract process */
-    async nativeTesseractProcess(imgBinBuffer) {
-        // console.debug(`Running native Tesseract process`)
-        const tessProcess = spawn(this.tesseractCmd, TESSERACT_ARGS, {
-            stdio: ["pipe", "pipe", "pipe"]
-        })          //stdin //stdout //stderr
-
-        tessProcess.stderr.on('data', (data) => {
-            const stringOut = data.toString()
-            console.error("Tesseract [ERR]:", stringOut)
-        })
-        
-        let resolve, reject;
-        const retPromise = new Promise((res, rej) => {
-            resolve = res;
-            reject = rej
-        });
-
-        
-        tessProcess.on('close', () => {
-            // console.warn(`Tesseract closed rn`)
-            reject()
-        })
-
-        let outputText = ""
-
-        tessProcess.stdout.on('data', (buffer) => {
-            outputText += buffer.toString();
-        });
-
-        tessProcess.stdout.on('end', () => {
-            // This should be the XML format HOCR
-            // Parsing into a usable line/bbox/symbol for the final text
-            let tesseractData = this.parseHOCRResponse(outputText)
-            // let tesseractData = outputText
-
-            // I don't know what's actually here so just say you got it
-            // console.warn(`Tesseract process complete; ${tesseractData}`)
-            resolve({
-                data: tesseractData, 
-                info:"TF is this object for idk"
-            })
-        })
-
-        tessProcess.on('error', err => {
-            console.warn(`Tesseract Err ${err}`)
-            reject()
-        })
-        
-        // put the binarized image to stdin
-        tessProcess.stdin.end(
-            imgBinBuffer
-            // (err) => {
-            //     console.debug("Tesseract bin buffer has been written")
-            // }
-        );
-        // tessProcess.stdin.end()
-
-        return retPromise
-    }
-
-    /** Separating XML Parser so Lambda doesn't have to use it  */
-    parseHOCRResponse(output_text) {
-        const json_obj = MarblesAppServer.XML_PARSER.parse(output_text);
-        let ret_obj = {
-            lines: [],
-            xml:json_obj
-        }
-        
-        // TODO: Throw error if malformed
-
-        function getXMLChildren(xmlNode_s) {
-            if (!xmlNode_s) return []
-            if (Array.isArray(xmlNode_s)) return xmlNode_s
-            return [xmlNode_s]
-        }
-        
-        for (const ocr_page of getXMLChildren(json_obj.html.body.div)) { // this is the page level
-            for (const ocr_carea of getXMLChildren(ocr_page?.div)) { // column level
-                for (const ocr_par of getXMLChildren(ocr_carea?.p)) { // paragraph level
-                    for (const ocr_line of getXMLChildren(ocr_par?.span)) { // line level
-
-                        const currLine = {}
-                        ret_obj.lines.push(currLine)
-                        // For each line, pull the bounding box from title
-                        // TODO: Need to ensure that this is parsed when fields exist, this is naive
-                        const titleAttr = ocr_line["@_title"].split(';')
-                        const bbox_arr = titleAttr[0].split(' ')
-                        const bbox_rect = {
-                            x0: parseInt(bbox_arr[1], 10),
-                            y0: parseInt(bbox_arr[2], 10),
-                            x1: parseInt(bbox_arr[3], 10),
-                            y1: parseInt(bbox_arr[4], 10),
-                        }
-                        currLine.bbox = bbox_rect
-
-                        currLine.text = ""
-                        currLine.confidence = 0;
-                        currLine.char_conf_avg = 0;
-                        currLine.conf = []
-                        for (const ocr_word of getXMLChildren(ocr_line.span)) { // No curr instances of multiple words on 1 line
-                            currLine.confidence = parseInt(ocr_word["@_title"].split(';')[1].trim().split(' ')[1], 10)
-                            for (const ocr_cinfo of getXMLChildren(ocr_word.span)) {
-                                currLine.text += ocr_cinfo["#text"]
-                                // TODO: Also hardcoded attribute text values
-                                const conf = parseInt(ocr_cinfo["@_title"].split(';')[1].trim().split(' ')[1], 10);
-                                currLine.char_conf_avg += conf
-                                currLine.conf.push(ocr_cinfo["#text"])
-                            }
-                            // NOTE: I am ignoring whitespace here. Could add this back if required
-                        }
-                        currLine.char_conf_avg /= currLine.conf.length * 1.3;
-                        if (currLine.confidence < currLine.char_conf_avg)
-                            currLine.confidence = currLine.char_conf_avg
-                    }
-                }
-            }
-        }
-
-        return ret_obj
-    }
-
     // -------------------------
     // Server processing functions
     // -------------------------
@@ -372,44 +265,37 @@ export class MarblesAppServer {
 
         
         // On Streamlink start, make log to request
-        if (this.debugProcess) {
-            this.streamlinkProcess.stderr.on('data', (data) => {
-                console.log(data.toString())
-            })
-        } else {
-            let outputBuffer = false
-            this.streamlinkProcess.stderr.on('data', (data) => {
-                const stringOut = data.toString()
-                // FIXME: Output error when stream is unavailable
-                if (!outputBuffer & stringOut.includes('Opening stream')) {
-                    outputBuffer = true
-                    console.debug('Streamlink is downloading stream-')
-                }
-            })
-        }
+        let outputStreamlinkBuffer = false
+        this.streamlinkProcess.stderr.on('data', (data) => {
+            const stringOut = data.toString()
+            if (this.debug_obj.process)
+                console.log(stringOut)
+            // FIXME: Output error when stream is unavailable
+            if (!outputStreamlinkBuffer & stringOut.includes('Opening stream')) {
+                outputStreamlinkBuffer = true
+                console.debug('Streamlink is downloading stream-')
+            }
+        })
 
         // On FFMpeg start, make log
-        if (this.debugProcess) {
-            this.ffmpegProcess.stderr.on('data', (data) => {
-                console.log(data.toString())
-            })
-        } else {
-            let outputBuffer = false
-            this.ffmpegProcess.stderr.on('data', (data) => {
-                const stringOut = data.toString()
-                if (!outputBuffer & stringOut.includes('frame=')) {
-                    outputBuffer = true
-                    console.debug('FFMpeg is outputting images to buffer-')
-                }
-            })
-        }
+        let outputFFMPEGBuffer = false
+        this.ffmpegProcess.stderr.on('data', (data) => {
+            const stringOut = data.toString()
+            if (this.debug_obj.process)
+                console.log(stringOut)
+            if (!outputFFMPEGBuffer & stringOut.includes('frame=')) {
+                outputFFMPEGBuffer = true
+                console.debug('FFMpeg is outputting images to buffer-')
+            }
+        })
 
         this.ffmpegProcess.stdout.on('data', (/** @type {Buffer}*/ streamImgBuffer) => {
             // NOTE: Data is a buffer with partial image data
-            
-            if (this.StreamImage.addToBuffer(streamImgBuffer) !== null) {
+            const newFrameBuffer = this.StreamImage.addToBuffer(streamImgBuffer)
+            if (newFrameBuffer !== null) {
                 this.handleImage(newFrameBuffer)
-                console.log(`Current FPS ${this.StreamImage.fps}`)
+                if (this.debug_obj.fps)
+                    console.log(`Current FPS ${this.StreamImage.fps.toFixed(1)}`)
             }
         })
 
@@ -734,7 +620,7 @@ export class MarblesAppServer {
 
         // Now do as many length checks for visible names that do not have length checks first
         const LEN_LIMIT_PER_FRAME = 25; // NOTE: Maxing this for testing
-        let len_checks = 0
+        let post_match_len_checks = 0
         for (const {vidx, vUser} of screenVisibleUsers) {
             const pUser = predictedUsers[vidx]
             if (pUser.length) continue;
@@ -744,12 +630,12 @@ export class MarblesAppServer {
                 vUser.length = resultObj[vidx].length
                 vUser.unknownLen = true
                 // if (!vUser.length) continue; // length not found
-                len_checks++
+                post_match_len_checks++
             }
             if (vUser.length)
                 pUser.length = vUser.length
 
-            if (len_checks > LEN_LIMIT_PER_FRAME) break;
+            if (post_match_len_checks > LEN_LIMIT_PER_FRAME) break;
         }
 
         // Need to run OCR separately as length check out-priorities OCR 
@@ -773,7 +659,8 @@ export class MarblesAppServer {
 
         this.ScreenState.addVisibleFrame(screenUsersArr)
         
-        if (this.ScreenState.shouldDisplaySmth || len_checks > 0) {
+        if (this.debug_obj.screen_state_log && 
+            (this.ScreenState.shouldDisplaySmth || post_match_len_checks > 0)) {
             console.log(
                 `Frame_num ${processImgId.toString().padStart(5, ' ')} | Offset: ${offsetMatch} | User: ${this.usernameAdvObject.count}\n`+
                 `V: ${this.ScreenState.visibleScreenFrame.at(-1)}`+'\n'+
@@ -800,12 +687,13 @@ export class MarblesAppServer {
         // console.log(`Queuing OCR user vidx: ${visibleIdx} index ${user.index}`)
 
         const binUserImg = await mng.binTrackedUserName([sharpBuffer])
-        const pngSharp = SharpImg.FromRawBuffer(binUserImg).toSharp({toPNG:true, scaleForOCR:true})
-        const pngBuffer = await pngSharp.toBuffer()
+        const binSharp = SharpImg.FromRawBuffer(binUserImg).toSharp({toJPG:true, scaleForOCR:true})
+        const binBuffer = await binSharp.toBuffer()
 
-        
-        await this.nativeTesseractProcess(pngBuffer)
-        .then( ({data, info, jobId}) => {
+
+        // await this.nativeTesseractProcess(pngBuffer)
+        await this.OCRManager.queueOCR(binBuffer)
+        .then( ({data, info, jobId, time}) => {
 
             if (data.lines.length == 0) {
                 console.warn('got nothing for @ '+user.index)
@@ -820,7 +708,7 @@ export class MarblesAppServer {
                     confidence);
             }  
             
-            console.log(`Recongized name #${processImgId} @ ${user.index} as ${user.name} conf:${user.confidence.toFixed(1)}%`)
+            console.log(`Recongized name #${processImgId} @ ${user.index} as ${user.name} conf:${user.confidence.toFixed(1)}% in ${time.toFixed(0)}ms`)
         })
         .finally(
             _ => {
@@ -1164,10 +1052,12 @@ export class MarblesAppServer {
         if (this.streamlinkProcess === null) {
             this.clear()
             
-            if (!this.uselambda)
-                this.setupWorkerPool(NUM_LIVE_WORKERS)
-            else 
-                this.warmupLambda(NUM_LAMBDA_WORKERS)
+            this.OCRManager.warmUp()
+
+            // if (!this.uselambda)
+            //     this.setupWorkerPool(NUM_LIVE_WORKERS)
+            // else 
+            //     this.warmupLambda(NUM_LAMBDA_WORKERS)
                 // this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
             
             this.startStreamMonitor(channel)
@@ -1362,50 +1252,3 @@ export class MarblesAppServer {
         return {test:"testing ongoing!"}
     }
 }
-
-
-// Debug code in here
-
-
-// Working encode + decoder
-// RUN THIS IN COMMAND PROMPT
-// ffmpeg -i "C:\Users\MiloticMaster\Videos\MGS joke\barbCut_480.mp4" -f matroska pipe:1 | ffmpeg -f matroska -i pipe:0 output.mp4
-// streamlink twitch.tv/barbarousking best --stdout | ffmpeg -f mpegts -i pipe:0 -vf fps=1 -y -update 1 testing/live.png
-
-// VOD testing
-
-// streamlink "https://www.twitch.tv/videos/1891700539?t=2h30m22s" best 
-/* streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best
-  streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best --stdout | ffmpeg -re -f mpegts -i pipe:0 -f image2 -pix_fmt rgba -vf fps=fps=1/2 -y -update 1 live.png
-  
-  streamlink "https://www.twitch.tv/videos/1895894790?t=06h39m40s" best --stdout | ffmpeg -re -f mpegts -i pipe:0 -copyts -f image2 -pix_fmt rgba -vf fps=fps=1/2 -frame_pts true %d.png
-  
-  streamlink "https://twitch.tv/barbarousking" "best" --stdout | ffmpeg -re -f mpegts -i pipe:0 -vf fps=2 test.ts
-
-  ffmpeg -re '-f','mpegts', '-i','pipe:0', '-f','image2', '-pix_fmt','rgba', '-vf','fps=fps=1/2', 'pipe:1'
-
-  Explaining ffmpeg mysteries
-    streamlink       = (program for natively downloading streams)
-    <twitch-vod url> = se
-    best             = streamlink quality option
-    --stdout         = output stream to the stdout pipe
-
-    ffmpeg
-    -re = read at the native readrate (so realtime)
-    -f mpegts = the input encoded pipe media format (for Twitch)
-    -i pipe:0 = input is stdin (from previous pipe)
-    -f image2 = use the image2 encoder (for files)
-    -pix_fmt rgba = output png is rgba (32 bit depth)
-    -vf         = video filters or something
-        fps=fps=1/2 = create a screenshot 1/2 per second (2 times a second)
-    -y          = do not confirm overwriting the output file
-    -update     = continue to overwrite the output file/screenshot
-    <screenshot.png> = output filename
-
-    streamlink "https://twitch.tv/barbarousking" "best" --stdout | ffmpeg -re -f mpegts -i pipe:0 -f image2pipe -pix_fmt rgba -c:v png -vf fps=fps=1/2 pipe:1
-
-    Explaining more commands
-    -f image2pipe = if you pipe image2, its gets mad and crashes
-    -c:v png    = video output is png
-    pipe:1      = output to stdout
-*/

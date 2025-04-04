@@ -116,6 +116,9 @@ I'm not gonna write so much, but I think doing a manual OCR would be a huge spee
 https://www.twitch.tv/videos/2368542002?t=6h8m5s
 https://www.twitch.tv/videos/2349366019?t=6h7m47s
 
+## FFMPEG stuff
+ffmpeg -i "C:\Users\MiloticMaster\Videos\MGS joke\barbCut_480.mp4" -f matroska pipe:1 | ffmpeg -f matroska -i pipe:0 output.mp4
+
 ## Streamlink Commands
 
 streamlink <vod> <quality>

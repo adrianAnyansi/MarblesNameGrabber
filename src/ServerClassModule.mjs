@@ -291,8 +291,9 @@ export class StreamImageTracking {
         const newFrameBuffer = this.streamingBuffer.progressiveBuffer(buffer)
         if (newFrameBuffer) {
             this.imgs_downloaded += 1
+            
             if (this.imgs_downloaded == 1)
-                this.start_time = Date.now()
+                this.start_time = performance.now()
         }
         return newFrameBuffer
     }
@@ -301,8 +302,8 @@ export class StreamImageTracking {
      * Return the imgs_downloaded/ms
      */
     get fps() {
-        const timeToStart = Date.now() - this.start_time;
-        return timeToStart / (this.imgs_downloaded)
+        const timeToStart = performance.now() - this.start_time;
+        return (this.imgs_downloaded-1) / timeToStart * 1000
     }
 }
 
@@ -422,7 +423,7 @@ export class ScreenState {
 
     /**
      * Add logs for visible on-screen users this frame
-     * @param {import('./UserNameBinarization.mjs').TrackedUsernameDetection[]} visibleUsers 
+     * @param {import('./UsernameBinarization.mjs').TrackedUsernameDetection[]} visibleUsers 
      */
     addVisibleFrame(visibleUsers) {
         this.visibleScreenFrame.push(
@@ -431,7 +432,7 @@ export class ScreenState {
     }
 
     /**
-     * @param {import('./UserNameBinarization.mjs').TrackedUsernameDetection} vUser
+     * @param {import('./UsernameBinarization.mjs').TrackedUsernameDetection} vUser
      */
     static visibleStr(vUser) {
         

@@ -2,11 +2,12 @@
 
 import { msToHUnits } from "./DataStructureModule.mjs";
 import { MarblesAppServer } from "./MarblesAppServer.mjs";
-import { ColorSpace, UserNameBinarization } from "./UserNameBinarization.mjs";
+import { ColorSpace, UserNameBinarization } from "./UsernameBinarization.mjs";
 import { Color, ImageBuffer, Mathy, SharpImg } from "./UtilModule.mjs";
 import sharp from 'sharp'
 import fs from 'fs'
 import {resolve} from 'node:path'
+import { NativeTesseractOCRManager } from "./OCRModule.mjs";
 
 const file1 = String.raw`testing\line_test\streamlink_vod_snapsnot.png`;
 
@@ -195,10 +196,22 @@ async function test_validate_image() {
     await mng.validateMarblesPreRaceScreen()
 }
 
+async function test_promise_queue () {
+
+    const ocrm = new NativeTesseractOCRManager(15, true, true);
+    const list = []
+
+    for (let i=0; i<100; i++) {
+        await new Promise((r,j) => setTimeout( _ => r(), Math.random() * 100))
+        list.push(ocrm.queueOCR())
+    }
+    await Promise.all(list)
+}
+
 // TESTING HERE
 (async () => {
 
-    await test_validate_image()
+    // await test_validate_image()
 
     // math_range_check()
 
@@ -222,9 +235,11 @@ async function test_validate_image() {
 
     // new bin check
     // await test_userbox_appear_n_len(page)
-    await test_userbox_cropnbin(page, user)
+    // await test_userbox_cropnbin(page, user)
     // for (let i=0; i<23; i++ )
     //     await test_userbox_cropnbin(page, i)
+
+    await test_promise_queue()
     
     // Done! Print success
     console.log("Success! Everything looks good!")
