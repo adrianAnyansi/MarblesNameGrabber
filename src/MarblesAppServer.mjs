@@ -4,42 +4,20 @@ import path from 'node:path'
 import { ChildProcess, spawn } from 'node:child_process'
 import axios from 'axios'
 import fs from 'fs/promises'
+import fsAll from 'fs'
 
 import { UserNameBinarization } from './UsernameBinarization.mjs'
-import {UsernameAllTracker, UsernameTracker, TrackedUsername} from './UsernameTrackerClass.mjs'
+import {UsernameAllTracker, TrackedUsername} from './UsernameTrackerClass.mjs'
 
-import { createWorker, createScheduler } from 'tesseract.js'
-import { humanReadableTimeDiff, msToHUnits } from './DataStructureModule.mjs'
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
-// import { setInterval } from 'node:timers'
+import { msToHUnits } from './DataStructureModule.mjs'
 import { setTimeout } from 'node:timers/promises'
-import { XMLParser } from 'fast-xml-parser'
 import { SharpImg } from './UtilModule.mjs'
 import { StreamingImageBuffer, ServerStatus, StreamImageTracking, ScreenState } from './ServerClassModule.mjs'
-import { NativeTesseractOCRManager, OCRManager } from './OCRModule.mjs'
-
-/** Server state enum */
-export const SERVER_STATE_ENUM = {
-    /** Server has stopped/has not started reading */
-    STOPPED: 'STOPPED',
-    /** Server is waiting for the load screen */
-    WAITING: 'WAITING', 
-    /** Server is READING and doing OCR */
-    READING: 'READING',
-    /** Server completed reading. */
-    COMPLETE: 'COMPLETE'
-}
+import { NativeTesseractOCRManager, OCRManager, LambdaOCRManager } from './OCRModule.mjs'
 
 const TWITCH_URL = 'https://www.twitch.tv/'
-const DEBUG_URL = 'https://www.twitch.tv/videos/1891700539?t=2h30m20s'
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
 
-const NUM_LIVE_WORKERS = 12 // Num Tesseract workers
-const WORKER_RECOGNIZE_PARAMS = {
-    blocks:true, hocr:false, text:false, tsv:false
-}
-const TEST_FILENAME = "testing/test.png"
-const LIVE_FILENAME = "testing/#.png"
 const VOD_DUMP_LOC = "testing/vod_dump/"
 
 let TWITCH_ACCESS_TOKEN_BODY = null
@@ -48,21 +26,6 @@ const TWITCH_CHANNEL_INFO_URL = "https://api.twitch.tv/helix/channels"
 const TWITCH_DEFAULT_BROADCASTER = "barbarousking" // Default twitch channel
 const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id for barbarousking
 const TWITCH_CRED_FILE = 'twitch_creds.json'
-
-const AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
-const USE_LAMBDA = true
-const NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
-
-const TESSERACT_ARGS = [
-    // <image_filename>, '-', // stdin, stdout
-    "-", "-",
-    "--psm", "4",
-    "-l", "eng",
-    "-c", "preserve_interword_spaces=1",
-    "-c", "tessedit_char_whitelist=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQKRSTUVWXYZ_0123456789",
-    "-c", "hocr_char_boxes=1",
-    "hocr"
-];
 
 
 export class MarblesAppServer {
@@ -78,7 +41,7 @@ export class MarblesAppServer {
     static STREAMLINK_LOC = 'streamlink' // on PATH
 
     /** FPS to view stream */
-    static FFMPEG_FPS = '20'
+    static FFMPEG_FPS = '30'
     /** number of frames/seconds without any valid names on them */
     static EMPTY_PAGE_COMPLETE = 5 * parseInt(MarblesAppServer.FFMPEG_FPS)
     
@@ -106,11 +69,12 @@ export class MarblesAppServer {
             vod_dump: false,
             screen_state_log: false,
             fps: false,
+            user_bin: true
         }
 
         // debug variables
-        this.debugTesseract = false;
-        this.debugLambda = false;
+        // this.debugTesseract = false;
+        // this.debugLambda = false;
 
         // Processors & Commands
         // ================================
@@ -155,12 +119,12 @@ export class MarblesAppServer {
         this.numOCRWorkers = 0
 
         // Lambda state
-        if (this.debugLambda)  AWS_LAMBDA_CONFIG["logger"] = console
+        // if (this.debugLambda)  AWS_LAMBDA_CONFIG["logger"] = console
         // this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
-        this.uselambda = USE_LAMBDA
+        // this.uselambda = USE_LAMBDA
         /** @type {LambdaClient} AWS lambda */
-        this.lambdaClient = null
-        this.lambdaQueue = 0    // Keep track of images sent to lambda for processing
+        // this.lambdaClient = null
+        // this.lambdaQueue = 0    // Keep track of images sent to lambda for processing
 
         // Username Tracking
         // ==================================================
@@ -171,12 +135,12 @@ export class MarblesAppServer {
 
         // Server Variables
         // ================================================
-        this.serverStatus_obj = {
+        // this.serverStatus_obj = {
             // state: SERVER_STATE_ENUM.STOPPED,   // current state
             // viewers: 0,                         // current viewers on the site
             // interval: 1_000 * 3,                 // interval to refresh status
             // lag_time: 0                         // time behind from 
-        }
+        // }
 
     }
 
@@ -293,6 +257,53 @@ export class MarblesAppServer {
     }
 
     /**
+     * 
+     * @param {string} [videoSource=null] if null, use pipe:0 (stdin)
+     */
+    startFFMPEGProcess(videoSource=null) {
+        console.log("Starting ffmpeg process")
+
+        const ffmpegCMD = this.ffmpegCmd.slice() // copy array
+        if (videoSource)
+            ffmpegCMD[3] = videoSource
+
+        this.ffmpegProcess = spawn(ffmpegCMD[0], ffmpegCMD.slice(1), {
+            stdio: ['pipe', 'pipe', 'pipe']
+        })
+
+        let outputFFMPEGBuffer = false
+        this.ffmpegProcess.stderr.on('data', (data) => {
+            const stringOut = data.toString()
+            if (this.debug_obj.process)
+                console.log(stringOut)
+            if (!outputFFMPEGBuffer & stringOut.includes('frame=')) {
+                outputFFMPEGBuffer = true
+                console.debug('FFMpeg is outputting images to buffer-')
+            }
+        })
+
+        this.ffmpegProcess.stdout.on('data', (/** @type {Buffer}*/ streamImgBuffer) => {
+            // NOTE: Data is a buffer with partial image data
+            const newFrameBuffer = this.StreamImage.addToBuffer(streamImgBuffer)
+            if (newFrameBuffer !== null) {
+                this.handleImage(newFrameBuffer)
+                if (this.debug_obj.fps)
+                    console.log(`Current FPS ${this.StreamImage.fps.toFixed(1)}`)
+            }
+        })
+        this.ffmpegProcess.on('error', () => {
+            console.warn("An unknown error occurred while writing FFMpeg process.")
+        })
+        this.ffmpegProcess.on('close', () => {
+            console.debug('FFMpeg process has closed.')
+            // NOTE: Ignoring the spinDown server state as both shutdown each other
+            this.ServerState.enterStopState()
+        })
+
+        console.log("Setup FFMPEG Process")
+    }
+
+    /**
      * Shutdown streamlink & ffmpeg processes
      * @returns {Boolean} wasShutdown
      */
@@ -301,8 +312,12 @@ export class MarblesAppServer {
         if (this.streamlinkProcess) {
             console.log("Stopping processes & image parser")
 
-            this.streamlinkProcess.kill('SIGINT')
-            // this.ffmpegProcess.kill('SIGINT')   // Trying to use SIGINT for Linux
+            if (this.streamlinkProcess) {
+                this.streamlinkProcess.kill('SIGINT')
+            } else if (this.ffmpegProcess) {
+                // Only kill if streamlinkProcess is not piping
+                this.ffmpegProcess.kill('SIGINT')   // Trying to use SIGINT for Linux
+            }
             // console.log("Killed streamlink processes")
 
             this.streamlinkProcess = null
@@ -311,133 +326,6 @@ export class MarblesAppServer {
         }
 
         return false
-    }
-
-    /**
-     * @deprecated
-     * Parse an image for names
-     * @param {*} imageLike 
-     * @returns 
-     */
-     async parseImgFile(imageLike) {
-        if (this.serverStatus.state == SERVER_STATE_ENUM.COMPLETE) {
-            console.debug(`In COMPLETE/STOP state, ignoring.`)
-            return
-        }
-
-        const imgId = this.serverStatus.imgs_downloaded++
-
-        if (this.debugVODDump) {
-            console.debug(`Stream is dumped to location ${VOD_DUMP_LOC}`)
-            fs.mkdir(`${VOD_DUMP_LOC}`, {recursive: true})
-            fs.writeFile(`${VOD_DUMP_LOC}${imgId}.png`, imageLike)
-            return
-        }
-
-        // TODO: Log when image enters this function and when it exits
-        // Therefore keeping track of the delay from live
-        /** ts of when image first entered the queue */
-        const captureDt = Date.now()
-        const perfCapture = performance.now()
-        
-        let mng = new UserNameBinarization(imageLike, false)
-
-        if (this.serverStatus.state == SERVER_STATE_ENUM.WAITING) {
-            // let validMarblesImgBool = await this.validateMarblesPreRaceScreen(mng)
-            let validMarblesImgBool = await mng.validateMarblesPreRaceScreen()
-
-            if (validMarblesImgBool) {
-                console.log("Found Marbles Pre-Race header, starting read")
-                this.serverStatus.state = SERVER_STATE_ENUM.READING
-                this.serverStatus.started_stream_ts = new Date()
-            } else {
-                return
-            }
-        }
-
-        
-        // TODO: Try and detect BARB & CHAT location & update
-        
-        // TODO: Read the username number in the top right
-        // Depending on how slow, it will be hard to be real-time
-
-        // TODO: Build buffer then try detect username
-
-        // Parse the image for names
-        console.debug(`Queuing LIVE image queue: ${this.getTextRecgonQueue()}`)
-
-        const funcImgId = this.imageProcessId++
-
-        // Build buffer
-        await mng.buildBuffer()
-        .catch( err => {
-            console.warn("Buffer was not created successfully, skipping")
-            throw err
-        })
-        
-        // Perform tesseract 
-        let tesseractPromise = null
-        /** scaled color buffer from original */
-        mng.ocr_buffer = mng.bufferToPNG(mng.buffer, true, false)
-
-        if (!this.uselambda) {
-            tesseractPromise = mng.isolateUserNames()
-            // .then( buffer =>  this.scheduleTextRecogn(buffer) )
-            .then( buffer =>  this.nativeTesseractProcess(buffer) )
-            .catch( err => {
-                console.error("Failure to parse image!!!")
-            })
-        } else {
-            tesseractPromise = mng.dumpInternalBuffer()
-            .then ( ({buffer, imgMetadata, info}) => 
-                this.sendImgToLambda(buffer, imgMetadata, info, `lid:${imgId}`, false)
-            )
-            this.lambdaQueue += 1
-        }
-        
-        return tesseractPromise.then( ({data, info, jobId}) => {      // add result to nameBuffer
-            
-            if (this.uselambda)
-                this.lambdaQueue -= 1
-            this.serverStatus.imgs_read += 1
-
-            // Add to queue
-            this.imageProcessQueue[funcImgId - this.imageProcessQueueLoc] = [data, mng]
-
-            while (this.imageProcessQueue.at(0)) {  // While next image exists
-                let [qdata, qmng] = this.imageProcessQueue.shift()
-                if (this.serverStatus.state == SERVER_STATE_ENUM.COMPLETE) {
-                    console.warn(`Dumping image ${funcImgId}`)
-                    break
-                }
-                this.imageProcessQueueLoc++
-
-                let retList = this.usernameTracker.addPage(qdata, qmng.ocr_buffer, qmng.bufferSize, captureDt)
-                if (retList.length == 0)
-                    this.emptyListPages += 1
-                else
-                    this.emptyListPages = 0
-
-                const processTS = performance.now() - perfCapture;
-                console.debug(`UserList is now: ${this.usernameTracker.length}, last added: ${retList.at(-1)}. Lag-time: ${msToHUnits(processTS, false)}`)
-                this.imageProcessTime.push(processTS);
-                while (this.imageProcessTime.length > 10)
-                    this.imageProcessTime.shift();
-                this.serverStatus.lag_time = msToHUnits(
-                    this.imageProcessTime.reduce((p,c) => p+c, 0)/this.imageProcessTime.length, true, 2, 's');
-                
-                if (this.emptyListPages >= MarblesAppServer.EMPTY_PAGE_COMPLETE && this.usernameTracker.length > 5) {
-                    console.log(`${this.emptyListPages} empty frames @ ${funcImgId}; 
-                        dumping queue ${this.imageProcessQueue.length} & moving to COMPLETE state.`)
-                    this.serverStatus.state = SERVER_STATE_ENUM.COMPLETE
-                    this.spinDown()
-                    return
-                }
-            }
-        }).catch ( err => {
-            console.warn(`Error occurred during imageParse ${err};${err.stack}, execution exited`)
-            // Since this is continous, this info/image is discarded
-        })
     }
 
     /**
@@ -466,7 +354,7 @@ export class MarblesAppServer {
             return
         }
 
-        this.parseAdvImg(imageLike)
+        return this.parseAdvImg(imageLike)
     }
 
     /** Parse advanced image per frame
@@ -641,6 +529,7 @@ export class MarblesAppServer {
      * @param {TrackedUsername} user 
      * @param {number} visibleIdx current index on this frame
      * @param {UserNameBinarization} mng binarization object
+     * @param {number} processImgId img_processed image
      */
     async queueIndividualOCR (user, visibleIdx, mng, processImgId) {
         // crop image
@@ -650,7 +539,8 @@ export class MarblesAppServer {
         // console.log(`Queuing OCR user vidx: ${visibleIdx} index ${user.index}`)
 
         const binUserImg = await mng.binTrackedUserName([sharpBuffer])
-        console.log(`bin took ${performance.now() - binPerf}`)
+        if (this.debug_obj.user_bin)
+            console.log(`bin #${processImgId} @ ${visibleIdx} took ${(performance.now() - binPerf).toFixed(2)}ms`)
 
         const binSharp = SharpImg.FromRawBuffer(binUserImg).toSharp({toJPG:true, scaleForOCR:true})
         const binBuffer = await binSharp.toBuffer()
@@ -759,87 +649,6 @@ export class MarblesAppServer {
         this.shutdownStreamMonitor()
         if (this.OCRScheduler)
             this.OCRScheduler.jobQueue = 0
-    }
-
-    /**
-     * Runs whatever debug thing I want with a local filename I want 
-     * This is specifically for individual images, but will be superceded by unittesting.
-     * @param {*} filename 
-     * @param {*} withLambda 
-     * @returns 
-     */
-    async debugRun (filename = null, withLambda = false) {
-        filename ??= TEST_FILENAME
-        console.log(`Running debug! ${filename}`)
-        console.log(`Working directory: ${path.resolve()}`)
-
-        this.handleImage(filename);
-        return;
-        
-        let mng = new UserNameBinarization(filename, true)
-
-        // await this.validateMarblesPreRaceScreen(mng);
-        let race_screen = mng.validateMarblesPreRaceScreen()
-        console.log(`Race bool ${race_screen}`)
-        
-        
-        const withNative = true
-
-        if (withLambda) {
-            console.log("Using lambda debug")
-            let debugStart = performance.now();
-            await this.warmupLambda(1)
-            await mng.buildBuffer().catch( err => {console.error(`Buffer build errored! ${err}`); throw err})
-            mng.orig_buffer = mng.buffer // TODO: Is this being used?
-            console.log(`Built buffer in ${msToHUnits(performance.now() - debugStart, true, 0)}`)
-
-            return mng.dumpInternalBuffer()
-            .then( ({buffer, imgMetadata, info}) => {
-                debugStart = performance.now(); 
-                return this.sendImgToLambda(buffer, imgMetadata, info, 'test', false)
-            })
-            .then( ({raw, data, info, jobId}) => {
-                if (raw)
-                    data = this.parseHOCRResponse(raw)
-                console.debug(`Lambda complete job-${jobId}`); 
-                console.log(`Lambda Recognized in ${msToHUnits(performance.now() - debugStart, true, 0)}`)
-                return {mng: mng, data: data}
-            })
-            .catch( err => {console.error(`Lambda errored! ${err}`); throw err})
-            // NOTE: This doesn't return early
-        }
-        // ELSE
-        await this.setupWorkerPool(1)
-        
-        let debugStart = performance.now();
-
-        return mng.buildBuffer()
-        .catch( err => {
-            console.warn("Buffer was not created successfully, skipping")
-            throw err
-        })
-        .then(  () => {
-            console.log(`Built buffer in ${msToHUnits(performance.now() - debugStart, true, 0)}`)
-            debugStart = performance.now();
-            return mng.isolateUserNames()
-        })
-        .then(  buffer => {
-            console.log(`Binarized in ${msToHUnits(performance.now() - debugStart, true, 0)}`)
-            debugStart = performance.now();
-            if (withNative) {
-                return this.nativeTesseractProcess(buffer)
-            }
-            return this.scheduleTextRecogn(buffer)})
-        .then(  tsData => { 
-            console.log(`Recognized in ${msToHUnits(performance.now() - debugStart, true, 0)}`)
-            return {mng: mng, data: tsData.data} 
-        })
-        .catch(
-            err => {
-                console.error(`Debug: An unknown error occurred ${err}.${err.stack}`)
-                throw err
-            }
-        )
     }
 
     // --------------------------------------------------------------------
@@ -953,15 +762,7 @@ export class MarblesAppServer {
 
         if (this.streamlinkProcess === null) {
             this.clear()
-            
             this.OCRManager.warmUp()
-
-            // if (!this.uselambda)
-            //     this.setupWorkerPool(NUM_LIVE_WORKERS)
-            // else 
-            //     this.warmupLambda(NUM_LAMBDA_WORKERS)
-                // this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
-            
             this.startStreamMonitor(channel)
 
             retText = "Waiting for names"
@@ -1036,107 +837,103 @@ export class MarblesAppServer {
         return this.usernameTracker.getReadableList()
     }
 
-    async debug (filename, withLambda, waitTest=false, raceTest=false) {
-        // TODO: Add waitTest & raceTest separately as params
+    /**
+     * Run a marbles test using either a source folder or video
+     * @param {string} source 
+     * @param {OCRTypeEnum} ocrType 
+     */
+    async localTest (source, ocrType) {
 
-        return this.debugRun(filename, withLambda)
-        .then( async ({mng, data}) => {
-            // TODO: Fix resync
-            console.log("Got data:", data)
-            let retList = await this.usernameTracker.addPage(data, mng.bufferToPNG(mng.orig_buffer, true, false), mng.bufferSize, Date.now())
-            return {list: retList, debug:true}
-        })
-        
-        // ELSE RAISE ERROR
-    }
-
-    async runTest (folderName, withLambda) {
-        // let namesFile = null
-        // get all image files in order for vod_folder
-        const fileList = await fs.readdir(folderName);
-        // gotta windows* sort
-        fileList.sort( (fileA, fileB) => {
-            return parseInt(fileA.split('.')[0], 10) - parseInt(fileB.split('.')[0], 10)})
-        // NaN files are ignored
-
-        let nameFileContents = null
-        if (fileList == null) 
-            throw new Error("Invalid folder, contents are empty/DNE")
-
-        console.log(`Running test! ${folderName}`)
-        const st = performance.now();
-        // setup workers
-        if (this.uselambda)
-            this.warmupLambda(NUM_LAMBDA_WORKERS)
-        else if (this.withNative)
-            ;
-        else 
-            this.setupWorkerPool(NUM_LIVE_WORKERS)
+        if (fsAll.statSync(source).isDirectory()) {
             
+            const fileList = await fs.reaaddir(source);
+            fileList.sort( (fileA, fileB) => {
+                return parseInt(fileA.split('.')[0]) - parseInt(fileB.split('.')[0])
+            })
 
-        const promiseList = []
-        let ignoreFrames = 60;
+            if (fileList == null)
+                throw new Error("Invalid folder, folder is empty/DNE")
 
-        for (const fileName of fileList) {
-            if (fileName.endsWith('txt')) {
-                nameFileContents = fs.readFile(path.resolve(folderName, fileName),  { encoding: 'utf8' })
-                continue
+            console.log(`Running test on ${source}`)
+            this.ServerState.enterWaitState()
+            const st = performance.now();
+            // TODO: Change based on OCR type
+            this.OCRManager.warmUp();
+
+            const filePromiseList = []
+            for (const fileName of fileList) {
+                if (fileName.endsWith('txt')) {
+                    continue // NOTE: Going to provide this separately
+                }
+
+                const filepath = path.resolve(source, fileName)
+                console.debug(`Parse filename ${fileName}`)
+                filePromiseList.push(this.handleImage(filepath))
+                // Wait FPS time
+                await setTimeout( ()=> {}, 1_000 / parseInt(this.FFMPEG_FPS))
             }
-            if (ignoreFrames-- > 0) continue;
-            // if (ignoreFrames < -100) continue;
-
-            // send each image file to parse
-            const file = await fs.readFile(path.resolve(folderName, fileName))
-            promiseList.push(this.parseImgFile(file)) // filename works but I want to read
-            console.debug(`Parsing image file ${fileName}`)
-            await setTimeout(200); // forcing sleep so my computer doesn't explode
+            
+            this.ServerState.enterStopState()
+            const ed = performance.now();
+            console.log(`Test run took ${(ed-st).toFixed(2)}ms`)
+        } else {
+            // source is video
+            // technically this should copy start() and use that flow
+            // I have todo manual stuff instead here
+            this.clear()
+            this.ServerState.enterWaitState()
+            this.startFFMPEGProcess(source)
+            // everything runs on server
         }
 
-        // Once complete, go through the names list and check against server accuracy
-        Promise.all(promiseList)
-        .then(async () => {
-            const ed = performance.now();
-            if (!nameFileContents) return;
-            const nameList = await nameFileContents.then(content => content.split('\r\n'))
-            console.debug(`Namelist: ${nameList.length}`)
+        return {test: "Runnin test"}
+    }
 
-            let totalScore = 0;
-            const scoreArr = [];
-            const notFound = [];
-            let nameListIdx = 0;
-            for (const name of nameList) {
-                let list = this.find(name);
-                let bestDistScore = list[0][0]
-                scoreArr.push(bestDistScore);
-                totalScore += bestDistScore;
-                if (bestDistScore > 7) {
-                    notFound.push(`[${nameListIdx}]${name}`)
-                }
-                nameListIdx++;
+    async testAgainstList(text_list=null, source_file=null) {
+
+        const st = performance.now();
+        /** @type {string[]} list of users to test against */
+        let user_list = null
+        if (text_list) 
+            user_list = text_list
+        else if (source_file) {
+            const source_content = await fs.readFile(source_file, { encoding: 'utf8'})
+            user_list = source_content.split('\r\n') // windows line endings
+        }
+
+        console.debug(`Test against name list, len: ${user_list.length}`)
+
+        let totalScore = 0;
+        const [scoreArr, notFound] = [[], []];
+
+        for (const [idx, name] of user_list.entries()) {
+            const list = this.find(name)
+            const bestDistScore = list[0][0]
+            scoreArr.push(bestDistScore)
+            totalScore += bestDistScore;
+            if (bestDistScore > 7) {
+                notFound.push(`[${idx}]${name}`)
             }
+        }
 
-            scoreArr.sort();
-            const median = scoreArr[parseInt(scoreArr.length/2)];
-            
-            const map = new Map()
-            let nonPerfectAvg = 0;
-            let nonPerfectCount = 0;
-            for (const score of scoreArr) {
-                map.set(score, (map.get(score) || 0) + 1);
-                if (score > 1) {
-                    nonPerfectCount++;
-                    nonPerfectAvg += score
-                }
+        scoreArr.sort();
+        const median = scoreArr[Math.round(scoreArr.length/2)]
+
+        const map = new Map();
+        let [nonPerfectAvg, nonPerfectCount] = [0,0];
+        for (const score of scoreArr) {
+            map.set(score, (map.get(score) ?? 0) + 1)
+            if (score > 1) {
+                nonPerfectCount++
+                nonPerfectAvg += score
             }
+        }
 
-            console.debug(`All scores: ${Array.from(map.entries()).sort().map(([key, val]) => `${[key]}=${val}`).join('\n')} `)
-            console.debug(`Final score: ${totalScore}, mean: ${totalScore/nameList.length}`)
-            console.debug(`median: ${median}, avg-non-perfect ${nonPerfectAvg/nonPerfectCount}`)
-            console.debug(`Not found list [${notFound.length}]: \n${notFound.join(', ')}`)
-            console.debug(`Completed test in ${((ed-st)/(60*1000)).toFixed(3)}m`)
-        })
+        console.debug(`Score Map: ${Array.from(map.entries()).sort().map(([key, val]) => `${[key]}=${val}`).join('\n')} `)
+        console.debug(`Final score: ${totalScore}, mean: ${totalScore/nameList.length}`)
+        console.debug(`median: ${median}, avg-non-perfect ${nonPerfectAvg/nonPerfectCount}`)
+        console.debug(`Not found list [${notFound.length}]: \n${notFound.join(', ')}`)
+        // console.debug(`Completed test in ${((ed-st)/(60*1000)).toFixed(3)}m`)
         
-
-        return {test:"testing ongoing!"}
     }
 }

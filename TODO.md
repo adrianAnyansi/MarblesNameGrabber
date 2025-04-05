@@ -16,7 +16,7 @@ The goal is every single name should be tracked even if I can't read it or get a
 
 ## How to achieve this
 - Faster FPS to catch names especially when only a few names are available
-- ~~Burst processing when necessary~~ (turns out I have enough time to ignore this and can't change current FPS)
+- ~~Burst processing when necessary~~ (turns out I can't change current FPS)
 - New Username class with more details and properties
     - length tracking
     - multiple images (temporal processing)

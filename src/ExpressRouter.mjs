@@ -3,7 +3,7 @@
 */
 
 import express from 'express'
-import { MarblesAppServer, SERVER_STATE_ENUM } from './MarblesAppServer.mjs';
+import { MarblesAppServer } from './MarblesAppServer.mjs';
 // import HyperExpress from 'hyper-express'
 import helmet from "helmet";
 import path from 'path'
@@ -56,15 +56,14 @@ server.post(['/start', '/start/*'], (req, res) => {
 server.all(['/force'], (req, res) => {
     
     console.log(`Recieved FORCE command ${req.originalUrl}.`)
-    if ([SERVER_STATE_ENUM.WAITING, SERVER_STATE_ENUM.STOPPED].includes(
-        app_server.serverStatus.state
-    )) {
+    if (app_server.ServerState.notReading) {
         app_server.start()
-        app_server.serverStatus.state = "READING"
+        // Now into wait state if not started
+        app_server.ServerState.enterReadState()
         res.json({'res':"Forced into READING state"})
         // TODO: Tell users that it started late
     } else {
-        res.json({'res':`Currently in ${app_server.serverStatus.state} state`})
+        res.json({'res':`Currently in ${app_server.ScreenState.state} state`})
     }
 })
 
@@ -97,13 +96,6 @@ server.get('/find/:userName', (req, res) => {
     return res.json(app_server.find(reqUsername))
 })
 
-// server.get('/user_find/:userId', (req, res) => {
-//     const reqUsername = req.params.userId
-//     // console.debug(`User-Find user ${reqUsername}`)
-
-//     return res.json(app_server.userFind(reqUsername))
-// })
-
 /**
  * Return image to request, or 404 if not found
  */
@@ -134,21 +126,6 @@ server.get('/list', (req, res) => {
     res.json(app_server.list())
 })
 
-server.post('/debug', async (req, res) => {
-
-    let filename = req.query?.filename
-    let withLambda = (req.query?.withlambda) ? true : false
-    // if (!filename) filename = TEST_FILENAME
-
-    try {
-        let json_resp = await app_server.debug(filename, withLambda)
-        res.send(json_resp)    // FIXME: Add params for errors and etc
-        console.debug("Sent debug response")
-    } catch (err) {
-        res.status(400).send(`An unknown error occured. ${err}`)
-    }
-})
-
 server.post('/test', async (req, res) => {
 
     let folderName = req.query?.folder
@@ -159,6 +136,18 @@ server.post('/test', async (req, res) => {
         res.send(json_resp)
     } catch (err) {
         res.status(400).send(`An unknown error occured. ${err}`)
+    }
+})
+
+server.post('/localTest', async (req, res) => {
+    let source = req.query?.source
+    let ocrType = req.query?.ocr
+
+    try {
+        let json_resp = await app_server.localTest(source, ocrType)
+        res.send(json_resp)
+    } catch (err) {
+        res.status(400).send(`Error occurred during testing. ${err}`)
     }
 })
 

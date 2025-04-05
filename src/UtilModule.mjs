@@ -303,11 +303,13 @@ export class ImageBuffer {
      */
     getPixel (x,y) {
         const px_off = this.toPixelOffset(x,y)
-        const decimal = this.buffer.readUInt32LE(px_off)
-        if (this.channels == 3)
+        if (this.channels == 3) {
+            const decimal = this.buffer.readUIntLE(px_off, 3)
             return Color.castRGBLE(decimal)
-        else if (this.channels == 4)
+        } else if (this.channels == 4) {
+            const decimal = this.buffer.readUInt32LE(px_off)
             return Color.castRGBALE(decimal)
+        }
     }
 
     /**

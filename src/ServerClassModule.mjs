@@ -1,5 +1,16 @@
 import { msToHUnits } from "./DataStructureModule.mjs"
-import { SERVER_STATE_ENUM } from "./MarblesAppServer.mjs"
+
+/** Server state enum */
+export const SERVER_STATE_ENUM = {
+    /** Server has stopped/has not started reading */
+    STOPPED: 'STOPPED',
+    /** Server is waiting for the load screen */
+    WAITING: 'WAITING', 
+    /** Server is READING and doing OCR */
+    READING: 'READING',
+    /** Server completed reading. */
+    COMPLETE: 'COMPLETE'
+}
 
 /** Contains all the image format info for this program */
 export class ImageFormatConstants {
@@ -387,6 +398,10 @@ export class ServerStatus {
         return this.complete || this.stopped
     }
 
+    get notReading () {
+        return this.complete || this.wait || this.stopped
+    }
+
     get currentViewers () {
         return this.monitoredViewers.length
     }
@@ -416,7 +431,7 @@ export class ServerStatus {
     toJSON () {
         return {
             'viewers': this.currentViewers,
-            'total_viewers': this.allViewers.size(),
+            'total_viewers': this.allViewers.size,
             'marbles_date': this.started_game_ts
         }
     }

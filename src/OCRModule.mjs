@@ -2,12 +2,25 @@
 
 import { XMLParser } from 'fast-xml-parser'
 import { ChildProcess, spawn } from 'node:child_process'
+import { createWorker, createScheduler } from 'tesseract.js'
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
 
 /**
  * @typedef {string | Object} OCRResponse
- * 
  */
 
+/**
+ * Enum representing supported OCRs
+ */
+export const OCRTypeEnum = {
+    NATIVE: "NATIVE",
+    LAMBDA: "LAMBDA",
+    NODE_WORKER: "NODE_WORKER"
+}
+
+/**
+ * OCR class to surface OCR methods and hiding implementation
+ */
 export class OCRManager {
 
     /** default workers to warm up */
@@ -133,7 +146,7 @@ export class NativeTesseractOCRManager extends OCRManager {
     static DEFAULT_WORKERS = 6
     static NAME = "Native Tesseract"
     static PROMISE_DEBUG = false
-    static TESSERACT_LOC = String.raw`C:\Program Files\Tesseract-OCR\tesseract.exe`
+    static TESSERACT_LOC = String.raw`tesseract`
     static TESSERACT_ARGS = [
         // <image_filename>, '-', // stdin, stdout
         "-", "-",
@@ -194,6 +207,10 @@ export class NativeTesseractOCRManager extends OCRManager {
             retPromise = this.createPromise(input_buffer)
         }
         
+        retPromise.catch( err => {
+            console.log(`Error occured in NativeTess ${err}`)
+            return 
+        })
         retPromise.finally(_ => {
             if (NativeTesseractOCRManager.PROMISE_DEBUG)
                 console.warn(`Completed Q ${this.queue.length}, QN: ${this.queueNum}-1`); 
@@ -287,9 +304,7 @@ export class NativeTesseractOCRManager extends OCRManager {
         })
 
         // Send buffer to tesseract process
-        tessProcess.stdin.end(
-            input_buffer
-        );
+        tessProcess.stdin.end(input_buffer);
 
         return retPromise
     }
@@ -299,12 +314,17 @@ export class NativeTesseractOCRManager extends OCRManager {
 export class LambdaOCRManager extends OCRManager {
 
     static NAME = "LambdaTesseract"
+    static AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
+    // static USE_LAMBDA = true
+    // static NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
 
     constructor (concurrency=null, debug=false, hocr=true) {
         super(concurrency, debug)
 
         // this.lambdaQueue = 0
-        this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
+        if (this.debug)
+            LambdaOCRManager.AWS_LAMBDA_CONFIG["logger"] = console
+        this.lambdaClient = new LambdaClient(LambdaOCRManager.AWS_LAMBDA_CONFIG)
         this.lambdaQueueNum = 0
 
         this.hocr = hocr
@@ -398,6 +418,10 @@ export class LambdaOCRManager extends OCRManager {
 export class NodeOCRManager extends OCRManager {
 
     static NAME = "NodeOCRManager"
+    static NUM_LIVE_WORKERS = 12 // Num Tesseract workers
+    static WORKER_RECOGNIZE_PARAMS = {
+    blocks:true, hocr:false, text:false, tsv:false
+}
 
     /**
      * Setup schedulers & workers for OCR reading
