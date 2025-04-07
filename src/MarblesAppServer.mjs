@@ -342,7 +342,7 @@ export class MarblesAppServer {
         const imgId = this.StreamImage.imgs_downloaded
 
         if (this.debug_obj.vod_dump) {
-            fs.writeFile(`${VOD_DUMP_LOC}${imgId}.${this.streamImgFormat.file_format}`, imageLike)
+            fs.writeFile(`${VOD_DUMP_LOC}${imgId}.${this.streamImgFormat[0]}`, imageLike)
         }
 
         const EMPTY_IMAGE_NUM = parseInt(MarblesAppServer.FFMPEG_FPS) * 3
@@ -841,8 +841,9 @@ export class MarblesAppServer {
      * Run a marbles test using either a source folder or video
      * @param {string} source 
      * @param {OCRTypeEnum} ocrType 
+     * @param {boolean} [vodDump=false]
      */
-    async localTest (source, ocrType) {
+    async localTest (source, ocrType, vodDump=false) {
 
         if (fsAll.statSync(source).isDirectory()) {
             
@@ -882,6 +883,7 @@ export class MarblesAppServer {
             // I have todo manual stuff instead here
             this.clear()
             this.ServerState.enterWaitState()
+            this.debug_obj.vod_dump = vodDump
             this.startFFMPEGProcess(source)
             // everything runs on server
         }

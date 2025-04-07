@@ -58,7 +58,7 @@ server.all(['/force'], (req, res) => {
     console.log(`Recieved FORCE command ${req.originalUrl}.`)
     if (app_server.ServerState.notReading) {
         app_server.start()
-        // Now into wait state if not started
+        // Now into wait state if not started previously
         app_server.ServerState.enterReadState()
         res.json({'res':"Forced into READING state"})
         // TODO: Tell users that it started late
@@ -126,25 +126,13 @@ server.get('/list', (req, res) => {
     res.json(app_server.list())
 })
 
-server.post('/test', async (req, res) => {
-
-    let folderName = req.query?.folder
-    let withLambda = (req.query?.withlambda) ? true : false
-
-    try {
-        let json_resp = await app_server.runTest(folderName, withLambda)
-        res.send(json_resp)
-    } catch (err) {
-        res.status(400).send(`An unknown error occured. ${err}`)
-    }
-})
-
 server.post('/localTest', async (req, res) => {
     let source = req.query?.source
     let ocrType = req.query?.ocr
+    const vodDump = req.query?.vodDump ?? false
 
     try {
-        let json_resp = await app_server.localTest(source, ocrType)
+        let json_resp = await app_server.localTest(source, ocrType, vodDump)
         res.send(json_resp)
     } catch (err) {
         res.status(400).send(`Error occurred during testing. ${err}`)

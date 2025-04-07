@@ -1241,7 +1241,7 @@ export class UserNameBinarization {
         const lineAvg = Color.avgPixel(...lineTest)
         const lineDiff = Color.totalDiff(lineAvg)
 
-        const WHITE_BALANCE = 60;
+        const WHITE_BALANCE = 70;
         const WHITE_ENOUGH = 140;
 
         if (lineDiff/3 > WHITE_BALANCE

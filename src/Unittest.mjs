@@ -227,19 +227,21 @@ async function test_promise_queue () {
 
     // test_colorspace_rot();
 
-    const page = 1280;
-    const user = 18;
+    const page = 453; // 438 + 11;
+    const user = 3;
 
     // old bin check
     // await old_bin(page);
 
     // new bin check
-    // await test_userbox_appear_n_len(page)
+    await test_userbox_appear_n_len(page)
     // await test_userbox_cropnbin(page, user)
+    
+    
     // for (let i=0; i<23; i++ )
     //     await test_userbox_cropnbin(page, i)
 
-    await test_promise_queue()
+    // await test_promise_queue()
     
     // Done! Print success
     console.log("Success! Everything looks good!")
