@@ -55,7 +55,7 @@ export class MarblesAppServer {
 
         /** @type {ScreenState} Keep track of state of screen during parsing */
         this.ScreenState = new ScreenState()
-        /** @type {StreamImage} used to parse streaming buffer into images */
+        /** @type {StreamImageTracking} used to parse streaming buffer into images */
         this.StreamImage = new StreamImageTracking(this.streamImgFormat)
         /** @type {ServerStatus} Track overall server status for outside observation */
         this.ServerState = new ServerStatus()
@@ -373,7 +373,7 @@ export class MarblesAppServer {
             const validMarblesImgBool = await mng.validateMarblesPreRaceScreen()
 
             if (validMarblesImgBool) {
-                console.log("Found Marbles Pre-Race header, starting read")
+                console.log(`Found Marbles Pre-Race header, starting read @ ${this.StreamImage.imgs_downloaded}`)
                 this.ServerState.enterReadState()
             } else {
                 return
@@ -479,12 +479,10 @@ export class MarblesAppServer {
             if (vUser.length === undefined) { // TODO: Do multiple checks at once
                 const resultObj = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
                 vUser.length = resultObj[vidx].length
-                vUser.unknownLen = true
-                // if (!vUser.length) continue; // length not found
+                vUser.unknownLen = true // debug info
                 post_match_len_checks++
             }
-            if (vUser.length)
-                pUser.length = vUser.length
+            pUser.setLen(vUser.length)
 
             if (post_match_len_checks > LEN_LIMIT_PER_FRAME) break;
         }
@@ -501,10 +499,13 @@ export class MarblesAppServer {
                     vUser.length = resultObj[vidx].length
                     vUser.ocrLen = true
                 }
-                if (vUser.length) {
-                    pUser.length = vUser.length
+                pUser.setLen(vUser.length)
+                if (pUser.length)
                     this.queueIndividualOCR(pUser, vidx, mng, processImgId)
-                }
+                // if (vUser.length) {
+                //     pUser.length = vUser.length
+                //     this.queueIndividualOCR(pUser, vidx, mng, processImgId)
+                // }
             }
         }
 
@@ -535,7 +536,13 @@ export class MarblesAppServer {
         // crop image
         user.ocr_processing = true;
         const binPerf = performance.now()
-        const sharpBuffer = await mng.cropTrackedUserName(visibleIdx, user.length)
+        let sharpBuffer = null;
+        try {
+            sharpBuffer = await mng.cropTrackedUserName(visibleIdx, user.length)
+        } catch {
+            console.warn("Failed to crop the image correctly")
+            return
+        }
         // console.log(`Queuing OCR user vidx: ${visibleIdx} index ${user.index}`)
 
         const binUserImg = await mng.binTrackedUserName([sharpBuffer])
@@ -547,7 +554,7 @@ export class MarblesAppServer {
 
         // await this.nativeTesseractProcess(pngBuffer)
         await this.OCRManager.queueOCR(binBuffer)
-        .then( ({data, info, jobId, time}) => {
+        .then( async ({data, info, jobId, time}) => {
 
             this.ServerState.addUserReconLagTime(time)
             if (data.lines.length == 0) {
@@ -557,13 +564,13 @@ export class MarblesAppServer {
             for (const line of data.lines) {
                 if (line.text.length < 4) continue; // Twitch limits
                 const text = line.text.trim()
-                const confidence = line.confidence
-                user.addImage(sharpBuffer.toSharp({toJPG:true}),
-                    text,
-                    confidence);
+                const saveImg = await sharpBuffer.toSharp({toJPG:true}).toBuffer()
+                user.addImage(saveImg, text, line.confidence);
+                this.usernameTracker.updateHash(text, user)
+                // TODO: NOTE this will double if multiple lines get detected somehow
             }
             
-            console.log(`Recongized name #${processImgId} @ ${user.index} as ${user.name} conf:${user.confidence.toFixed(1)}% in ${time.toFixed(0)}ms`)
+            console.log(`Recognized name #${processImgId} @ ${user.index} as ${user.name} conf:${user.confidence.toFixed(1)}% in ${time.toFixed(0)}ms`)
         })
         .finally(
             _ => {

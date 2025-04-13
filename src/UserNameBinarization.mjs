@@ -733,6 +733,8 @@ export class UserNameBinarization {
             h: UserNameConstant.HEIGHT,
             w: -1*negativeLen - UN_ENTRY_PADDING,
         }
+        if (cropRect.w < 0)
+            throw Error("Why is cropRect negative here")
         return this.sharpImg.crop(cropRect)
     }
 
@@ -1049,7 +1051,14 @@ export class UserNameBinarization {
                 let right_match = 0
                 for (let d=UN_BOX_HEIGHT/4; d < UN_BOX_HEIGHT * 3/4; d++) {
                     if (user_y_start+d >= imgBuffer.height) break
-                    const rightLine = this.checkLine(UN_RIGHT_X, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
+                    
+                    // const rightLine = this.checkLine(UN_RIGHT_X, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
+                    const rightLine = this.checkLine2(UN_RIGHT_X, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
+                    // continue;
+                    // if (rightLine != rightLine2) {
+                    //     console.warn('diff ', rightLine, rightLine2)
+                    //     imgBuffer.setPixel(UN_RIGHT_X, user_y_start+d, Color.GREEN)
+                    // }
                     if (rightLine) {
                         right_match++
                         if (this.debug) imgBuffer.setPixel(UN_RIGHT_X, user_y_start+d, Color.RED)    
@@ -1061,6 +1070,7 @@ export class UserNameBinarization {
                 // console.log(`Right-line took ${performance.measure('right-detect', userstart).duration}`)
                 // 2ms
             }
+            // return []
 
             // NOTE: Could bin-search this but could be inaccurate if there's a line somewhere else
             if (length) {
@@ -1109,9 +1119,15 @@ export class UserNameBinarization {
                     for (let dy=0; dy < UN_BOX_HEIGHT; dy++) {
                         // TODO: Skip checks if corner buffer already there
                         if (user_y_start+dy >= imgBuffer.height) break
-                        const leftLine = this.checkLine(x_start, user_y_start+dy, imgBuffer, 1,  Direction2D.RIGHT)
+                        const testPoint = [x_start, user_y_start+dy]
+                        // const lefjjtLine = this.checkLine(...testPoint, imgBuffer, 1,  Direction2D.RIGHT)
+                        const leftLine = this.checkLine2(...testPoint, imgBuffer, 1,  Direction2D.RIGHT)
+                        // if (leftLine != leftLine2) {
+                        //     console.warn('left diff ', leftLine, leftLine2)
+                        //     imgBuffer.setPixel(...testPoint, Color.GREEN)
+                        // }
                         if (leftLine) {
-                            if (this.debug) imgBuffer.setPixel(x_start, user_y_start+dy, Color.YELLOW)
+                            if (this.debug) imgBuffer.setPixel(...testPoint, Color.YELLOW)
 
                             if (!matchCornerYToX[dy] || matchCornerYToX[dy] - x_offset > MAX_CORNER_BUFFER ) {
                                 matchCornerYToX[dy] = x_offset
@@ -1172,6 +1188,9 @@ export class UserNameBinarization {
     }
 
     /**
+     * Seems to be a transparent line of RGB [150,150,150]
+     * Line below should always be lower than current line
+     * 
      * @param {number} x
      * @param {number} y 
      * @param {ImageBuffer} imgBuffer 
@@ -1239,7 +1258,7 @@ export class UserNameBinarization {
 
         // check that pixels are generally white
         const lineAvg = Color.avgPixel(...lineTest)
-        const lineDiff = Color.totalDiff(lineAvg)
+        const lineDiff = Color.sumDiff(lineAvg)
 
         const WHITE_BALANCE = 70;
         const WHITE_ENOUGH = 140;
@@ -1262,8 +1281,64 @@ export class UserNameBinarization {
 
         const LINE_DIFF = 26
 
-        return Color.compareWhite(lineAvg, afterAvg) > LINE_DIFF
+        return Color.sumColor(Color.diff(lineAvg, afterAvg)) > LINE_DIFF
+        // return Color.compareWhite(lineAvg, afterAvg) > LINE_DIFF
 
+    }
+
+    /**
+     * Check if there's a white line in this direction
+     * This logic has been edited to estimate the line
+     * @param {number} x x_coord in image
+     * @param {number} y y_coord in image
+     * @param {ImageBuffer} imgBuffer
+     * @param {number} [size=1] size of line to check
+     * @param {Direction2D} [direction] direction to expect cliff
+     */
+    checkLine2 (x,y,imgBuffer, size=1, direction=Direction2D.LEFT) {
+
+        const blurPixel = 2; // How many pixels to check for plane
+        const PX_DIFF = 180 // Expected 
+        const DIFF_TO_LINE = 90;
+        const DIFF_TO_MAX = 30;
+        const BG_CH_MAX = 180; // background max channel color
+
+        const lineTest = []
+        for (let i=0; i<size; i++) {
+            const [dx, dy] = [direction[0]*-i, direction[1]*-i]
+            lineTest.push(imgBuffer.getPixel(x+dx, y+dy))
+            // if (this.debug)
+            //     imgBuffer.setPixel(x+dx, y+dy, Color.RED)
+        }
+
+        // skip whiteness check
+        const planePixels = []
+        for (let i=1; i <= blurPixel; i++) {
+            const [dx,dy] = [direction[0]*i, direction[1]*i]
+            planePixels.push(imgBuffer.getPixel(x+dx, y+dy))
+            // if (this.debug)
+            //     imgBuffer.setPixel(x+dx, y+dy, Color.ORANGE)
+        }
+
+        // Plane should always be darker due to background opacity
+        if (!planePixels.at(-1).every(ch => ch <= BG_CH_MAX)) {
+            return false
+        }
+
+        // expect a difference of around 180
+        const diffPx = Color.diff(lineTest[0], planePixels.at(-1))
+
+        if (Color.sumColor(diffPx) / 3 > DIFF_TO_LINE) return true
+        
+        // NOTE: calculate the max color, as color can cap
+        const maxColor = Color.add(planePixels.at(-1), [PX_DIFF, PX_DIFF, PX_DIFF])
+        const diffToExpected = Color.abs(Color.diff(maxColor, planePixels.at(-1)))
+        
+        // console.log(`Diff is ${diffPx} : ${maxColor} ~ ${lineTest[0]}`)
+
+        if(Color.sumColor(diffToExpected) / 3 < DIFF_TO_MAX) return true
+
+        return false
     }
 
 

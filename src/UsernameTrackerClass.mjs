@@ -52,42 +52,6 @@ class UserImage {
     }
 }
 
-// TODO: Maybe put this in class
-const DEFINED_ADJC_SETS = [
-    ['o', 'O', '0', 'n'],               // o & rounded set
-    ['i', 't', 'r', 'n'],               // r set (flick on r is hard to capture)
-    ['i', 'l', '|', 'f', 'L', '1'],     // long char set
-    ['a', 'e', 's', 'o', 'g'],          // a set
-    ['e', 'c', 'u', 'w'],            // e & curved lt set
-    ['o', 'c'],
-    ['a', '8', 'B'],    // 8 set
-    ['s', 'z'],                 // zigzag lt
-    ['R', 'A'],             // Big lt with circle
-    ['Y', 'v', 'y'],         // v/w
-    ['4', 'd', 'A', 'a'],
-    ['d', '9'],
-    ['7', 'T'],
-    ['g', 'y'],
-    ['C', 'G']
-]
-const ADJC_LETTER_MAP = new Map()
-
-for (let arr of DEFINED_ADJC_SETS) {
-    let set = new Set(arr)
-    for (let lt of arr) {
-        let currSet = ADJC_LETTER_MAP.get(lt)
-        if (currSet == undefined) ADJC_LETTER_MAP.set(lt, set)
-        else { // create new set and combine
-            const combSet = new Set(set)
-            for (const el in currSet) combSet.add(el)
-            ADJC_LETTER_MAP.set(lt, combSet)
-        }
-    }
-}
-
-console.debug(`[UsernameTracker] Generated ${ADJC_LETTER_MAP.size} adjacent entries!`)
-
-
 
 export class UsernameTracker {
 
@@ -605,6 +569,145 @@ export class UsernameTracker {
     }
 }
 
+/**
+ * Moving username searcher to separate class
+ * Not rewriting the old code as I'm lazy
+ */
+export class UsernameSearcher {
+
+    static DEFINED_ADJC_SETS = [
+        ['o', 'O', '0', 'n'],               // o & rounded set
+        ['i', 't', 'r', 'n'],               // r set (flick on r is hard to capture)
+        ['i', 'l', '|', 'f', 'L', '1'],     // long char set
+        ['a', 'e', 's', 'o', 'g'],          // a set
+        ['e', 'c', 'u', 'w'],            // e & curved lt set
+        ['o', 'c'],
+        ['a', '8', 'B'],    // 8 set
+        ['s', 'z'],                 // zigzag lt
+        ['R', 'A'],             // Big lt with circle
+        ['Y', 'v', 'y'],         // v/w
+        ['4', 'd', 'A', 'a'],
+        ['d', '9'],
+        ['7', 'T'],
+        ['g', 'y'],
+        ['C', 'G']
+    ]
+    static ADJC_LETTER_MAP = null
+    static PERFORMANCE_MARK_FIND = "find_username"
+    static USER_RANK_LIST = 5
+
+    static PreProcess() {
+        if (UsernameSearcher.ADJC_LETTER_MAP) return;
+
+        UsernameSearcher.ADJC_LETTER_MAP = new Map();
+        // Build adjc map
+        for (let arr of UsernameSearcher.DEFINED_ADJC_SETS) {
+            const set = new Set(arr)
+            for (let lt of arr) {
+                const currSet = UsernameSearcher.ADJC_LETTER_MAP.get(lt)
+                if (currSet == undefined) UsernameSearcher.ADJC_LETTER_MAP.set(lt, set)
+                else { // create new set and combine
+                    const combSet = new Set(set)
+                    for (const el in currSet) combSet.add(el)
+                        UsernameSearcher.ADJC_LETTER_MAP.set(lt, combSet)
+                }
+            }
+        }
+
+        console.debug(`[UsernameSearcher] Generated ${UsernameSearcher.ADJC_LETTER_MAP.size} adjacent entries!`)
+    }
+
+    /**
+     * 
+     * @param {String} searchUsername username to search for
+     * @param {TrackedUsername[]} userNameList List of username objects (must have .aliases property)
+     * @param {Number} lowestRank Lowest rank to consider, otherwise match is ignored
+     * @returns {LimitedList} 
+     */
+    static find (searchUsername, userNameList, lowestRank=Infinity, lowerCasePenalty=true) {
+        // Attempt to find the 5 closest usernames to this text
+        const sortFunc = (a,b) => a[0] < b[0]
+        const usernameRanking = new LimitedList(UsernameSearcher.USER_RANK_LIST, null, sortFunc)
+        let currentMax = lowestRank
+        // performance.mark(this.PERFORMANCE_MARK_FIND)
+
+        for (const userObj of userNameList) {
+            if (!userObj) continue
+            for (const userAlias of userObj.aliases) {
+                // const testUsername = userAlias
+                const dist = UsernameSearcher.calcLevenDistance(searchUsername, userAlias, currentMax, lowerCasePenalty)
+                const userRankObj = [dist, userObj]
+
+                if (usernameRanking.isFull()) currentMax = usernameRanking.sneak()[0]
+                if (dist < currentMax) usernameRanking.push(userRankObj)
+            }
+        }
+
+        // console.debug(`Find username ranking took ${performance.measure('username_mark', this.PERFORMANCE_MARK_FIND).duration.toFixed(2)}ms`)
+        return usernameRanking.list
+    }
+
+    /**
+     * Returns the Leven Distance between two strings
+     * @param {string} testUsername Username to test by
+     * @param {string} matchUsername Username to match with
+     * @param {Number} earlyOut If match-penalty is greater than this value, return early
+     * @param {boolean} lowerCasePenalty if true, penalise if matched letter is lower/upper case
+     * @returns {Number}
+     */
+    static calcLevenDistance (testUsername, matchUsername, earlyOut=Infinity, lowerCasePenalty=true) {
+        // Return the distance between the two usernames
+        const flatArray = new Uint8Array((testUsername.length+1) * (matchUsername.length+1))
+        const getOffset = (x,y) => y*(testUsername.length+1) + x
+
+        const del_add_penalty = 2
+        for (let x=0; x < testUsername.length+1; x++) {
+            flatArray[getOffset(x,0)] = x * del_add_penalty
+        }
+        for (let y=1; y < matchUsername.length+1; y++) {
+            flatArray[getOffset(0,y)] = y * del_add_penalty
+        }
+
+        // start DP iteration
+        // NOTES: If I want to penalize insertion/deletion, increase cost for left/up movement
+        for (let x=1; x<testUsername.length+1; x++) {
+            for (let y=1; y<matchUsername.length+1; y++) {
+                const penalty = UsernameSearcher.compareLetters(testUsername[x-1], matchUsername[y-1], lowerCasePenalty)                // const penalty = newUsername[x-1] == oldUsername[y-1] ? 0 : 1
+                const trip = Math.min(
+                                flatArray[getOffset(x-1, y)], 
+                                flatArray[getOffset(x-1, y-1)], 
+                                flatArray[getOffset(x,   y-1)])
+                flatArray[getOffset(x,y)] = penalty + trip
+                
+                if (x == y && flatArray[getOffset(x,y)] > earlyOut) return Infinity // early out
+            }
+        }
+
+        return flatArray[getOffset(testUsername.length, matchUsername.length)]
+    }
+
+    /**
+     * Compare 2 letters
+     * @param {string} ltA 
+     * @param {string} ltB
+     * @param {boolean} [lowerCasePenalty=true] 
+     * @returns {boolean}
+     */
+    static compareLetters(ltA, ltB, lowerCasePenalty=true) {
+        
+        if (ltA == ltB) return 0
+        if (ltA.toLowerCase() == ltB.toLowerCase()) 
+            return lowerCasePenalty ? 1 : 0
+        
+        if ( UsernameSearcher.ADJC_LETTER_MAP.has(ltA) ) {
+            if (UsernameSearcher.ADJC_LETTER_MAP.get(ltA).has(ltB)) return 1
+        }
+        return 2
+    }
+}
+UsernameSearcher.PreProcess()
+
+
 export class TrackedUsername {
     /**
      * Store info about the Username and etc
@@ -617,7 +720,7 @@ export class TrackedUsername {
     constructor (enterFrameTime=undefined) {
         /** @type {string} most confident name */
         this.name = null                
-        /** @type {number} approx length of the username*/
+        /** @type {number} approx length of the username, negative */
         this.length = null
         /** @type {number} confidence percentage */
         this.confidence = 0
@@ -653,6 +756,15 @@ export class TrackedUsername {
         return this.enterFrameTime + UsernameAllTracker.FinishExitTime
     }
 
+    /*
+    TrackerUsername has 3 states
+    1. Pre-screen                   - no appeartime
+    2. On screen, unknown length    - appeartime
+    3. On screen, length known      - appearTime & seen
+    3.a (going off-screen), this might take some testing    - exitingTime*
+    4. Off screen - endTime
+    */
+
     /** 
      * @returns {number} Time that username right-line stops being visible
      */
@@ -662,20 +774,11 @@ export class TrackedUsername {
     }
 
     set exitingFrameTime (time) {
-        // NOTE: Set the enteringFrameTime
+        // TODO: Set the enteringFrameTime
         // also should have some flag to confirm if this is top of frame disappear or overlay disappear
         this.debugexitFrame = time
     }
 
-
-    // TrackerUsername has 3 states
-    /*
-    1. Pre-screen                   - no appeartime
-    2. On screen, unknown length    - appeartime
-    3. On screen, length known      - apeparTime & length
-    3.a (going off-screen), this might take some testing    - endTime*
-    4. Off screen - endTime
-    */
 
     /**
      * Return if userbox is expected to be on-screen.
@@ -696,6 +799,17 @@ export class TrackedUsername {
         
         return Mathy.inRange(inputLen, this.length, 
             [-TrackedUsername.LENGTH_MIN, TrackedUsername.LENGTH_MIN])
+    }
+
+    setLen(inputLen) {
+        if (inputLen == null || inputLen == undefined) 
+            return // I know JS considers this the same, but I don't so
+        
+        if (inputLen >= 0) {
+            throw Error(`Given a negative length ${inputLen}`)
+        }
+
+        this.length = inputLen
     }
 
     /**
@@ -752,7 +866,6 @@ export class UsernameAllTracker {
     static measuredFPS = 30;
     static BeginExitTime = 176-29;
     static FinishExitTime = 183-29;
-
 
 
     static updateFPSTime (fps) {
@@ -932,6 +1045,8 @@ export class UsernameAllTracker {
 
     /**
      * Retrieve the best image for this username
+     * @param {string} username 
+     * @returns {ArrayBuffer} JPG buffer of image
      */
     getImage(username) {
         if (this.hash.has(username)) {
@@ -939,14 +1054,27 @@ export class UsernameAllTracker {
             const imgObj = userObj.bestImg
             return imgObj
         }
+        return null
     }
 
     /**
      * Get image by index for testing*
      * @param {number} userIndex 
+     * @returns {ArrayBuffer} JPG of buffer image if possible
      */
     getImageByIndex(userIndex) {
-        return this.usersInOrder[userIndex].bestImg
+        return this.usersInOrder[userIndex]?.bestImg
+    }
+
+    updateHash(username, userobj) {
+        this.hash.set(username, userobj)
+    }
+
+    /**
+     * Find approx username
+     */
+    find (username, lowestRank=Infinity) {
+        return UsernameSearcher.find(username, this.usersInOrder, lowestRank, true)
     }
 
     /** Clears the usernames and hash */
@@ -954,21 +1082,23 @@ export class UsernameAllTracker {
         this.usersInOrder = [];
 
         this.hash.clear()
-
-        // NOTE: Anything else to clear? The entire state is in username now
     }
 
+    /**
+     * Returns a list that is human readable for debugging
+     */
     getReadableList () {
         return this.usersInOrder.map(username => username.toJSON())
     }
 
     get count() {
-        return this.usersInOrder.length
+        const lastFoundIndex = this.usersInOrder.findLastIndex(tUser => tUser != null)
+        return this.usersInOrder.length - lastFoundIndex
     }
 
     status () {
         return {
-            'user_count': this.usersInOrder.length,
+            'user_count': this.count,
             'read_pages': this.read_imgs,
             'unverified': {
                 'users': this.usersInOrder.map(user => user?.name != null)

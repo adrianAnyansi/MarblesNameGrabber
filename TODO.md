@@ -26,20 +26,31 @@ The goal is every single name should be tracked even if I can't read it or get a
 
 # Focus today
 ---
-More testing & refactoring, trying to get things to testing/debugging for accuracy.
 
-User lag time
-- when image first showed on screen - save this to user object
-- user was first recognized to be visible - makes more sense as thats when user first sees their name (if possible)
-- user OCR finally returned
+Wow lets do some more testing- the testing never ends yay!
+I'm just going to finish the current list and take a break, its literally been 2 months since beginning this project
 
-I have all the ingredients for prod test, but want a bit more hardening
-also Lambda should work so I can test without cpu load if necessary, then I only do 1 pass
+Need to return user lag time btw, I have the numbers
+Have not done any of the lambda testing since lambda needs to be rewritten
+    - Basically instead of a custom framework, I can not directly init
+        - individual user cut without binarization
+        - with binarization
+    But I'm not doing this until testing is complete since detection has issues
 
-OCR manager is done so once Lambda is tested, I can write the new lambda code to be much better
+About the check for line, might consider that as a custom
 
-- Upgrade debug/test routes for better testing 
-
+Looks like its about #FFFFFF with 70% opacity
+So the issue is that I need to re-write the line detection
+    - currently uses 
+        - white-balance (all channels difference < 70 pixels)
+        - white-enough (channel avg >  140)
+    - to use this new change
+        - base pixel is during testing is [7,50,204]
+        - plane pixel is [4,33,133] # cut in half?
+            - background color is #000000 at ~35% opacity 
+        - the outline is [158,176,255]
+            - outline color is #FFFFFF at ~75% but white line very inconsistent
+            - increase of about 180 to plane
 
 ## Think about
 - When to do temporal, and is this accurate?
@@ -64,23 +75,14 @@ OCR manager is done so once Lambda is tested, I can write the new lambda code to
 There are a couple things to focus on that branch out
 I want to write them so I can prioritize and stop getting distracted
 
-- OCR
-    - Compart OCR and push into class
-    - Add queuing to native OCR
-    - Deprecated Node native worker?
 - Custom OCR
     - Write demo OCR and time against current
 - Binarization
-    - Reduce time for binarization to complete, ~9-20ms (actually goes down with caching)
     - Fix bug with blue BG overriding colorSpace?
-    - Clean-up old code
 - Unit-testing
     - Add a unittest framework for a bit of speed and sanity
 - Server
-    - Clean-up server routes
-    - Deprecate debug/test
     - Figure out some framework to start server, send test url, and test names
-    - Clean-up internal variables
 - Name-run
     - Work on overlap detection and handling
     - Work on end of read state detection

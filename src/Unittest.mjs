@@ -45,11 +45,12 @@ async function test_userbox() {
 
 async function test_userbox_appear_n_len(inpage) {
     // const filename = file2;
-    const page = inpage ?? 471
+    const page = inpage ?? 1
     const filename = `testing/vod_dump/${page}.jpg`
     // const filename = `testing/livejpgtest.jpg`
+    const debug = true
 
-    const mng = new UserNameBinarization(filename, true);
+    const mng = new UserNameBinarization(filename, debug);
     performance.mark('s')
     let users = await mng.getUNBoundingBox([], {appear:true, length:true});
     console.log("Users List")
@@ -227,8 +228,8 @@ async function test_promise_queue () {
 
     // test_colorspace_rot();
 
-    const page = 453; // 438 + 11;
-    const user = 3;
+    const page = 1219; // 438 + 11;
+    const user = 4;
 
     // old bin check
     // await old_bin(page);

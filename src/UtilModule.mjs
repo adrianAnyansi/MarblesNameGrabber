@@ -36,6 +36,10 @@ export class Color {
     /** Matched but in wrong position value */
     static ANTI_MATCH_ALPHA =   0xFC
 
+    static CreateRGB(r_channel=0, g_channel=0, b_channel=0) {
+        return new Uint8Array([r_channel, g_channel, b_channel])
+    }
+
     /** 
      * @param {RGB} rgb array of uint8, alpha is ignored
      * @returns {number} hex value in decimal
@@ -132,11 +136,39 @@ export class Color {
      * Alpha is ignored
      * @param {RGB} rgb1 
      * @param {RGB} rgb2 
+     * @returns {RGB} copied reference
      */
     static copyTo(rgb1, rgb2) {
         rgb1[0] = rgb2[0]
         rgb1[1] = rgb2[1]
         rgb1[2] = rgb2[2]
+        return rgb1
+    }
+
+    /**
+     * Return the difference between both colors
+     * Note negative values can be returned
+     * @param {RGBA | RGB} rgba 
+     * @returns {number[]}
+     */
+    static diff(rgb1, rgb2) {
+        const r_diff = rgb1[0] - rgb2[0]
+        const g_diff = rgb1[1] - rgb2[1]
+        const b_diff = rgb1[2] - rgb2[2]
+
+        return [r_diff, g_diff, b_diff]
+    }
+
+    /**
+     * Return abs of a set of color channels
+     * @param {number[]} rgba 
+     * @returns {RGBA | RGB}
+     */
+    static abs(rgb) {
+        return new Uint8Array([
+            Math.abs(rgb[0]),
+            Math.abs(rgb[1]),
+            Math.abs(rgb[2])])
     }
 
     /**
@@ -146,6 +178,10 @@ export class Color {
      * @returns {number}
      */
     static compareMean(rgba1, rgba2) {
+        return this.sumColor(
+            this.abs(this.diff(rgba1, rgba2))
+        )/3;
+
         const r_diff = Math.abs(rgba1[0] - rgba2[0])
         const g_diff = Math.abs(rgba1[1] - rgba2[1])
         const b_diff = Math.abs(rgba1[2] - rgba2[2])
@@ -159,21 +195,22 @@ export class Color {
      * @param {RGBA | RGB} rgba 
      * @returns {number}
      */
-    static totalDiff(rgba) {
+    static sumDiff(rgba) {
         return Math.abs(rgba[0]-rgba[1])
             + Math.abs(rgba[1]-rgba[2])
             + Math.abs(rgba[0]-rgba[2])
     }
 
     static compareWhite(rgb, rgb2) {
+        return this.sumColor(this.diff(rgb, rgb2))
         return rgb[0] - rgb2[0] 
             + (rgb[1] - rgb2[1])
             + (rgb[2] - rgb2[2])
     }
 
     /**
-     * Sum color values of RGB
-     * @param {RGBA} rgb
+     * Sum color channels of RGB
+     * @param {RGBA | RGB} rgb
      * @returns {number}
      */
     static sumColor(rgb) {
@@ -205,6 +242,17 @@ export class Color {
         Math.round(0.587 * rgba[1]) +
         Math.round(0.114 * rgba[2]);
         return [avgCh, avgCh, avgCh, 0xFF]
+    }
+
+    /**
+     * @param {number[]} ch3 3 channels
+     */
+    static add (rgb, ch3) {
+        const retRGB = new Uint8Array(3)
+        for (const ch in ch3) {
+            retRGB[ch] = Math.min(rgb[ch] + ch3[ch], 255)
+        }
+        return retRGB
     }
 }
 

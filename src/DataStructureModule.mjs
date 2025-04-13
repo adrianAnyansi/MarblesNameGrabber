@@ -80,10 +80,16 @@ export class LimitedList {
         }
     }
 
+    /**
+     * Look at last element in list without change
+     */
     peek() {
         return this.list[0]
     }
 
+    /**
+     * Look at first element in list without change
+     */
     sneak() {
         return this.list.at(-1)
     }
