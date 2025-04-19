@@ -1,4 +1,5 @@
 import { msToHUnits } from "./DataStructureModule.mjs"
+import { Mathy } from "./UtilModule.mjs"
 
 /** Server state enum */
 export const SERVER_STATE_ENUM = {
@@ -265,7 +266,7 @@ export class StreamImageTracking {
      */
     constructor(img_format) {
         /** @type {number} current image being processed*/
-        this.img_processed = 0
+        this.imgs_processed = 0
 
         /** @type {StreamingImageBuffer} */
         this.streamingBuffer = new StreamingImageBuffer(...img_format)
@@ -285,7 +286,7 @@ export class StreamImageTracking {
     /** Reset all objects to default  */
     reset() {
         // this.emptyImages = 0
-        this.img_processed = 0
+        this.imgs_processed = 0
         // this.imageProcessQueueLoc = 0
         // this.imageProcessQueue = []
 
@@ -352,6 +353,11 @@ export class ServerStatus {
         /** @type {Set<string>} list of all viewer ips */
         this.allViewers = new Set()
 
+        /** @type {DOMHighResTimeStamp[]} tracking frame enter time */
+        this.frame_pacing = []
+        /** @type {DOMHighResTimeStamp[]} tracking frame finish parsing time */
+        this.frame_end_pacing = []
+
     }
 
     /** Clear all tracked values */
@@ -404,6 +410,30 @@ export class ServerStatus {
 
     get currentViewers () {
         return this.monitoredViewers.length
+    }
+
+    /** Get string representing this frame's performance */
+    frameTiming (frame_idx) {
+        // TODO: Make sure lengths match before doing -1
+        const frameTime = this.frame_end_pacing.at(frame_idx) - this.frame_pacing.at(frame_idx);
+        return frameTime
+    }
+
+    /**
+     * Get frameAverage over N frames
+     * @returns {Object} avg & std deviation
+     */
+    frameAvg (frameIdx) {
+        const sampleFrames = []
+        for (const idx of Mathy.iterateN(-5, 0)) {
+            sampleFrames.push(this.frameTiming(idx + frameIdx))
+        }
+        const filterSampleFrames = sampleFrames.filter(val => !isNaN(val))
+
+        const avg = Mathy.average(filterSampleFrames);
+        const stdDev = Mathy.stdDev(filterSampleFrames, avg)
+
+        return `Frame Time:${avg.toFixed(2)}ms, SD:${stdDev.toFixed(2)}ms`
     }
 
     /**

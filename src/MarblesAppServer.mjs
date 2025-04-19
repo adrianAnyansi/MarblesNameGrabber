@@ -67,14 +67,12 @@ export class MarblesAppServer {
             process: false,
             lambda: false,
             vod_dump: false,
-            screen_state_log: false,
-            fps: false,
-            user_bin: true
+            screen_state_log: true,
+            // fps: false,
+            user_bin: false,
+            disable_ocr: false,
+            frame_pacing: true // track & output fps 
         }
-
-        // debug variables
-        // this.debugTesseract = false;
-        // this.debugLambda = false;
 
         // Processors & Commands
         // ================================
@@ -86,7 +84,7 @@ export class MarblesAppServer {
                             '-c:v', ...this.streamImgFormat[1],
                             '-vf', `fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
         /** Tesseract command-line location */
-        this.tesseractCmd = MarblesAppServer.TESSERACT_LOC
+        // this.tesseractCmd = MarblesAppServer.TESSERACT_LOC
 
         // Processors
         // ========================================================
@@ -115,8 +113,8 @@ export class MarblesAppServer {
             this.debug_obj.native_tesseract, true)
 
         /** OCR Worker object */
-        this.OCRScheduler = null
-        this.numOCRWorkers = 0
+        // this.OCRScheduler = null
+        // this.numOCRWorkers = 0
 
         // Lambda state
         // if (this.debugLambda)  AWS_LAMBDA_CONFIG["logger"] = console
@@ -132,15 +130,6 @@ export class MarblesAppServer {
         // this.usernameList = new UsernameTracker() 
         /** @type {UsernameAllTracker} Userlist but better */
         this.usernameTracker = new UsernameAllTracker()
-
-        // Server Variables
-        // ================================================
-        // this.serverStatus_obj = {
-            // state: SERVER_STATE_ENUM.STOPPED,   // current state
-            // viewers: 0,                         // current viewers on the site
-            // interval: 1_000 * 3,                 // interval to refresh status
-            // lag_time: 0                         // time behind from 
-        // }
 
     }
 
@@ -191,9 +180,10 @@ export class MarblesAppServer {
         this.streamlinkProcess = spawn(this.streamlinkCmd[0], this.streamlinkCmd.slice(1), {
             stdio: ['inherit', 'pipe', 'pipe']
         })
-        this.ffmpegProcess = spawn(this.ffmpegCmd[0], this.ffmpegCmd.slice(1), {
-            stdio: ['pipe', 'pipe', 'pipe']
-        })
+        // this.ffmpegProcess = spawn(this.ffmpegCmd[0], this.ffmpegCmd.slice(1), {
+        //     stdio: ['pipe', 'pipe', 'pipe']
+        // })
+        this.startFFMPEGProcess()
 
         this.streamlinkProcess.stdout.pipe(this.ffmpegProcess.stdin) // pipe to ffmpeg
 
@@ -212,34 +202,34 @@ export class MarblesAppServer {
         })
 
         // On FFMpeg start, make log
-        let outputFFMPEGBuffer = false
-        this.ffmpegProcess.stderr.on('data', (data) => {
-            const stringOut = data.toString()
-            if (this.debug_obj.process)
-                console.log(stringOut)
-            if (!outputFFMPEGBuffer & stringOut.includes('frame=')) {
-                outputFFMPEGBuffer = true
-                console.debug('FFMpeg is outputting images to buffer-')
-            }
-        })
+        // let outputFFMPEGBuffer = false
+        // this.ffmpegProcess.stderr.on('data', (data) => {
+        //     const stringOut = data.toString()
+        //     if (this.debug_obj.process)
+        //         console.log(stringOut)
+        //     if (!outputFFMPEGBuffer & stringOut.includes('frame=')) {
+        //         outputFFMPEGBuffer = true
+        //         console.debug('FFMpeg is outputting images to buffer-')
+        //     }
+        // })
 
-        this.ffmpegProcess.stdout.on('data', (/** @type {Buffer}*/ streamImgBuffer) => {
-            // NOTE: Data is a buffer with partial image data
-            const newFrameBuffer = this.StreamImage.addToBuffer(streamImgBuffer)
-            if (newFrameBuffer !== null) {
-                this.handleImage(newFrameBuffer)
-                if (this.debug_obj.fps)
-                    console.log(`Current FPS ${this.StreamImage.fps.toFixed(1)}`)
-            }
-        })
+        // this.ffmpegProcess.stdout.on('data', (/** @type {Buffer}*/ streamImgBuffer) => {
+        //     // NOTE: Data is a buffer with partial image data
+        //     const newFrameBuffer = this.StreamImage.addToBuffer(streamImgBuffer)
+        //     if (newFrameBuffer !== null) {
+        //         if (this.debug_obj.frame_pacing)
+        //             this.ServerState.frame_pacing.push(performance.now())
+        //         this.handleImage(newFrameBuffer)
+        //     }
+        // })
 
         // Error-handling
         this.streamlinkProcess.on('error', (err) => {
             console.warn("An unknown error occurred while writing Streamlink process." + err)
         })
-        this.ffmpegProcess.on('error', () => {
-            console.warn("An unknown error occurred while writing FFMpeg process.")
-        })
+        // this.ffmpegProcess.on('error', () => {
+        //     console.warn("An unknown error occurred while writing FFMpeg process.")
+        // })
 
         // Closed handling
         this.streamlinkProcess.on('close', () => {
@@ -247,13 +237,13 @@ export class MarblesAppServer {
             this.spinDown()
             this.ServerState.enterStopState()
         })
-        this.ffmpegProcess.on('close', () => {
-            console.debug('FFMpeg process has closed.')
-            // NOTE: Ignoring the spinDown server state as both shutdown each other
-            this.ServerState.enterStopState()
-        })
+        // this.ffmpegProcess.on('close', () => {
+        //     console.debug('FFMpeg process has closed.')
+        //     // NOTE: Ignoring the spinDown server state as both shutdown each other
+        //     this.ServerState.enterStopState()
+        // })
 
-        console.debug("Set up streamlink->ffmpeg processes")
+        console.debug("Set up streamlink processes")
     }
 
     /**
@@ -286,9 +276,9 @@ export class MarblesAppServer {
             // NOTE: Data is a buffer with partial image data
             const newFrameBuffer = this.StreamImage.addToBuffer(streamImgBuffer)
             if (newFrameBuffer !== null) {
-                this.handleImage(newFrameBuffer)
-                if (this.debug_obj.fps)
-                    console.log(`Current FPS ${this.StreamImage.fps.toFixed(1)}`)
+                if (this.debug_obj.frame_pacing)
+                    this.ServerState.frame_pacing[this.StreamImage.imgs_downloaded] = performance.now()
+                this.handleImage(newFrameBuffer, this.StreamImage.imgs_downloaded)
             }
         })
         this.ffmpegProcess.on('error', () => {
@@ -332,14 +322,13 @@ export class MarblesAppServer {
      * Handle image before per-frame calculations
      * Stops processing if not available
      * @param {import('./UtilModule.mjs').ImageLike} imageLike 
+     * @param {number} imgId unique id for image
      */
-    async handleImage(imageLike) {
+    handleImage(imageLike, imgId) {
         if (this.ServerState.notRunning) {
             console.debug(`In COMPLETE/STOP state, dropping image.`)
             return
         }
-
-        const imgId = this.StreamImage.imgs_downloaded
 
         if (this.debug_obj.vod_dump) {
             fs.writeFile(`${VOD_DUMP_LOC}${imgId}.${this.streamImgFormat[0]}`, imageLike)
@@ -354,17 +343,17 @@ export class MarblesAppServer {
             return
         }
 
-        return this.parseAdvImg(imageLike)
+        this.parseAdvImg(imageLike, imgId)
     }
 
     /** Parse advanced image per frame
      * Need a complex state machine to handle this
      * @param {import('./UtilModule.mjs').ImageLike} imageLike 
      */
-    async parseAdvImg(imageLike) {
+    async parseAdvImg(imageLike, imgId) {
         
-        const frameStartMark = 'frame-start'
-        performance.mark(frameStartMark);
+        // const frameStartMark = 'frame-start'
+        // performance.mark(frameStartMark);
         
         const mng = new UserNameBinarization(imageLike, false)
 
@@ -382,7 +371,7 @@ export class MarblesAppServer {
 
         // Determine the visible & predicted users on this frame
         // ==============================================================================
-        const processImgId = this.StreamImage.img_processed++
+        const processImgId = this.StreamImage.imgs_processed++
         
         /** All on-screen users with their appearance checked */
         const screenUsersArr = await mng.getUNBoundingBox([], {appear:true, length:false})
@@ -406,6 +395,13 @@ export class MarblesAppServer {
         const LEN_CHECK_MATCH = 6;
         /** Actual offset from on-screen analysis */
         let offsetMatch = null;
+        /** Keep track of offset */
+        const len_check_count = {
+            offset: 0,
+            post_match: 0,
+            pre_ocr: 0
+        }
+        let offset_len_check = 0;
         
         // Reconcile offset by checking the prediction
         // ========================================================================
@@ -425,17 +421,22 @@ export class MarblesAppServer {
                 
                 // calculate length from current screen
                 const vlenArr = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
+                len_check_count.offset++
                 vUser.length = vlenArr[vidx].length
                 vUser.matchLen = true
                 currLenList.push(vobj)
                 // NOTE: the available checks are reduced if length can't be determined
-                if (currLenList.length >= LEN_CHECK_MATCH) break;
+                if (currLenList.filter(({vidx, vUser}) => vUser.length != null).length >= LEN_CHECK_MATCH) break;
             }
 
             // calculate best matching ofset
             ({offset:offsetMatch} = UsernameAllTracker.findBestShiftMatch(
                 predictedUsers, currLenList
             ))
+
+            if (offsetMatch > 6 || offsetMatch < -2) {
+                console.warn(`No op offset detected`, offsetMatch)
+            } else
 
             if (offsetMatch != null && offsetMatch > 0) {
                 this.usernameTracker.shiftOffset(offsetMatch); // update offset
@@ -444,9 +445,10 @@ export class MarblesAppServer {
                 // Predicted users is inaccurate, recalc
                 ({predictedUsers, offset} = this.usernameTracker.predict(processImgId, 
                     {totalUsers:null, predictFullScreen:true}, setEnterFrame))
-            } else if (offsetMatch < 0) {
-                console.error("Offset is negative! This is a DO NOTHING", offsetMatch)
-            }
+            } 
+            // else if (offsetMatch < 0) {
+            //     console.error("Offset is negative! This is a DO NOTHING", offsetMatch)
+            // }
         }
 
         // After this line, the predictedUsers is verified
@@ -471,41 +473,38 @@ export class MarblesAppServer {
 
         // Now do as many length checks for visible names that do not have length checks first
         const LEN_LIMIT_PER_FRAME = 25; // NOTE: Maxing this for testing
-        let post_match_len_checks = 0
         for (const {vidx, vUser} of screenVisibleUsers) {
             const pUser = predictedUsers[vidx]
             if (pUser.length) continue;
 
             if (vUser.length === undefined) { // TODO: Do multiple checks at once
                 const resultObj = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
+                len_check_count.post_match++
                 vUser.length = resultObj[vidx].length
                 vUser.unknownLen = true // debug info
-                post_match_len_checks++
             }
             pUser.setLen(vUser.length)
 
-            if (post_match_len_checks > LEN_LIMIT_PER_FRAME) break;
+            if (len_check_count.post_match > LEN_LIMIT_PER_FRAME) break;
         }
 
         // Need to run OCR separately as length check out-priorities OCR 
         for (const {vidx, vUser} of screenVisibleUsers) {
-            if (vidx == 23) continue; // cropping fails on last index
+            if (vidx == 23) continue; // cropping fails on last index, just skip
             if (vUser.length === null) continue; // Already failed to calc length this frame
 
             const pUser = predictedUsers[vidx]
             if (pUser.readyForOCR()) {
                 if (vUser.length === undefined) { // must have a valid length this frame
+                    // TODO: Use quickLength only here, don't need to find left section
                     const resultObj = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
+                    len_check_count.pre_ocr++
                     vUser.length = resultObj[vidx].length
                     vUser.ocrLen = true
                 }
                 pUser.setLen(vUser.length)
-                if (pUser.length)
+                if (pUser.length && !this.debug_obj.disable_ocr)
                     this.queueIndividualOCR(pUser, vidx, mng, processImgId)
-                // if (vUser.length) {
-                //     pUser.length = vUser.length
-                //     this.queueIndividualOCR(pUser, vidx, mng, processImgId)
-                // }
             }
         }
 
@@ -514,7 +513,7 @@ export class MarblesAppServer {
         if (this.debug_obj.screen_state_log && 
             (this.ScreenState.shouldDisplaySmth || post_match_len_checks > 0)) {
             console.log(
-                `Frame_num ${processImgId.toString().padStart(5, ' ')} | Offset: ${offsetMatch} | User: ${this.usernameTracker.count}\n`+
+                `Frame_num ${imgId.toString().padStart(5, ' ')} | Offset: ${offsetMatch} | User: ${this.usernameTracker.count}\n`+
                 `V: ${this.ScreenState.visibleScreenFrame.at(-1)}`+'\n'+
                 `P: ${this.ScreenState.predictedFrame.at(-1)}`
             )
@@ -522,6 +521,17 @@ export class MarblesAppServer {
 
         if (!this.ScreenState.knownScreen)
             this.ScreenState.knownScreen = true // flip this when screen cannot be seen & top user is unknown
+
+        if (this.debug_obj.frame_pacing) {
+            this.ServerState.frame_end_pacing[imgId] = performance.now()
+            console.log(`Curr Frame:${this.ServerState.frameTiming(imgId).toFixed(2)}ms lenChecks ${JSON.stringify(len_check_count)}`)
+            console.log(this.ServerState.frameAvg(imgId))
+        }
+
+        console.log('--- End Frame ---')
+
+        // const frameTime = performance.measure(frameStartMark, frameStartMark).duration;
+        // console.debug(`Frame took ${frameTime.toFixed(2)}ms to complete`)
 
     }
 

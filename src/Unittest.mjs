@@ -51,12 +51,38 @@ async function test_userbox_appear_n_len(inpage) {
     const debug = true
 
     const mng = new UserNameBinarization(filename, debug);
-    performance.mark('s')
+    const st = performance.now()
     let users = await mng.getUNBoundingBox([], {appear:true, length:true});
+    console.log(`Took ${(performance.now() - st).toFixed(2)}ms for appear+len`)
     console.log("Users List")
     console.log(users.map((u, i) => 
         `[${i.toString().padStart(2, ' ')}] ${JSON.stringify(u)}`
     ).join('\n'))
+}
+
+async function test_userbox_timing(page) {
+    // const filename = `testing/vod_dump/${page}.jpg`
+    const filename = chatTestingFolder+'chat_clean.png';
+
+    const mng = new UserNameBinarization(filename, false)
+    const joinMark = 'joinMark'
+    performance.mark(joinMark)
+    // for (const test of Mathy.iterateN(10)) {
+        await mng.getUNBoundingBox([], {appear:false, length:true});
+    // }
+    console.log(`Took ${performance.measure(joinMark, joinMark).duration.toFixed(2)}ms for all`)
+
+    // individual mark is faster- by about 5-7ms... why though
+    // also around 48-87 -> 55.49ms
+    const indvMark = 'indvMark'
+    const mng2 = new UserNameBinarization(filename, false)
+    performance.mark(indvMark)
+    // for (const test of Mathy.iterateN(10)) {
+        for (const i of Mathy.iterateN(24)) {
+            await mng2.getUNBoundingBox([i], {appear:false, length:true})
+        }
+    // }
+    console.log(`Took ${performance.measure(indvMark, indvMark).duration.toFixed(2)}ms for all`)
 }
 
 async function test_chat_detect() {
@@ -228,7 +254,7 @@ async function test_promise_queue () {
 
     // test_colorspace_rot();
 
-    const page = 1219; // 438 + 11;
+    const page = 303; // 438 + 11;
     const user = 4;
 
     // old bin check
@@ -238,11 +264,15 @@ async function test_promise_queue () {
     await test_userbox_appear_n_len(page)
     // await test_userbox_cropnbin(page, user)
     
+    await test_userbox_timing(page)
     
     // for (let i=0; i<23; i++ )
     //     await test_userbox_cropnbin(page, i)
 
     // await test_promise_queue()
+
+    // console.log(Array.from(Mathy.iterateN(10, 0)))
+    // console.log(Array.from(Mathy.iterateN(-10, 0)))
     
     // Done! Print success
     console.log("Success! Everything looks good!")

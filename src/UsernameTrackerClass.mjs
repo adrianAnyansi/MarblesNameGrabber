@@ -1092,13 +1092,19 @@ export class UsernameAllTracker {
     }
 
     get count() {
-        const lastFoundIndex = this.usersInOrder.findLastIndex(tUser => tUser != null)
-        return this.usersInOrder.length - lastFoundIndex
+        const lastFoundIndex = this.usersInOrder.findLastIndex(tUser => tUser.length != null)
+        return lastFoundIndex
+    }
+
+    get knownCount() {
+        const namedUsers = this.usersInOrder.filter(user => user.name != null)
+        return namedUsers
     }
 
     status () {
         return {
             'user_count': this.count,
+            'recognized_users': this.knownCount,
             'read_pages': this.read_imgs,
             'unverified': {
                 'users': this.usersInOrder.map(user => user?.name != null)

@@ -624,6 +624,56 @@ export class Mathy {
 
         return testNum > testRange[0] && testNum < testRange[1]
     }
+
+    /** Helper function to get an iterator of N length
+     * Basically Javascript equivalent of Python iterators
+     * @param {number} endAt int to stop at (not inclusive)
+     * @param {number} start integer to start at
+     */
+    static iterateN(endAt, start=0) {
+        const iterDir = endAt - start > 0 ? 1 : -1;
+        return {[Symbol.iterator]() {
+            let count = start - iterDir;
+            const end = endAt;
+
+            return {
+                next() {
+                    count += iterDir;
+                    if ((iterDir == 1 && count >= end) || (iterDir == -1 && count <= end))
+                        return {done:true, value: count}
+                    else return {done:false, value: count}
+                }
+            }
+        }}
+    }
+
+    /**
+     * Calculate the average of this array
+     * @param {Array<NumberLike>} array array of any math element
+     */
+    static average(array) {
+        if (array.length == 0) return NaN
+        let mean = 0
+        for (const val of array)
+            mean += val
+        return mean / array.length
+    }
+
+    /**
+     * Calculate the standard deviation of this array
+     * @param {Array<NumberLike>} array array of any math element
+     * @param {number} [mean=null] pass mean if percalucated
+     * @returns {number}
+     */
+    static stdDev(array, mean=null) {
+        if (array.length == 0) return NaN
+        mean = mean ?? Mathy.average(array);
+        let dev_calc = 0
+        for (const val of array) {
+            dev_calc += (val-mean)**2
+        }
+        return dev_calc / array.length
+    }
 }
 
 // console.log(

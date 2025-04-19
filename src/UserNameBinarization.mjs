@@ -283,6 +283,33 @@ class UserNameConstant {
  * @prop {?boolean} quickLen boolean to check if length matches here
  */
 
+export class VisualUsername {
+
+    constructor(visual_index, appear, length=undefined) {
+        /** @type {number} Visual index on this frame */
+        this.vidx = visual_index
+        /** @type {boolean} did username appear this frame (rightLine detection) */
+        this.appear = appear
+        /** 
+         * @type {number} length this frame (left edge detection) 
+         * if undefined, length was not checked.
+         * if null, length checked but not found.
+         * if negative, valid value.
+        */
+        this.length = length
+        /** debug object for tracking some things */
+        this.debug = {}
+    }
+
+    get lenUnavailable () {
+        return this.length === null
+    }
+
+    get lenUnchecked () {
+        return this.length === undefined
+    }
+}
+
 // CLASS
 /**
  * Main class for cutting and parsing Username iamges from the Marbles UI
@@ -1021,8 +1048,8 @@ export class UserNameBinarization {
         const startMarkName = "userbox-start"
         performance.mark(startMarkName)
 
-        const UN_TOP_Y = 125;
-        const UN_RIGHT_X = 1574+120; // leftEdge is at 1694* 
+        const UN_TOP_Y = UserNameConstant.FIRST_TOP_Y; //125;
+        const UN_RIGHT_X = UserNameConstant.RIGHT_EDGE_X; // 1574+120; // rightEdge is at 1694* 
         const UN_BOX_HEIGHT = UserNameBinarization.USERNAME_HEIGHT;
         
         /** @type {TrackedUsernameDetection[]} */
@@ -1180,7 +1207,6 @@ export class UserNameBinarization {
         if (this.debug)
             console.log("Finished UN box detect in "+(performance.measure(startMarkName, startMarkName).duration)+'ms')
 
-
         if (this.debug)
             this.sharpImg.toSharp({toPNG:true}).toFile("testing/line_testing.png")
 
@@ -1311,9 +1337,9 @@ export class UserNameBinarization {
             //     imgBuffer.setPixel(x+dx, y+dy, Color.RED)
         }
 
-        // skip whiteness check
+        // NOTE: Skipping to 2 pixels here
         const planePixels = []
-        for (let i=1; i <= blurPixel; i++) {
+        for (let i=2; i <= blurPixel; i++) {
             const [dx,dy] = [direction[0]*i, direction[1]*i]
             planePixels.push(imgBuffer.getPixel(x+dx, y+dy))
             // if (this.debug)
@@ -1321,21 +1347,16 @@ export class UserNameBinarization {
         }
 
         // Plane should always be darker due to background opacity
-        if (!planePixels.at(-1).every(ch => ch <= BG_CH_MAX)) {
-            return false
-        }
+        if (!planePixels.at(-1).every(ch => ch <= BG_CH_MAX)) return false
 
         // expect a difference of around 180
         const diffPx = Color.diff(lineTest[0], planePixels.at(-1))
-
         if (Color.sumColor(diffPx) / 3 > DIFF_TO_LINE) return true
         
         // NOTE: calculate the max color, as color can cap
         const maxColor = Color.add(planePixels.at(-1), [PX_DIFF, PX_DIFF, PX_DIFF])
         const diffToExpected = Color.abs(Color.diff(maxColor, planePixels.at(-1)))
-        
         // console.log(`Diff is ${diffPx} : ${maxColor} ~ ${lineTest[0]}`)
-
         if(Color.sumColor(diffToExpected) / 3 < DIFF_TO_MAX) return true
 
         return false

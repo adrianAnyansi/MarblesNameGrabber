@@ -25,7 +25,17 @@ The goal is every single name should be tracked even if I can't read it or get a
 
 
 # Focus today
+
+Marbles was today, did a live test and all the frame-timings (native tesseract) is showing nearly 500ms -> 1000ms; I think the frame-pacing code is broken cause this would absolutely destroy my PC if true
+or the OCR code is blocking somehow
+
+- Going to do some clean-up, check my stats are accurate then back to line detection
+- Also line-detection is taking time, need to impl quick-len
+    - idea is a tiny portion to be detected for each edge assuming length is known
 ---
+
+- Check frame pacing and see where to cut down time
+- Add the new testing
 
 Wow lets do some more testing- the testing never ends yay!
 I'm just going to finish the current list and take a break, its literally been 2 months since beginning this project
