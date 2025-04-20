@@ -1,5 +1,5 @@
 import { msToHUnits } from "./DataStructureModule.mjs"
-import { Mathy } from "./UtilModule.mjs"
+import { Mathy } from "./ImageModule.mjs"
 
 /** Server state enum */
 export const SERVER_STATE_ENUM = {
@@ -353,10 +353,12 @@ export class ServerStatus {
         /** @type {Set<string>} list of all viewer ips */
         this.allViewers = new Set()
 
-        /** @type {DOMHighResTimeStamp[]} tracking frame enter time */
-        this.frame_pacing = []
+        /** @type {DOMHighResTimeStamp[]} tracking frame download time */
+        this.frame_dl_time = []
+        /** @type {DOMHighResTimeStamp[]} tracking for frame process time */
+        this.frame_st_time = []
         /** @type {DOMHighResTimeStamp[]} tracking frame finish parsing time */
-        this.frame_end_pacing = []
+        this.frame_end_time = []
 
     }
 
@@ -412,10 +414,17 @@ export class ServerStatus {
         return this.monitoredViewers.length
     }
 
-    /** Get string representing this frame's performance */
+    /**
+     * Time taken to process frame from download
+     */
+    frameDLtoProcess (frame_idx) {
+        return this.frame_end_time.at(frame_idx) - this.frame_dl_time.at(frame_idx);
+    }
+
+    /** Time taken to process the frame */
     frameTiming (frame_idx) {
         // TODO: Make sure lengths match before doing -1
-        const frameTime = this.frame_end_pacing.at(frame_idx) - this.frame_pacing.at(frame_idx);
+        const frameTime = this.frame_end_time.at(frame_idx) - this.frame_st_time.at(frame_idx);
         return frameTime
     }
 
@@ -433,7 +442,12 @@ export class ServerStatus {
         const avg = Mathy.average(filterSampleFrames);
         const stdDev = Mathy.stdDev(filterSampleFrames, avg)
 
-        return `Frame Time:${avg.toFixed(2)}ms, SD:${stdDev.toFixed(2)}ms`
+        const dl_avg = Mathy.average(
+            Array.from(Mathy.iterateN(-5, 0)).map(idx => this.frameDLtoProcess(idx + frameIdx)
+                ).filter(val => !isNaN(val))
+        )
+
+        return `Frame Time:${avg.toFixed(2)}ms, SD:${stdDev.toFixed(2)}ms; DL_avg:${dl_avg.toFixed(2)}`
     }
 
     /**

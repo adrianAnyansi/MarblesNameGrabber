@@ -11,7 +11,7 @@ import {UsernameAllTracker, TrackedUsername} from './UsernameTrackerClass.mjs'
 
 import { msToHUnits } from './DataStructureModule.mjs'
 import { setTimeout } from 'node:timers/promises'
-import { SharpImg } from './UtilModule.mjs'
+import { SharpImg } from './ImageModule.mjs'
 import { StreamingImageBuffer, ServerStatus, StreamImageTracking, ScreenState } from './ServerClassModule.mjs'
 import { NativeTesseractOCRManager, OCRManager, LambdaOCRManager } from './OCRModule.mjs'
 
@@ -277,7 +277,7 @@ export class MarblesAppServer {
             const newFrameBuffer = this.StreamImage.addToBuffer(streamImgBuffer)
             if (newFrameBuffer !== null) {
                 if (this.debug_obj.frame_pacing)
-                    this.ServerState.frame_pacing[this.StreamImage.imgs_downloaded] = performance.now()
+                    this.ServerState.frame_dl_time[this.StreamImage.imgs_downloaded] = performance.now()
                 this.handleImage(newFrameBuffer, this.StreamImage.imgs_downloaded)
             }
         })
@@ -321,10 +321,10 @@ export class MarblesAppServer {
     /**
      * Handle image before per-frame calculations
      * Stops processing if not available
-     * @param {import('./UtilModule.mjs').ImageLike} imageLike 
+     * @param {import('./ImageModule.mjs').ImageLike} imageLike 
      * @param {number} imgId unique id for image
      */
-    handleImage(imageLike, imgId) {
+    async handleImage(imageLike, imgId) {
         if (this.ServerState.notRunning) {
             console.debug(`In COMPLETE/STOP state, dropping image.`)
             return
@@ -343,19 +343,22 @@ export class MarblesAppServer {
             return
         }
 
-        this.parseAdvImg(imageLike, imgId)
+        await this.parseAdvImg(imageLike, imgId)
     }
 
     /** Parse advanced image per frame
      * Need a complex state machine to handle this
-     * @param {import('./UtilModule.mjs').ImageLike} imageLike 
+     * @param {import('./ImageModule.mjs').ImageLike} imageLike 
      */
     async parseAdvImg(imageLike, imgId) {
         
         // const frameStartMark = 'frame-start'
         // performance.mark(frameStartMark);
+
+        this.ServerState.frame_st_time[imgId] = performance.now()
         
         const mng = new UserNameBinarization(imageLike, false)
+        // mng.buildBuffer();
 
         // TODO: Rework this and also check for obstructions
         if (this.ServerState.wait) {
@@ -387,9 +390,8 @@ export class MarblesAppServer {
             this.ScreenState.frames_without_names = 0
 
         // Get prediction from usernameList
-        const setEnterFrame = this.ScreenState.knownScreen
         let {predictedUsers, offset} = this.usernameTracker.predict(processImgId, 
-            {totalUsers:null, predictFullScreen:true}, setEnterFrame)
+            {totalUsers:null, predictFullScreen:true}, this.ScreenState.knownScreen)
         
         /** Num of users to use for length check against prediction */
         const LEN_CHECK_MATCH = 6;
@@ -401,7 +403,6 @@ export class MarblesAppServer {
             post_match: 0,
             pre_ocr: 0
         }
-        let offset_len_check = 0;
         
         // Reconcile offset by checking the prediction
         // ========================================================================
@@ -437,14 +438,13 @@ export class MarblesAppServer {
             if (offsetMatch > 6 || offsetMatch < -2) {
                 console.warn(`No op offset detected`, offsetMatch)
             } else
-
             if (offsetMatch != null && offsetMatch > 0) {
                 this.usernameTracker.shiftOffset(offsetMatch); // update offset
                 // FYI this is a load-bearing semi-colon due to destructure object {o1, o2} below
 
                 // Predicted users is inaccurate, recalc
                 ({predictedUsers, offset} = this.usernameTracker.predict(processImgId, 
-                    {totalUsers:null, predictFullScreen:true}, setEnterFrame))
+                    {totalUsers:null, predictFullScreen:true}, this.ScreenState.knownScreen))
             } 
             // else if (offsetMatch < 0) {
             //     console.error("Offset is negative! This is a DO NOTHING", offsetMatch)
@@ -475,8 +475,8 @@ export class MarblesAppServer {
         const LEN_LIMIT_PER_FRAME = 25; // NOTE: Maxing this for testing
         for (const {vidx, vUser} of screenVisibleUsers) {
             const pUser = predictedUsers[vidx]
+            
             if (pUser.length) continue;
-
             if (vUser.length === undefined) { // TODO: Do multiple checks at once
                 const resultObj = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
                 len_check_count.post_match++
@@ -503,8 +503,10 @@ export class MarblesAppServer {
                     vUser.ocrLen = true
                 }
                 pUser.setLen(vUser.length)
-                if (pUser.length && !this.debug_obj.disable_ocr)
+                if (pUser.length && !this.debug_obj.disable_ocr) {
+                    pUser.ocr_processing = true;
                     this.queueIndividualOCR(pUser, vidx, mng, processImgId)
+                }
             }
         }
 
@@ -523,7 +525,7 @@ export class MarblesAppServer {
             this.ScreenState.knownScreen = true // flip this when screen cannot be seen & top user is unknown
 
         if (this.debug_obj.frame_pacing) {
-            this.ServerState.frame_end_pacing[imgId] = performance.now()
+            this.ServerState.frame_end_time[imgId] = performance.now()
             console.log(`Curr Frame:${this.ServerState.frameTiming(imgId).toFixed(2)}ms lenChecks ${JSON.stringify(len_check_count)}`)
             console.log(this.ServerState.frameAvg(imgId))
         }
@@ -544,7 +546,6 @@ export class MarblesAppServer {
      */
     async queueIndividualOCR (user, visibleIdx, mng, processImgId) {
         // crop image
-        user.ocr_processing = true;
         const binPerf = performance.now()
         let sharpBuffer = null;
         try {

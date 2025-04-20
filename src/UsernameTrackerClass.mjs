@@ -6,7 +6,7 @@
 
 import sharp from "sharp"
 import { LimitedList } from "./DataStructureModule.mjs"
-import { ImageBuffer, Mathy, PixelMeasure } from "./UtilModule.mjs"
+import { ImageBuffer, Mathy, PixelMeasure } from "./ImageModule.mjs"
 import { UserNameBinarization } from "./UsernameBinarization.mjs"
 
 class Username {
@@ -167,7 +167,7 @@ export class UsernameTracker {
      * While this function is async, it's not expected to be run as such.
      * @param {Object} tesseractData // contains .lines & .bbox of tesseract info
      * @param {sharp} sharpOCRImg  Sharp imagelike, Cropped Username image BUT scaled to OCR size
-     * @param {import("./UtilModule.mjs").RectObj} orig_img_size Image_size of the original cropped image to bypass metadata issues
+     * @param {import("./ImageModule.mjs").RectObj} orig_img_size Image_size of the original cropped image to bypass metadata issues
      * @returns {Array[String]} retList
      */
     addPage (tesseractData, sharpOCRImg, orig_img_size, capture_dt) {
@@ -793,6 +793,7 @@ export class TrackedUsername {
     static LENGTH_MIN = 3;
     /**
      * Helper function to match length within a range
+     * @param {number} inputLen 
      */
     matchLen (inputLen) {
         if (this.length == null) return false;
@@ -801,8 +802,12 @@ export class TrackedUsername {
             [-TrackedUsername.LENGTH_MIN, TrackedUsername.LENGTH_MIN])
     }
 
+    /**
+     * Helper function to set length; ignored if positive, null/undefined
+     * @param {number} inputLen 
+     */
     setLen(inputLen) {
-        if (inputLen == null || inputLen == undefined) 
+        if (inputLen == null || inputLen === undefined) 
             return // I know JS considers this the same, but I don't so
         
         if (inputLen >= 0) {

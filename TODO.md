@@ -26,28 +26,33 @@ The goal is every single name should be tracked even if I can't read it or get a
 
 # Focus today
 
-Marbles was today, did a live test and all the frame-timings (native tesseract) is showing nearly 500ms -> 1000ms; I think the frame-pacing code is broken cause this would absolutely destroy my PC if true
-or the OCR code is blocking somehow
+The long frame timing was due to run-away when processing took longer than 33.33ms, but the frame time was still checked as from the download time, causing the frame time to climb every time it missed the timing.
 
-- Going to do some clean-up, check my stats are accurate then back to line detection
-- Also line-detection is taking time, need to impl quick-len
-    - idea is a tiny portion to be detected for each edge assuming length is known
+Want to clean up the line detection code and tracking code
+Then ensure I'm not missing the timing or reduce the detection penalty per frame
 ---
 
-- Check frame pacing and see where to cut down time
-- Add the new testing
+- Use class for visual tracking
+    - Change appear check to be shorter (also wasting N pixel checks as well)
+    - Add quick length
+    - Add quick box
+    - Heres how the new input works
+        - I need 1. blank for everything, 2. number indexes for new objects 3. index & class to update
+        - i think the best way is {}, {idx:null}, {idx:class} since sparse array needs skipping
 
-Wow lets do some more testing- the testing never ends yay!
-I'm just going to finish the current list and take a break, its literally been 2 months since beginning this project
 
-Need to return user lag time btw, I have the numbers
-Have not done any of the lambda testing since lambda needs to be rewritten
-    - Basically instead of a custom framework, I can not directly init
-        - individual user cut without binarization
-        - with binarization
-    But I'm not doing this until testing is complete since detection has issues
+- Think of a smarter test for
+- Check if cropping when making the buffer will reduce the time taken
 
-About the check for line, might consider that as a custom
+- A lot of length checks are failing, vod_dump and understand why
+    - Need to play with thresholds again prob
+- Instead of length check, limit by ms? I have 33ms if I want to be exact, and 11ms is just the buffer build
+- Update and use lambda OCR
+    - IIRC, this should work with old code, I just need to read HOCR output
+    - This still needs to be rewritten with new codebase though
+- Need to track and save images whenever OCR fails/reads nothing
+    - useful for debug and to help track names that don't get binarized correctly
+
 
 Looks like its about #FFFFFF with 70% opacity
 So the issue is that I need to re-write the line detection

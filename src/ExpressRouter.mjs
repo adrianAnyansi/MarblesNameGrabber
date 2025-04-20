@@ -28,7 +28,7 @@ const app_server = new MarblesAppServer()
 
 server.use(helmet())
 
-server.get(['/', '/website/*'], (req, res) => {
+server.get(['/', '/website/{*route}'], (req, res) => {
     let rootPath = null
     if (req.path == '/')
         rootPath = path.resolve('website/index.html')
@@ -41,7 +41,7 @@ server.get(['/', '/website/*'], (req, res) => {
  * Start running the image parser 
  * returns a JSON indicating the result of startup
  */
-server.post(['/start', '/start/*'], (req, res) => {
+server.post(['/start', '/start/{*route}'], (req, res) => {
     
     console.log(`Recieved START command ${req.originalUrl}.`)
     let streamName = null

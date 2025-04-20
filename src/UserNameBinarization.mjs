@@ -8,7 +8,8 @@ import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
 import { rotPoint, toPct } from './DataStructureModule.mjs'
 import { PixelMeasure, Color,
-    ImageTemplate, ImageBuffer, Direction2D, SharpImg } from './UtilModule.mjs'
+    ImageTemplate, ImageBuffer, Direction2D, SharpImg, 
+    Mathy} from './ImageModule.mjs'
 import {resolve} from 'node:path'
 import fs from 'fs'
 
@@ -283,6 +284,10 @@ class UserNameConstant {
  * @prop {?boolean} quickLen boolean to check if length matches here
  */
 
+/**
+ * Class representing a username that's visually on the screen
+ * Stores the visual (onscreen) index and information about the username
+ */
 export class VisualUsername {
 
     constructor(visual_index, appear, length=undefined) {
@@ -298,13 +303,21 @@ export class VisualUsername {
         */
         this.length = length
         /** debug object for tracking some things */
-        this.debug = {}
+        this.debug = {
+
+        }
     }
 
+    /**
+     * Was length checked and not found this frame
+     */
     get lenUnavailable () {
         return this.length === null
     }
 
+    /**
+     * Was length checked this frame
+     */
     get lenUnchecked () {
         return this.length === undefined
     }
@@ -316,7 +329,7 @@ export class VisualUsername {
  */
 export class UserNameBinarization {
 
-    /** @type {import('./UtilModule.mjs').RectObj} rectangle for cropped usernames */
+    /** @type {import('./ImageModule.mjs').RectObj} rectangle for cropped usernames */
     static NAME_CROP_RECT = {
         x: 1652-264,
         y: 125,
@@ -349,12 +362,12 @@ export class UserNameBinarization {
 
     constructor(imageLike=null, debug=false) {
         // Get references, etc
-        /** @type {import('./UtilModule.mjs').ImageLike} image being read */
+        /** @type {import('./ImageModule.mjs').ImageLike} image being read */
         this.imageLike = imageLike
         /** @type {SharpImg} original Sharp image without cropping */
         this.sharpImg = new SharpImg(imageLike);
 
-        /** @type {import('./UtilModule.mjs').RectBounds} {w,h} for rect of original image */
+        /** @type {import('./ImageModule.mjs').RectBounds} {w,h} for rect of original image */
         this.imageSize = null
         /** @type {Buffer} buffer used to write the orig buffer before edits because PROD makes little edits, only DEBUG makes a full-copy at isolateUserNames */
         this.orig_buffer = null
@@ -362,7 +375,7 @@ export class UserNameBinarization {
         this.buffer = null
         /** @type {Buffer} binarized buffer of black text on a white background */
         this.binBuffer = null
-        /** @type {import('./UtilModule.mjs').RectBounds} {w,h} for rect of the cropped image */
+        /** @type {import('./ImageModule.mjs').RectBounds} {w,h} for rect of the cropped image */
         this.bufferSize = null
 
         /** @type {PixelMeasure} basis to scale pixels to based on image metadata */
@@ -939,7 +952,7 @@ export class UserNameBinarization {
 
     /**
      * Check if image at a specific location
-     * @param {import('./UtilModule.mjs').RectObj} rectObj
+     * @param {import('./ImageModule.mjs').RectObj} rectObj
      * @param {ImageTemplate} imgTemplate
      * @param {Number} PASS_PCT
      */
@@ -1033,35 +1046,46 @@ export class UserNameBinarization {
 
     /**
      * Search image for white username bounding box at locations
-     * @param {number[]} usersToCheck check slots [0-23]. Empty list is 0-23, ignore exceptions
+     * @param {Map<number, VisualUsername>} usersToCheck check slots [0-23]. Empty list is 0-23, ignore exceptions
      * @param {Object} checkDetails 
      * @param {boolean} [checkDetails.appear=true] check that this user exists (right line)
      * @param {boolean} [checkDetails.length=true] check the length of the user
-     * @param {boolean} [checkDetails.quickLength=[]] check length at x_coord
+     * @param {boolean} [checkDetails.quickLength={}] check length at x_coord
      * 
      * @returns {Promise<TrackedUsernameDetection[]>} retObj, sparse* array {appear:bool, length:number, quickLen:bool}
      */
-    async getUNBoundingBox(usersToCheck=[], {appear=true, length=true, quickLength=[]}) {
+    async getUNBoundingBox(usersToCheck=null, {appear=true, length=true, quickLength=new Map()}) {
 
         const imgBuffer = await this.sharpImg.buildBuffer();
 
         const startMarkName = "userbox-start"
         performance.mark(startMarkName)
 
-        const UN_TOP_Y = UserNameConstant.FIRST_TOP_Y; //125;
-        const UN_RIGHT_X = UserNameConstant.RIGHT_EDGE_X; // 1574+120; // rightEdge is at 1694* 
+        const UN_TOP_Y = UserNameConstant.FIRST_TOP_Y;
+        const UN_RIGHT_X = UserNameConstant.RIGHT_EDGE_X;
         const UN_BOX_HEIGHT = UserNameBinarization.USERNAME_HEIGHT;
         
-        /** @type {TrackedUsernameDetection[]} */
-        const userBoxList = []
-        for (let i=0; i<24; i++) {
-            userBoxList[i] = {}
+        if (!usersToCheck || usersToCheck.size == 0) {
+            usersToCheck = usersToCheck ?? new Map();
+            for (const idx of Mathy.iterateN(24))
+                usersToCheck.set(idx, new VisualUsername(idx))
+        } else {
+            // NOTE ineffient check+set but its cool
+            for (const idx in usersToCheck)
+                usersToCheck.set(idx, usersToCheck.get(idx) ?? new VisualUsername(idx));
+                // usersToCheck[idx] = usersToCheck[idx] ?? new VisualUsername(idx)
         }
-        
-        if (usersToCheck.length == 0)
-            usersToCheck = Array.from(Array(24).keys())
 
-        for (const userIndex of usersToCheck) {
+        // /** @type {TrackedUsernameDetection[]} */
+        // const userBoxList = []
+        // for (let i=0; i<24; i++) {
+        //     userBoxList[i] = {}
+        // }
+
+        // if (usersToCheck.length == 0)
+        //     usersToCheck = Array.from(Array(24).keys())
+
+        for (const [userIndex, visualUser] of usersToCheck.entries()) {
 
             const user_y_start = UN_TOP_Y + UN_BOX_HEIGHT * userIndex
 
@@ -1073,6 +1097,7 @@ export class UserNameBinarization {
             if (appear) {
                 // TODO: Reduce the num of checks here, also 24 check
                 const APPEAR_MIN = 15
+                console.log("appear", userIndex)
                 // TODO: during exitingState, this can trigger on the A of Play (edge-case)
                 // detect the top/bottom lines to verify this as well
                 let right_match = 0
@@ -1093,21 +1118,46 @@ export class UserNameBinarization {
                     }
                 }
                 
-                userBoxList[userIndex].appear = (right_match > APPEAR_MIN) // update value in userList
+                visualUser.appear = (right_match > APPEAR_MIN) // update value in userList
                 // console.log(`Right-line took ${performance.measure('right-detect', userstart).duration}`)
                 // 2ms
             }
-            // return []
 
-            // NOTE: Could bin-search this but could be inaccurate if there's a line somewhere else
+            // Check length at this specific position only.
+            // If the length check fails, length will remain on its previous value
+            if (quickLength && quickLength.get(userIndex)) {
+                const MATCH_MIN = 15;
+                const x_px_to_check = quickLength.get(userIndex)
+                let left_match_pixels = 0;
+
+                for (const d of Mathy.iterateN(UN_BOX_HEIGHT * 0.75, UN_BOX_HEIGHT * 0.25)) {
+                    if (user_y_start+d >= imgBuffer.height) break;
+
+                    const testCoord = [x_px_to_check, user_y_start+d]
+                    const leftLineCheck = this.checkLine2(...testCoord, imgBuffer, 1, Direction2D.RIGHT)
+
+                    if (leftLineCheck) {
+                        left_match_pixels++
+                        if (this.debug) imgBuffer.setPixel(...testCoord, Color.BRIGHT_GREEN)
+                        if (x_px_to_check > MATCH_MIN) {
+                            visualUser.length = x_px_to_check; // set early and quit
+                            break;
+                        }
+                    }
+                }
+            }
+
             if (length) {
-                const [lx, ly] = (quickLength[userIndex] != undefined) ? 
-                    [quickLength[userIndex], null]
-                    : this.followUsernameLine(
+                if (visualUser.lenUnavailable) continue;
+
+                // NOTE: Could bin-search this but could be inaccurate if there's a line somewhere else
+                const [lx, _ly] = this.followUsernameLine(
                         UN_RIGHT_X-20, user_y_start, imgBuffer, Direction2D.LEFT, Direction2D.DOWN);
 
                 // console.log(`Line-follow took ${performance.measure('line-follow', userstart).duration}`)
                 // 7ms
+
+                // Verify that rounded outline exists to increase the accuracy
 
                 /** Pixels to RIGHT to start checking from top-edge match */
                 const CHECK_FROM_RIGHT_X = 4
@@ -1120,6 +1170,7 @@ export class UserNameBinarization {
                 // Because index 23 only contains top corner, require only half match num
                 /** Pixels required to match rounded corners of box */
                 const CORNER_MATCH = userIndex == 23 ? 3 : 7
+
                 const matchCornerYToX = {}
 
                 // NOTE: The first item is mirrored on the bottom, do this programmatically
@@ -1178,7 +1229,8 @@ export class UserNameBinarization {
 
                         if (cornerMatches >= CORNER_MATCH) {
                             // consider this a match and solve
-                            userBoxList[userIndex].length = lx+currLineX - UN_RIGHT_X
+                            // userBoxList[userIndex].length = lx+currLineX - UN_RIGHT_X
+                            visualUser.length = lx+currLineX - UN_RIGHT_X
                             if (!this.debug) break leftfind;
 
                             // If debug, consider this a match, color this up
@@ -1198,9 +1250,12 @@ export class UserNameBinarization {
                         // console.log(`Left-corner took ${performance.measure('left-corner', userstart).duration}`)
                     }
                 }
-                if (userBoxList[userIndex].length == undefined) 
-                    userBoxList[userIndex].length = null
+                if (!visualUser.length)
+                    visualUser.length = null
+                // if (userBoxList[userIndex].length == undefined) 
+                //     userBoxList[userIndex].length = null
             } // userbox if-length check
+
         } // per user check
 
         // 13ms
@@ -1210,7 +1265,7 @@ export class UserNameBinarization {
         if (this.debug)
             this.sharpImg.toSharp({toPNG:true}).toFile("testing/line_testing.png")
 
-        return userBoxList
+        return usersToCheck
     }
 
     /**

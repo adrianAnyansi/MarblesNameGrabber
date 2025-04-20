@@ -582,16 +582,10 @@ export class ImageTemplate {
         this.imageLike = imageLike;
         this.rectObj = rectObj;
         this.sharpImg = new SharpImg(imageLike)
-        // this.bufferView = null;
-        // this.bufferViewPromise = BufferView.Build(imageLike)
         this.name = name
 
         this.sharpImg.buildBuffer() // NOTE: Build during pre-process
     }
-
-    // async getBufferView() {
-    //     return this.bufferViewPromise
-    // }
 }
 
 

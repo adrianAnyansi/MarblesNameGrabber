@@ -3,7 +3,7 @@
 import { msToHUnits } from "./DataStructureModule.mjs";
 import { MarblesAppServer } from "./MarblesAppServer.mjs";
 import { ColorSpace, UserNameBinarization } from "./UsernameBinarization.mjs";
-import { Color, ImageBuffer, Mathy, SharpImg } from "./UtilModule.mjs";
+import { Color, ImageBuffer, Mathy, SharpImg } from "./ImageModule.mjs";
 import sharp from 'sharp'
 import fs from 'fs'
 import {resolve} from 'node:path'
@@ -29,18 +29,6 @@ async function test_line_test() {
     let y = 585
     let ret = mng.checkLine(x, y, data, info, 1, true)
     console.log(`For (${x},${y}) -> ${ret}`)
-}
-
-async function test_userbox() {
-
-    // const filename = lineTestFolder+'chat_test.png';
-    const filename = file2;
-    // const filename = chatTestingFolder+'chat_clean.png';
-    let mng = new UserNameBinarization(filename, true);
-    
-    const boundingStart = performance.now()
-    await mng.getUNBoundingBox();
-    console.log("Finished line detection in "+ (performance.now()-boundingStart)+'ms')
 }
 
 async function test_userbox_appear_n_len(inpage) {
@@ -176,11 +164,6 @@ async function numberRead() {
 
     new SharpImg(null, outBuffer).toSharp({toPNG:true}).toFile(testingFolder+'oneLet.png')
 }
- function math_range_check () {
-
-    Mathy.inRange(5, 5, 0);
-    Mathy.inRange(3, 5, [-3,3]);
-}
 
 async function test_userbox_cropnbin(inpage, inuser) {
     const page = inpage ?? 710;
@@ -205,14 +188,6 @@ async function test_userbox_cropnbin(inpage, inuser) {
     mng.debug = true
     const binUserImg = await mng.binTrackedUserName([userCropImg])
     new SharpImg(null, binUserImg).toSharp({toPNG:true, scaleForOCR:true}).toFile(`testing/indv_user_bin.png`)
-}
-
-async function test_colorspace_rot() {
-
-    const point = [115,145,245]
-
-    console.log("in range", 
-        ColorSpace.COLORS.SUB_BLUE.check(point))
 }
 
 async function test_validate_image() {
