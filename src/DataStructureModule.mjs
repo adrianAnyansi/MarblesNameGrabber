@@ -1,49 +1,4 @@
-// Moved to util class
-
-export function humanReadableTimeDiff (milliseconds) {
-
-    let seconds = parseInt(milliseconds / 1000)
-    let minutes = parseInt(seconds / 60)
-    seconds %= 60
-
-    return `${minutes}m ${seconds}s`
-}
-
-export function msToHUnits(ms, multiUnit=true, decimalPlaces=2, useUnit=null) {
-
-    let currVal = ms
-    let composedStr = ``
-    const timeSequence = new Map(Object.entries({
-        "ms": 1_000,
-        "s": 60,
-        "m": 60,
-        "h": 60,
-        "d": 24,
-        "w": 7
-    }))
-    let currUnit = timeSequence['ms']
-
-
-    for ( const [unit_text,unit_div] of timeSequence) {
-        currUnit = unit_text
-        if (currVal < unit_div) break;
-        if (unit_text == useUnit) break;
-
-        const unit_val = Math.trunc(currVal%unit_div)
-        currVal /= unit_div;
-        composedStr += unit_val == 0 ? '' : ` ${unit_val}${unit_text}`
-    }
-
-    return multiUnit ? 
-        `${Math.trunc(currVal)}${currUnit}`+composedStr :
-        currVal.toFixed(decimalPlaces)+currUnit
-
-}
-
-
-export function toPct(decimal) {
-    return (decimal * 100).toFixed(2)+'%'
-}
+// Data structure class
 
 export class LimitedList {
     constructor (limit=Infinity, values=null, sortMethod=this.defaultASCSort) {
@@ -301,6 +256,9 @@ export class Heap {
         return currMax
     }
 
+    /**
+     * @deprecated
+     */
     truncateLength (maxLen) {
 
         return; // Algorithm is invalid
@@ -344,21 +302,4 @@ export class Heap {
         // changes heap type
         throw EvalError('Method not yet implemented')
     }
-}
-
-/**
- * Rotates a 3D point using a rotation Matrix
- * @param {*} rotMatrix 
- * @param {*} pointMatrix 
- */ 
-export function rotPoint (rotMatrix, pointMatrix) {
-
-    const resPoint = [0, 0, 0]
-    for (let i in rotMatrix[0]) {
-        for (let j in pointMatrix) {
-            resPoint[i] += rotMatrix[i][j] * pointMatrix[j]
-        }
-    }
-
-    return resPoint
 }

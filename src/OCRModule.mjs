@@ -180,6 +180,10 @@ export class NativeTesseractOCRManager extends OCRManager {
         return this.queueNum
     }
 
+    /**
+     * Queue an OCR Request
+     * @param {Buffer} input_buffer validImgBuffer
+     */
     queueOCR (input_buffer) {
 
         let retPromise = null
@@ -221,6 +225,12 @@ export class NativeTesseractOCRManager extends OCRManager {
     }
 
     /**
+     * Creates OCR promise on the queue, removing once complete. Starts OCR immediately
+     * This promise should be treated as
+     *      Add queue
+     *      Run promise
+     *      Remove queue
+     *      Return promise result
      * @returns {Promise<OCRResponse>}
      */
     async createPromise(input_buffer) {
@@ -237,14 +247,8 @@ export class NativeTesseractOCRManager extends OCRManager {
         return ocrResponse;
     }
 
-    async testPromise () {
-        return new Promise ((res, rej) => {
-            setTimeout( _ => res(), Math.random() * 10_000)
-        })
-    }
-
     /**
-     * Queue an OCR request
+     * Perform the OCR request, starts immediately
      * @param {Buffer} input_buffer of valid image format
      * @returns {Promise<OCRResponse>} OCR output if any
      */
@@ -308,7 +312,37 @@ export class NativeTesseractOCRManager extends OCRManager {
 
         return retPromise
     }
+}
 
+
+/**
+ * Test functionality that ensures that 
+ */
+export class TestTesseractOCRManager extends NativeTesseractOCRManager {
+
+    /**
+     * @returns {Promise<OCRResponse>}
+     */
+    async createPromise(input_buffer) {
+        // internal promise with the OCR response
+        const intPromise = this.testPromise(input_buffer)
+        this.queue.push(intPromise)
+        if (NativeTesseractOCRManager.PROMISE_DEBUG)
+            console.log(`Running Q ${this.queue.length}`)
+        const ocrResponse = await intPromise;
+        const qIndex = this.queue.indexOf(intPromise)
+        if (NativeTesseractOCRManager.PROMISE_DEBUG)
+            console.log(`Done Q ${qIndex}`)
+        this.queue.splice(qIndex,1);
+        return ocrResponse;
+    }
+
+    
+    async testPromise () {
+        return new Promise ((res, rej) => {
+            setTimeout( _ => res(), Math.random() * 10_000)
+        })
+    }
 }
 
 export class LambdaOCRManager extends OCRManager {

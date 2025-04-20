@@ -6,7 +6,8 @@
 
 import sharp from "sharp"
 import { LimitedList } from "./DataStructureModule.mjs"
-import { ImageBuffer, Mathy, PixelMeasure } from "./ImageModule.mjs"
+import { ImageBuffer, PixelMeasure } from "./ImageModule.mjs"
+import { inRange } from "./Mathy.mjs"
 import { UserNameBinarization } from "./UsernameBinarization.mjs"
 
 class Username {
@@ -798,7 +799,7 @@ export class TrackedUsername {
     matchLen (inputLen) {
         if (this.length == null) return false;
         
-        return Mathy.inRange(inputLen, this.length, 
+        return inRange(inputLen, this.length, 
             [-TrackedUsername.LENGTH_MIN, TrackedUsername.LENGTH_MIN])
     }
 

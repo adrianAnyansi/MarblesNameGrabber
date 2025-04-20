@@ -1,5 +1,5 @@
-import { msToHUnits } from "./DataStructureModule.mjs"
-import { Mathy } from "./ImageModule.mjs"
+import { Stopwatch, iterateN } from "./UtilityModule.mjs"
+import * as Mathy from './Mathy.mjs'
 
 /** Server state enum */
 export const SERVER_STATE_ENUM = {
@@ -434,7 +434,7 @@ export class ServerStatus {
      */
     frameAvg (frameIdx) {
         const sampleFrames = []
-        for (const idx of Mathy.iterateN(-5, 0)) {
+        for (const idx of iterateN(-5, 0)) {
             sampleFrames.push(this.frameTiming(idx + frameIdx))
         }
         const filterSampleFrames = sampleFrames.filter(val => !isNaN(val))
@@ -443,7 +443,7 @@ export class ServerStatus {
         const stdDev = Mathy.stdDev(filterSampleFrames, avg)
 
         const dl_avg = Mathy.average(
-            Array.from(Mathy.iterateN(-5, 0)).map(idx => this.frameDLtoProcess(idx + frameIdx)
+            Array.from(iterateN(-5, 0)).map(idx => this.frameDLtoProcess(idx + frameIdx)
                 ).filter(val => !isNaN(val))
         )
 
@@ -456,9 +456,9 @@ export class ServerStatus {
     get streamingTime () {
         if (this.started_race_ts) {
             if (this.ended_read_ts)
-                return msToHUnits(Date.now() - this.started_race_ts)
+                return Stopwatch.msToHUnits(Date.now() - this.started_race_ts)
             else
-                return msToHUnits(this.ended_read_ts - this.started_race_ts)
+                return Stopwatch.msToHUnits(this.ended_read_ts - this.started_race_ts)
         } else {
             return 'X'
         }

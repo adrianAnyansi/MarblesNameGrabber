@@ -10,7 +10,19 @@ export class Stopwatch {
         this.start()
     }
 
-    get read() {
+    /**
+     * Return human readable timestamp
+     * @returns {string}
+     */
+    get time () {
+        return Stopwatch.msToHUnits(this.read())
+    }
+
+    /**
+     * Return time difference in ms. If not stopped, return from performance.now
+     * @returns {number} milliseconds since start
+     */
+    read() {
         const end_time = this.stop_ts ?? performance.now()
         return end_time - this.start_ts
     }
@@ -46,9 +58,9 @@ export class Stopwatch {
         let currVal = ms
         let composedStr = ``
         
-        let currUnit = TIME_SEQUENCE['ms']
+        let currUnit = Stopwatch.TIME_SEQUENCE['ms']
 
-        for ( const [unit_text,unit_div] of TIME_SEQUENCE) {
+        for ( const [unit_text,unit_div] of Stopwatch.TIME_SEQUENCE) {
             currUnit = unit_text
             if (currVal < unit_div) break;
             if (unit_text == useUnit) break;
@@ -63,3 +75,28 @@ export class Stopwatch {
             currVal.toFixed(decimalPlaces)+currUnit
     }
 }
+
+/** Helper function to get an iterator of N length
+ * Basically Javascript equivalent of Python iterators
+ * @param {number} endAt int to stop at (not inclusive)
+ * @param {number} start integer to start at
+ */
+export function iterateN(endAt, start = 0) {
+    const iterDir = endAt - start > 0 ? 1 : -1;
+    return {
+        [Symbol.iterator]() {
+            let count = start - iterDir;
+            const end = endAt;
+
+            return {
+                next() {
+                    count += iterDir;
+                    if ((iterDir == 1 && count >= end) || (iterDir == -1 && count <= end))
+                        return { done: true, value: count };
+                    else return { done: false, value: count };
+                }
+            };
+        }
+    };
+}
+

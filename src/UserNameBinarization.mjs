@@ -6,10 +6,10 @@ Removes canvas elements and uses sharp instead
 
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
-import { rotPoint, toPct } from './DataStructureModule.mjs'
+import { rotPoint, toPct } from './Mathy.mjs'
+import { iterateN } from "./UtilityModule.mjs"
 import { PixelMeasure, Color,
-    ImageTemplate, ImageBuffer, Direction2D, SharpImg, 
-    Mathy} from './ImageModule.mjs'
+    ImageTemplate, ImageBuffer, Direction2D, SharpImg} from './ImageModule.mjs'
 import {resolve} from 'node:path'
 import fs from 'fs'
 
@@ -1052,7 +1052,7 @@ export class UserNameBinarization {
      * @param {boolean} [checkDetails.length=true] check the length of the user
      * @param {boolean} [checkDetails.quickLength={}] check length at x_coord
      * 
-     * @returns {Promise<TrackedUsernameDetection[]>} retObj, sparse* array {appear:bool, length:number, quickLen:bool}
+     * @returns {Promise<Map<number,VisualUsername>>} retObj, sparse* array {appear:bool, length:number, quickLen:bool}
      */
     async getUNBoundingBox(usersToCheck=null, {appear=true, length=true, quickLength=new Map()}) {
 
@@ -1067,13 +1067,13 @@ export class UserNameBinarization {
         
         if (!usersToCheck || usersToCheck.size == 0) {
             usersToCheck = usersToCheck ?? new Map();
-            for (const idx of Mathy.iterateN(24))
+            for (const idx of iterateN(24))
                 usersToCheck.set(idx, new VisualUsername(idx))
         } else {
             // NOTE ineffient check+set but its cool
-            for (const idx in usersToCheck)
-                usersToCheck.set(idx, usersToCheck.get(idx) ?? new VisualUsername(idx));
-                // usersToCheck[idx] = usersToCheck[idx] ?? new VisualUsername(idx)
+            for (const [idx, vUser] of usersToCheck) {
+                if (!vUser) usersToCheck.set(idx, new VisualUsername(idx));
+            }
         }
 
         // /** @type {TrackedUsernameDetection[]} */
@@ -1097,7 +1097,7 @@ export class UserNameBinarization {
             if (appear) {
                 // TODO: Reduce the num of checks here, also 24 check
                 const APPEAR_MIN = 15
-                console.log("appear", userIndex)
+                // console.log("appear", userIndex)
                 // TODO: during exitingState, this can trigger on the A of Play (edge-case)
                 // detect the top/bottom lines to verify this as well
                 let right_match = 0
@@ -1130,7 +1130,7 @@ export class UserNameBinarization {
                 const x_px_to_check = quickLength.get(userIndex)
                 let left_match_pixels = 0;
 
-                for (const d of Mathy.iterateN(UN_BOX_HEIGHT * 0.75, UN_BOX_HEIGHT * 0.25)) {
+                for (const d of iterateN(UN_BOX_HEIGHT * 0.75, UN_BOX_HEIGHT * 0.25)) {
                     if (user_y_start+d >= imgBuffer.height) break;
 
                     const testCoord = [x_px_to_check, user_y_start+d]

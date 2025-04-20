@@ -1,23 +1,25 @@
 // Jest unittest file
 
+import {test} from 'node:test'
+import assert from 'node:assert/strict'
+
 import { ColorSpace } from "../UsernameBinarization.mjs";
-import { Mathy } from "../ImageModule.mjs"
-import {expect, jest, test} from '@jest/globals';
+import { iterateN } from "../UtilityModule.mjs";
 
 test("Confirms mathy iterator works", 
     () => {
-        expect(Array.from(Mathy.iterateN(10))).toStrictEqual([0,1,2,3,4,5,6,7,8,9]);
-        expect(Array.from(Mathy.iterateN(8,2))).toStrictEqual([2,3,4,5,6,7]);
-        expect(Array.from(Mathy.iterateN(2,8))).toStrictEqual([8,7,6,5,4,3]);
-        expect(Array.from(Mathy.iterateN(-2,8))).toStrictEqual([8,7,6,5,4,3,2,1,0,-1]);
-        expect(Array.from(Mathy.iterateN(-10,2))).toStrictEqual([2,1,0,-1,-2,-3,-4,-5,-6,-7,-8,-9]);
+        assert.deepStrictEqual(Array.from(iterateN(10)), [0,1,2,3,4,5,6,7,8,9]);
+        assert.deepStrictEqual(Array.from(iterateN(8,2)), [2,3,4,5,6,7]);
+        assert.deepStrictEqual(Array.from(iterateN(2,8)), [8,7,6,5,4,3]);
+        assert.deepStrictEqual(Array.from(iterateN(-2,8)), [8,7,6,5,4,3,2,1,0,-1]);
+        assert.deepStrictEqual(Array.from(iterateN(-10,2)), [2,1,0,-1,-2,-3,-4,-5,-6,-7,-8,-9]);
     }
 )
 
 test("Confirm colorspace rotation",
     () => {
-        const point = [115,145,245]
-        expect(ColorSpace.COLORS.SUB_BLUE.check(point)).toBe(true)
+        const point = [115,145,245];
+        assert.equal(ColorSpace.COLORS.SUB_BLUE.check(point), true)
     }
 )
 
@@ -25,6 +27,6 @@ test("Confirm colorspace rotation",
 
 test ("Working?",
     () => {
-        expect(1).toBe(1);
+        assert.equal(1, 1);
     }
 )
