@@ -6,13 +6,14 @@ import axios from 'axios'
 import fs from 'fs/promises'
 import fsAll from 'fs'
 
-import { UserNameBinarization } from './UsernameBinarization.mjs'
+import { UserNameBinarization, VisualUsername } from './UsernameBinarization.mjs'
 import {UsernameAllTracker, TrackedUsername} from './UsernameTrackerClass.mjs'
 
 import { setTimeout } from 'node:timers/promises'
 import { SharpImg } from './ImageModule.mjs'
 import { StreamingImageBuffer, ServerStatus, StreamImageTracking, ScreenState } from './ServerClassModule.mjs'
 import { NativeTesseractOCRManager, OCRManager, LambdaOCRManager } from './OCRModule.mjs'
+import { Stopwatch } from './UtilityModule.mjs'
 
 const TWITCH_URL = 'https://www.twitch.tv/'
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
@@ -350,14 +351,11 @@ export class MarblesAppServer {
      * @param {import('./ImageModule.mjs').ImageLike} imageLike 
      */
     async parseAdvImg(imageLike, imgId) {
-        
-        // const frameStartMark = 'frame-start'
-        // performance.mark(frameStartMark);
 
         this.ServerState.frame_st_time[imgId] = performance.now()
         
         const mng = new UserNameBinarization(imageLike, false)
-        // mng.buildBuffer();
+        // mng.buildBuffer(); // TODO build buffer early?
 
         // TODO: Rework this and also check for obstructions
         if (this.ServerState.wait) {
@@ -376,13 +374,20 @@ export class MarblesAppServer {
         const processImgId = this.StreamImage.imgs_processed++
         
         /** All on-screen users with their appearance checked */
-        const screenUsersArr = await mng.getUNBoundingBox([], {appear:true, length:false})
-        /** All visible users this frame */
-        const screenVisibleUsers = screenUsersArr.map((user, idx) => ({vidx:idx, vUser:user}))
-            .filter(val => (val.vUser.appear == true))
+        const screenUsersMap = await mng.getUNBoundingBox(null, {appear:true, length:false})
+        /** @type {Map<number, VisualUsername>} All visible users this frame */
+        const screenVisibleUsers = new Map(screenUsersMap.entries().filter(
+            ([idx, user]) => user.appear
+        ));
+        
+        // Array.from(screenUsersMap.values()).filter(
+        //     (user) => (user.appear == true)
+        // )
+        // const screenVisibleUsers = screenUsersMap.map((user, idx) => ({vidx:idx, vUser:user}))
+        //     .filter(val => (val.vUser.appear == true))
         
         // Update if no visible users are available
-        if (screenVisibleUsers.length == 0) {
+        if (screenVisibleUsers.size == 0) {
             this.ScreenState.frames_without_names += 1
             return
         } else
@@ -414,19 +419,20 @@ export class MarblesAppServer {
             const currLenList = []
             const fstLenIdx = predictedUsers.findIndex(user => user.length !== null)
             
-            for (const vobj of screenVisibleUsers) {
-                const {vidx, vUser} = vobj
+            for (const [vidx, vUser] of screenVisibleUsers.entries()) {
+                // const {vidx, vUser} = vobj
                 // length checks should center around first visible idx
                 if (vidx < (fstLenIdx - LEN_CHECK_MATCH/2)) continue 
                 
                 // calculate length from current screen
-                const vlenArr = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
+                const vlenArr = await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
                 len_check_count.offset++
-                vUser.length = vlenArr[vidx].length
-                vUser.matchLen = true
-                currLenList.push(vobj)
+                // vUser.length = vlenArr[vidx].length
+                vUser.debug.matchLen = true
+                // currLenList.push(vobj)
+                currLenList.push({vidx, vUser})
                 // NOTE: the available checks are reduced if length can't be determined
-                if (currLenList.filter(({vidx, vUser}) => vUser.length != null).length >= LEN_CHECK_MATCH) break;
+                if (currLenList.filter(({vidx, vUser}) => vUser.validLength).length >= LEN_CHECK_MATCH) break;
             }
 
             // calculate best matching ofset
@@ -456,14 +462,14 @@ export class MarblesAppServer {
 
         // verify predictedUsers if not seen before
         for (const [idx, pUser] of predictedUsers.entries()) {
-            if (!pUser.seen && screenUsersArr[idx].appear) { // if screen is known, set seen & time
-                pUser.seen = screenUsersArr[idx].appear
-                if (this.ScreenState.knownScreen) {
+            const vUserVisible = screenUsersMap.get(idx).appear
+            if (!pUser.seen && vUserVisible) { // if screen is known, set seen & time
+                pUser.seen = vUserVisible
+                if (this.ScreenState.knownScreen)
                     pUser.enterFrameTime = performance.now()
-                }
             // once user can't be seen, set exitingFrameTime
             // TODO: Need to check against overlap logic imo
-            } else if (pUser.seen && pUser.exitingFrameTime == null) {
+            } else if (pUser.seen && pUser.exitingFrameTime == null && !vUserVisible) {
                 pUser.exitingFrameTime = performance.now()
             }
         }
@@ -472,34 +478,37 @@ export class MarblesAppServer {
 
         // Now do as many length checks for visible names that do not have length checks first
         const LEN_LIMIT_PER_FRAME = 25; // NOTE: Maxing this for testing
-        for (const {vidx, vUser} of screenVisibleUsers) {
+        for (const [vidx, vUser] of screenVisibleUsers.entries()) {
             const pUser = predictedUsers[vidx]
             
             if (pUser.length) continue;
-            if (vUser.length === undefined) { // TODO: Do multiple checks at once
-                const resultObj = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
+            if (vUser.lenUnchecked) { // TODO: Do multiple checks at once
+                const resultObj = await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
                 len_check_count.post_match++
-                vUser.length = resultObj[vidx].length
-                vUser.unknownLen = true // debug info
+                // vUser.length = resultObj[vidx].length
+                vUser.debug.unknownLen = true // debug info
             }
             pUser.setLen(vUser.length)
 
             if (len_check_count.post_match > LEN_LIMIT_PER_FRAME) break;
         }
 
+        // TODO: Need to understand if length or OCR should be prioritized?
+        // There's nothing between these 2 loops
+
         // Need to run OCR separately as length check out-priorities OCR 
-        for (const {vidx, vUser} of screenVisibleUsers) {
+        for (const [vidx, vUser] of screenVisibleUsers.entries()) {
             if (vidx == 23) continue; // cropping fails on last index, just skip
-            if (vUser.length === null) continue; // Already failed to calc length this frame
+            if (vUser.lenUnavailable) continue; // Already failed to calc length this frame
 
             const pUser = predictedUsers[vidx]
-            if (pUser.readyForOCR()) {
-                if (vUser.length === undefined) { // must have a valid length this frame
+            if (pUser.readyForOCR) {
+                if (vUser.lenUnchecked) { // must have a valid length this frame
                     // TODO: Use quickLength only here, don't need to find left section
-                    const resultObj = await mng.getUNBoundingBox([vidx], {appear:false, length:true})
+                    const resultObj = await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
                     len_check_count.pre_ocr++
-                    vUser.length = resultObj[vidx].length
-                    vUser.ocrLen = true
+                    // vUser.length = resultObj[vidx].length
+                    vUser.debug.ocrLen = true
                 }
                 pUser.setLen(vUser.length)
                 if (pUser.length && !this.debug_obj.disable_ocr) {
@@ -509,8 +518,9 @@ export class MarblesAppServer {
             }
         }
 
-        this.ScreenState.addVisibleFrame(screenUsersArr)
+        this.ScreenState.addVisibleFrame(Array.from(screenUsersMap.values()))
         
+        const post_match_len_checks = len_check_count.post_match + len_check_count.pre_ocr
         if (this.debug_obj.screen_state_log && 
             (this.ScreenState.shouldDisplaySmth || post_match_len_checks > 0)) {
             console.log(
@@ -545,7 +555,7 @@ export class MarblesAppServer {
      */
     async queueIndividualOCR (user, visibleIdx, mng, processImgId) {
         // crop image
-        const binPerf = performance.now()
+        const binPerf = new Stopwatch()
         let sharpBuffer = null;
         try {
             sharpBuffer = await mng.cropTrackedUserName(visibleIdx, user.length)
@@ -557,7 +567,7 @@ export class MarblesAppServer {
 
         const binUserImg = await mng.binTrackedUserName([sharpBuffer])
         if (this.debug_obj.user_bin)
-            console.log(`bin #${processImgId} @ ${visibleIdx} took ${(performance.now() - binPerf).toFixed(2)}ms`)
+            console.log(`bin #${processImgId} @ ${visibleIdx} took ${binPerf.time}`)
 
         const binSharp = SharpImg.FromRawBuffer(binUserImg).toSharp({toJPG:true, scaleForOCR:true})
         const binBuffer = await binSharp.toBuffer()
@@ -874,7 +884,7 @@ export class MarblesAppServer {
 
             console.log(`Running test on ${source}`)
             this.ServerState.enterWaitState()
-            const st = performance.now();
+            const localTest_sw = new Stopwatch();
             // TODO: Change based on OCR type
             this.OCRManager.warmUp();
 
@@ -892,8 +902,7 @@ export class MarblesAppServer {
             }
             
             this.ServerState.enterStopState()
-            const ed = performance.now();
-            console.log(`Test run took ${(ed-st).toFixed(2)}ms`)
+            console.log(`Test run took ${localTest_sw.time}`)
         } else {
             // source is video
             // technically this should copy start() and use that flow
@@ -910,7 +919,7 @@ export class MarblesAppServer {
 
     async testAgainstList(text_list=null, source_file=null) {
 
-        const st = performance.now();
+        const listTest_sw = new Stopwatch();
         /** @type {string[]} list of users to test against */
         let user_list = null
         if (text_list) 

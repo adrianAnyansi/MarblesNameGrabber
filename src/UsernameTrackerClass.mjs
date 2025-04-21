@@ -843,7 +843,7 @@ export class TrackedUsername {
      *      not already have OCR ongoing
      *      low confidence
      */
-    readyForOCR () {
+    get readyForOCR () {
         return (
             this.length != null &&
             this.ocr_processing == false &&
@@ -964,7 +964,9 @@ export class UsernameAllTracker {
      * Finds the best match for 2 lists of users with same length
      * Match minimum is a percentage of the testLength, current 70%
      * @param {TrackedUsername[]} predictedUsers 
-     * @param {import('./UsernameBinarization.mjs').TrackedUsernameDetection[]} testLenList 
+     * @param {Object[]} testLenList 
+     * @prop {number} [testLenList.vidx]
+     * @prop {VisualUsername} [testLenList.vobj]
      */
     static findBestShiftMatch (predictedUsers, testLenList) {
 

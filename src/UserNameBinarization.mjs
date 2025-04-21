@@ -7,7 +7,7 @@ Removes canvas elements and uses sharp instead
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
 import { rotPoint, toPct } from './Mathy.mjs'
-import { iterateN } from "./UtilityModule.mjs"
+import { iterateN, Stopwatch } from "./UtilityModule.mjs"
 import { PixelMeasure, Color,
     ImageTemplate, ImageBuffer, Direction2D, SharpImg} from './ImageModule.mjs'
 import {resolve} from 'node:path'
@@ -275,15 +275,6 @@ class UserNameConstant {
     }
 }
 
-
-/**
- * @typedef TrackedUsernameDetection
- * @type {Object}
- * @prop {?boolean} appear did user appear this frame
- * @prop {?number} length get user length this frame. undefined
- * @prop {?boolean} quickLen boolean to check if length matches here
- */
-
 /**
  * Class representing a username that's visually on the screen
  * Stores the visual (onscreen) index and information about the username
@@ -304,8 +295,17 @@ export class VisualUsername {
         this.length = length
         /** debug object for tracking some things */
         this.debug = {
-
+            /** length matched  */
+            matchLen: false,
+            /** length checked during unknown length check */
+            unknownLen: false,
+            /** length checked during OCR */
+            ocrLen: false
         }
+    }
+
+    get validLength () {
+        return this.length != null
     }
 
     /**
@@ -788,10 +788,11 @@ export class UserNameBinarization {
      */
     async binTrackedUserName(sharpImgs) {
 
-        const binMarkName = 'bin-idv-user-start'
+        // const binMarkName = 'bin-idv-user-start'
         // TODO: Merge multiple images, just using first one rn
         const baseBuffer = await sharpImgs[0].buildBuffer()
-        performance.mark(binMarkName)
+        // performance.mark(binMarkName)
+        const bin_sw = new Stopwatch()
 
         const imgBuffer = baseBuffer
         const binBuffer = baseBuffer.cloneDims()
@@ -838,13 +839,13 @@ export class UserNameBinarization {
             }
         }
         
-        if (this.debug) {
-            console.log(`Bin completed in ${performance.measure(binMarkName, binMarkName).duration}ms`)
+        if (this.debug) {   // write buffer when complete
+            console.log(`Bin completed in ${bin_sw.stop()}`)
             new SharpImg(null, imgBuffer).toSharp({toPNG:true}).toFile('testing/indv_user_bin_color.png')
+            new SharpImg(null, binBuffer).toSharp({toPNG:true}).toFile('testing/indv_user_bin.png')
         }
 
         return binBuffer
-        // write buffer when complete
     }
 
     /**
@@ -871,7 +872,6 @@ export class UserNameBinarization {
         pxVisitMap.set(UserNameConstant.hashCoord(x,y), UserNameConstant.MATCH_FLAG)
         if (this.debug)
             imgBuffer.setPixel(x,y, Color.RED)
-        // imgBuffer.setPixel(x,y, this.debug ? Color.RED : imgBuffer.getPixel(x,y), Color.MATCH_ALPHA)
 
         while (floodFillQueue.length > 0) {
             const [cx, cy, expand] = floodFillQueue.pop(0)
@@ -880,7 +880,6 @@ export class UserNameBinarization {
 
             const coordHash = UserNameConstant.hashCoord(cx, cy)
             if (pxVisitMap.get(coordHash) !== undefined) continue; //visited
-            // if (px_rgba[3] != UserNameBinarization.ALPHA_UNVISITED) continue; // visited
 
             px_visited += 1;
 
@@ -891,22 +890,18 @@ export class UserNameBinarization {
             const chOffset = 1 - (ColorSpace.sqDist(colorSpace.getPoint(px_rgb)) / ColorSpace.distMax);
             const EXP_FALLOFF = 3 + (matchColorSpaceBool ? 1 : 3)
             const avgRatio = (chOffset ** EXP_FALLOFF)
-            // const bw_rgba = Color.weightedBW(px_rgba.map(ch => ch * avgCh))
             const avgCh = Math.round((1-avgRatio) * 0xFF) // invert cause BLACK is 0
-            // const bw_rgba = [avgCh, avgCh, avgCh, 0xFF];
             const bw_rgb = [avgCh, avgCh, avgCh];
 
             binBuffer.setPixel(cx, cy, bw_rgb)
             
             if (this.debug) {
-                // Color.copyTo(px_rgb, (matchColorSpaceBool ? Color.MAHOGANY : Color.MAHOGANY_DARK))
                 imgBuffer.setPixel(cx, cy, 
                     matchColorSpaceBool ? Color.MAHOGANY : Color.MAHOGANY_DARK
                 )
             }
-            // px_rgba[3] = matchColorSpaceBool ? Color.MATCH_ALPHA : Color.NO_MATCH_ALPHA
-            pxVisitMap.set(coordHash, matchColorSpaceBool ? UserNameConstant.MATCH_FLAG : UserNameConstant.NO_MATCH_FLAG)
-            // imgBuffer.setPixel(cx, cy, px_rgba)
+            pxVisitMap.set(coordHash, 
+                matchColorSpaceBool ? UserNameConstant.MATCH_FLAG : UserNameConstant.NO_MATCH_FLAG)
 
             if (expand > 0 || matchColorSpaceBool ) { // queue adjacent squares
                 const nextExpand = matchColorSpaceBool ? expand : expand - 1
@@ -1050,20 +1045,24 @@ export class UserNameBinarization {
      * @param {Object} checkDetails 
      * @param {boolean} [checkDetails.appear=true] check that this user exists (right line)
      * @param {boolean} [checkDetails.length=true] check the length of the user
-     * @param {boolean} [checkDetails.quickLength={}] check length at x_coord
+     * @param {Map<number, number>} [checkDetails.quickLength] check length at x_coord
      * 
      * @returns {Promise<Map<number,VisualUsername>>} retObj, sparse* array {appear:bool, length:number, quickLen:bool}
      */
     async getUNBoundingBox(usersToCheck=null, {appear=true, length=true, quickLength=new Map()}) {
 
+        let un_bound_box = null
+        if (this.debug)
+            un_bound_box = new Stopwatch()
+        
         const imgBuffer = await this.sharpImg.buildBuffer();
-
-        const startMarkName = "userbox-start"
-        performance.mark(startMarkName)
+        
+        if (this.debug)
+            console.log(`Buffer wait took: ${un_bound_box.read()}`)
 
         const UN_TOP_Y = UserNameConstant.FIRST_TOP_Y;
         const UN_RIGHT_X = UserNameConstant.RIGHT_EDGE_X;
-        const UN_BOX_HEIGHT = UserNameBinarization.USERNAME_HEIGHT;
+        const UN_BOX_HEIGHT = UserNameConstant.HEIGHT;
         
         if (!usersToCheck || usersToCheck.size == 0) {
             usersToCheck = usersToCheck ?? new Map();
@@ -1076,28 +1075,17 @@ export class UserNameBinarization {
             }
         }
 
-        // /** @type {TrackedUsernameDetection[]} */
-        // const userBoxList = []
-        // for (let i=0; i<24; i++) {
-        //     userBoxList[i] = {}
-        // }
-
-        // if (usersToCheck.length == 0)
-        //     usersToCheck = Array.from(Array(24).keys())
-
         for (const [userIndex, visualUser] of usersToCheck.entries()) {
 
             const user_y_start = UN_TOP_Y + UN_BOX_HEIGHT * userIndex
 
-            const userstart = 'userstart'
-            performance.clearMarks(userstart)
-            performance.mark(userstart)
+            const user_perf_sw = new Stopwatch()
+            const userQLCheck = quickLength && quickLength.get(userIndex)
 
             // check the right side wall
             if (appear) {
                 // TODO: Reduce the num of checks here, also 24 check
                 const APPEAR_MIN = 15
-                // console.log("appear", userIndex)
                 // TODO: during exitingState, this can trigger on the A of Play (edge-case)
                 // detect the top/bottom lines to verify this as well
                 let right_match = 0
@@ -1119,20 +1107,22 @@ export class UserNameBinarization {
                 }
                 
                 visualUser.appear = (right_match > APPEAR_MIN) // update value in userList
-                // console.log(`Right-line took ${performance.measure('right-detect', userstart).duration}`)
-                // 2ms
+                if (this.debug)
+                    console.log(`Appear detect took #${userIndex} ${user_perf_sw.time}`)
+                // <0.05ms
             }
 
             // Check length at this specific position only.
             // If the length check fails, length will remain on its previous value
-            if (quickLength && quickLength.get(userIndex)) {
+            if (userQLCheck) {
                 const MATCH_MIN = 15;
-                const x_px_to_check = quickLength.get(userIndex)
+                const x_px_to_check = userQLCheck + UN_RIGHT_X
                 let left_match_pixels = 0;
 
                 for (const d of iterateN(UN_BOX_HEIGHT * 0.75, UN_BOX_HEIGHT * 0.25)) {
                     if (user_y_start+d >= imgBuffer.height) break;
 
+                    // lx+currLineX - UN_RIGHT_X
                     const testCoord = [x_px_to_check, user_y_start+d]
                     const leftLineCheck = this.checkLine2(...testCoord, imgBuffer, 1, Direction2D.RIGHT)
 
@@ -1140,20 +1130,25 @@ export class UserNameBinarization {
                         left_match_pixels++
                         if (this.debug) imgBuffer.setPixel(...testCoord, Color.BRIGHT_GREEN)
                         if (x_px_to_check > MATCH_MIN) {
-                            visualUser.length = x_px_to_check; // set early and quit
+                            visualUser.length = x_px_to_check - UN_RIGHT_X; // set early and quit
                             break;
                         }
                     }
                 }
+                
+                if (this.debug)
+                    console.log(`Quick left-line detect took #${userIndex} ${user_perf_sw.time}`)
             }
 
-            if (length) {
+            if (length && !userQLCheck) {
                 if (visualUser.lenUnavailable) continue;
 
                 // NOTE: Could bin-search this but could be inaccurate if there's a line somewhere else
                 const [lx, _ly] = this.followUsernameLine(
                         UN_RIGHT_X-20, user_y_start, imgBuffer, Direction2D.LEFT, Direction2D.DOWN);
 
+                if (this.debug)
+                    console.log(`Line follow detect took #${userIndex} ${user_perf_sw.time}`)
                 // console.log(`Line-follow took ${performance.measure('line-follow', userstart).duration}`)
                 // 7ms
 
@@ -1164,14 +1159,14 @@ export class UserNameBinarization {
                 /** Pixels to LEFT to end checking from top-edge match */
                 const CHECK_TO_LEFT_X = -12
                 /** Pixels required to match left edge box */
-                const leftEdgeLineMatch = 14
+                const leftEdgeLineMatch = 12
                 /** When iterating from right->left, keep & skip line matches from N pixels back */
-                const MAX_CORNER_BUFFER = 8
+                const MAX_CORNER_BUFFER = 4
                 // Because index 23 only contains top corner, require only half match num
                 /** Pixels required to match rounded corners of box */
                 const CORNER_MATCH = userIndex == 23 ? 3 : 7
 
-                const matchCornerYToX = {}
+                const matchCornerYToX = new Map()
 
                 // NOTE: The first item is mirrored on the bottom, do this programmatically
                 // TODO: Tweak this with actual math & testing
@@ -1198,7 +1193,6 @@ export class UserNameBinarization {
                         // TODO: Skip checks if corner buffer already there
                         if (user_y_start+dy >= imgBuffer.height) break
                         const testPoint = [x_start, user_y_start+dy]
-                        // const lefjjtLine = this.checkLine(...testPoint, imgBuffer, 1,  Direction2D.RIGHT)
                         const leftLine = this.checkLine2(...testPoint, imgBuffer, 1,  Direction2D.RIGHT)
                         // if (leftLine != leftLine2) {
                         //     console.warn('left diff ', leftLine, leftLine2)
@@ -1207,14 +1201,15 @@ export class UserNameBinarization {
                         if (leftLine) {
                             if (this.debug) imgBuffer.setPixel(...testPoint, Color.YELLOW)
 
-                            if (!matchCornerYToX[dy] || matchCornerYToX[dy] - x_offset > MAX_CORNER_BUFFER ) {
-                                matchCornerYToX[dy] = x_offset
-                            
+                            const Ypx = matchCornerYToX.get(dy)
+                            if (!Ypx || Ypx - x_offset > MAX_CORNER_BUFFER ) {
+                                matchCornerYToX.set(dy, x_offset)
                             }
                             matchesForLine += 1
                         }
                     }
-                    // console.log(`Left-line took ${performance.measure('left-find', userstart).duration}`)
+                    if (this.debug)
+                        console.log(`Left edge find detect took #${userIndex} ${user_perf_sw.time}`)
 
                     if (matchesForLine > leftEdgeLineMatch) {
                         // this qualifies as a possible left edge, check for rounded corners
@@ -1223,21 +1218,21 @@ export class UserNameBinarization {
                         for (const crnYPosStr in cornerMatchTemplate) {
                             const crnYPos = parseInt(crnYPosStr)
                             const [crnXPos, crnRange] = cornerMatchTemplate[crnYPosStr]
-                            const cornerPxMatch = Math.abs(matchCornerYToX[crnYPos] - (currLineX+crnXPos)) <= crnRange
+                            const cornerPxMatch = Math.abs(matchCornerYToX.get(crnYPos) - (currLineX+crnXPos)) <= crnRange
                             if (cornerPxMatch) cornerMatches += 1
                         }
 
                         if (cornerMatches >= CORNER_MATCH) {
                             // consider this a match and solve
-                            // userBoxList[userIndex].length = lx+currLineX - UN_RIGHT_X
                             visualUser.length = lx+currLineX - UN_RIGHT_X
-                            if (!this.debug) break leftfind;
+                            if (!this.debug)
+                                break leftfind;
 
                             // If debug, consider this a match, color this up
-                            for (const user_y_offset_str in matchCornerYToX) {
-                                if (!cornerMatchTemplate[user_y_offset_str]) continue
-                                const user_y_offset = parseInt(user_y_offset_str)
-                                const x_offset = matchCornerYToX[user_y_offset]
+                            for (const [user_y_offset, x_offset] of matchCornerYToX.entries()) {
+                                if (!cornerMatchTemplate[user_y_offset]) continue
+                                // const user_y_offset = parseInt(user_y_offset)
+                                // const x_offset = matchCornerYToX.get(user_y_offset)
                                 const [crn_x_offset, crnRange] = cornerMatchTemplate[user_y_offset]
 
                                 if (this.debug && Math.abs(x_offset - (currLineX+crn_x_offset)) <= crnRange)
@@ -1247,7 +1242,8 @@ export class UserNameBinarization {
                                 imgBuffer.setPixel(lx+currLineX, user_y_start+20, Color.RED)
 
                         }
-                        // console.log(`Left-corner took ${performance.measure('left-corner', userstart).duration}`)
+                        if (this.debug)
+                            console.log(`Left box detect took #${userIndex} ${user_perf_sw.time}`)
                     }
                 }
                 if (!visualUser.length)
@@ -1256,14 +1252,16 @@ export class UserNameBinarization {
                 //     userBoxList[userIndex].length = null
             } // userbox if-length check
 
+            
+            if (this.debug)
+                console.log(`User check took took #${userIndex} ${user_perf_sw.time}`)
         } // per user check
 
         // 13ms
-        if (this.debug)
-            console.log("Finished UN box detect in "+(performance.measure(startMarkName, startMarkName).duration)+'ms')
-
-        if (this.debug)
+        if (this.debug) {
+            console.log(`Finished UN box detection in ${un_bound_box.time}`)
             this.sharpImg.toSharp({toPNG:true}).toFile("testing/line_testing.png")
+        }
 
         return usersToCheck
     }

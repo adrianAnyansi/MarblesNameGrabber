@@ -26,27 +26,35 @@ The goal is every single name should be tracked even if I can't read it or get a
 
 # Focus today
 
-The long frame timing was due to run-away when processing took longer than 33.33ms, but the frame time was still checked as from the download time, causing the frame time to climb every time it missed the timing.
+There are about 3 places to focus on, sorted by priority.
+1. Fix length detection on blue/white backgrounds
+2. Optimize length detection by reducing pixels checked
+3. Optimize offset match by using the flip-card method.
+    - Also use quick-len checks to reduce this even further
 
-Want to clean up the line detection code and tracking code
-Then ensure I'm not missing the timing or reduce the detection penalty per frame
+Without length check fix, both 2 & 3 are unreliable.
+Testing shows its likely a threshold issue... AGAIN
+
 ---
 
-- Use class for visual tracking
-    - Change appear check to be shorter (also wasting N pixel checks as well)
-    - Add quick length
-    - Add quick box
-    - Heres how the new input works
-        - I need 1. blank for everything, 2. number indexes for new objects 3. index & class to update
-        - i think the best way is {}, {idx:null}, {idx:class} since sparse array needs skipping
+- more offset tweaks
+- length check optimization
+    - use feelers to check left edge, then expand 
+    - check corners and also update thresholds
+- Add quick box - if length exists, check all aparts of edges appear
 
+(Note quickLen takes 0.50ms cold-start & 0.16ms warm)
+(length takes 2ms -> 4ms up to 5ms on misses)
+- Offset check
+    - func to determine check prio based on order/duplicate
+    - pick index for quickLen
+        - if match, continue
+        - if no match, move up and quickLen for a match
+    - depending on result & threshold, consider match
+    - else loop until match made
 
-- Think of a smarter test for
-- Check if cropping when making the buffer will reduce the time taken
-
-- A lot of length checks are failing, vod_dump and understand why
-    - Need to play with thresholds again prob
-- Instead of length check, limit by ms? I have 33ms if I want to be exact, and 11ms is just the buffer build
+- Instead of length check, limit by ms? 
+    - Far more reliable for keeping time, but I can accept slow down as long as it runs sequentially
 - Update and use lambda OCR
     - IIRC, this should work with old code, I just need to read HOCR output
     - This still needs to be rewritten with new codebase though

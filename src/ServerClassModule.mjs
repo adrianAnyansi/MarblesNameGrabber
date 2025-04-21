@@ -1,4 +1,5 @@
 import { Stopwatch, iterateN } from "./UtilityModule.mjs"
+import { VisualUsername } from "./UsernameBinarization.mjs"
 import * as Mathy from './Mathy.mjs'
 
 /** Server state enum */
@@ -279,8 +280,8 @@ export class StreamImageTracking {
         /** @type {number} Lag time is recognize a user image */
         this.lag_time = 0
 
-        /** @type {DOMHighResTimeStamp} time when 1st image was retrieved */
-        this.start_time = null
+        /** @type {Stopwatch} time when 1st image was retrieved */
+        this.start_sw = null
     }
 
     /** Reset all objects to default  */
@@ -293,7 +294,7 @@ export class StreamImageTracking {
         this.imgs_downloaded = 0
         this.imgs_read = 0
 
-        this.start_time = null
+        this.start_sw = null
     }
 
     /**
@@ -306,7 +307,7 @@ export class StreamImageTracking {
             this.imgs_downloaded += 1
             
             if (this.imgs_downloaded == 1)
-                this.start_time = performance.now()
+                this.start_sw = new Stopwatch()
         }
         return newFrameBuffer
     }
@@ -315,7 +316,7 @@ export class StreamImageTracking {
      * Return the imgs_downloaded/ms
      */
     get fps() {
-        const timeToStart = performance.now() - this.start_time;
+        const timeToStart = this.start_sw.read();
         return (this.imgs_downloaded-1) / timeToStart * 1000
     }
 }
@@ -519,7 +520,7 @@ export class ScreenState {
 
     /**
      * Add logs for visible on-screen users this frame
-     * @param {import('./UsernameBinarization.mjs').TrackedUsernameDetection[]} visibleUsers 
+     * @param {VisualUsername[]} visibleUsers 
      */
     addVisibleFrame(visibleUsers) {
         this.visibleScreenFrame.push(
@@ -528,20 +529,20 @@ export class ScreenState {
     }
 
     /**
-     * @param {import('./UsernameBinarization.mjs').TrackedUsernameDetection} vUser
+     * @param {VisualUsername} vUser
      */
     static visibleStr(vUser) {
         
-        if (vUser.appear && vUser.length === null)
+        if (vUser.appear && vUser.lenUnavailable)
             return 'D'
-        if (vUser.appear && vUser.unknownLen == true)
+        if (vUser.appear && vUser.debug.unknownLen == true)
             return 'U'//'Δ'
-        if (vUser.appear && vUser.matchLen == true)
+        if (vUser.appear && vUser.debug.matchLen == true)
             return 'K'//'Δ'
         
         if (vUser.appear)
             return 'A'
-        if (vUser.length)
+        if (vUser.length && !vUser.appear)
             return '_' // should never show, appear is a pre-check
          
             return '?'

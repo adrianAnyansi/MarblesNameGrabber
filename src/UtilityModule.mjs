@@ -15,7 +15,7 @@ export class Stopwatch {
      * @returns {string}
      */
     get time () {
-        return Stopwatch.msToHUnits(this.read())
+        return Stopwatch.msToHUnits(this.read(), false)
     }
 
     /**
@@ -40,6 +40,7 @@ export class Stopwatch {
      */
     stop () {
         this.stop_ts = performance.now()
+        return this.read()
     }
 
     static TIME_SEQUENCE = new Map(Object.entries({

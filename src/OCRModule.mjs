@@ -4,6 +4,7 @@ import { XMLParser } from 'fast-xml-parser'
 import { ChildProcess, spawn } from 'node:child_process'
 import { createWorker, createScheduler } from 'tesseract.js'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
+import { Stopwatch } from './UtilityModule.mjs'
 
 /**
  * @typedef {string | Object} OCRResponse
@@ -264,7 +265,7 @@ export class NativeTesseractOCRManager extends OCRManager {
             stdio: ["pipe", "pipe", "pipe"]
         })          //stdin //stdout //stderr
 
-        const tesseractStartTs = performance.now()
+        const tesseractStart_sw = new Stopwatch()
 
         tessProcess.stderr.on('data', (data) => {
             const stringOut = data.toString()
@@ -296,7 +297,7 @@ export class NativeTesseractOCRManager extends OCRManager {
             resolve({
                 data: tesseractData, 
                 info: NativeTesseractOCRManager.NAME,
-                time: (performance.now() - tesseractStartTs),
+                time: tesseractStart_sw.read(),
                 jobId: null
             })
         })

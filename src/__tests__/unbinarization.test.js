@@ -1,6 +1,6 @@
 // Jest unittest for binarization
 
-import {test} from 'node:test'
+import {it, test} from 'node:test'
 import assert from 'node:assert/strict'
 
 import { ColorSpace, UserNameBinarization } from "../UsernameBinarization.mjs";
@@ -37,17 +37,38 @@ test("Single pixel line test check",
 test("Test userbox appear & length check",
     async () => {
         const filename = getFilename(vodTestingFolder, page)
-        const debug = true
 
-        const mng = new UserNameBinarization(filename, debug);
+        const mng = new UserNameBinarization(filename, true);
         const all_user_sw = new Stopwatch()
-        // const st = performance.now()
         const users = await mng.getUNBoundingBox(null, {appear:true, length:true});
         
-        // console.log(`Took ${(performance.now() - st).toFixed(2)}ms for appear+len`)
         all_user_sw.stop()
         console.log(`Took ${(all_user_sw.time)} for appear+len`)
         console.log("Users List", users.entries())
+        // console.log(users.entries().map((idx, user) => 
+        //     `[${idx.toString().padStart(2, ' ')}] ${JSON.stringify(user)}`
+        // ).join('\n'))
+    }
+);
+
+test("Test userbox quick length check",
+    async () => {
+        const filename = getFilename(vodTestingFolder, page)
+        const debug = true
+
+        const buffer = await new SharpImg(filename).sharpImg.toBuffer()
+        const mng = new UserNameBinarization(buffer, debug);
+        const all_user_sw = new Stopwatch()
+        const users = await mng.getUNBoundingBox(new Map([[1],[2],[3],[12]]), {appear:true, length:true, 
+            quickLength:new Map([[1,-200], [2,-239], [12,-177]])});
+        
+        all_user_sw.stop()
+        console.log(`Took ${(all_user_sw.time)} for appear+len`)
+        // console.log("Users List", users.entries())
+        assert.equal(users.get(1).length, undefined)
+        assert.equal(users.get(2).length, -239)
+        assert.equal(users.get(3).length, undefined)
+        assert.equal(users.get(12).length, -177)
         // console.log(users.entries().map((idx, user) => 
         //     `[${idx.toString().padStart(2, ' ')}] ${JSON.stringify(user)}`
         // ).join('\n'))
@@ -58,15 +79,55 @@ test("Test userbox appear & length check",
 test ("Test Crop user image and binarize", async () => {
     const filename = curatedFolder+'chat_clean.png'
 
-    const userIdx = 3;
+    const userIdx = 4;
 
     const mng = new UserNameBinarization(filename, true);
     const users = await mng.getUNBoundingBox(new Map([[userIdx]]), {appear:true, length:true})
     const userObj = users.get(userIdx)
+    
     assert.equal(userObj.appear, true)
     assert.equal(userObj.lenUnavailable, false)
     assert.equal(userObj.lenUnchecked, false)
     assert.equal(userObj.length, -222)
+
+    if (!userObj.length) {
+        console.warn(`No length was found for this user`, userObj)
+        assert.fail("Length not found")
+    }
+    const userCropImg = await mng.cropTrackedUserName(userObj.vidx, userObj.length)
+    userCropImg.toSharp({toPNG:true}).toFile(`testing/indv_user_crop.png`)
+
+    const binUserImg = await mng.binTrackedUserName([userCropImg])
+    new SharpImg(null, binUserImg).toSharp({toPNG:true, scaleForOCR:true}).toFile(`testing/indv_user_bin.png`)
+
+})
+
+/*
+* Its not quite linear 
+* 1080x1920 = 12.86ms
+* 300x900 = 10.36ms
+* 300x500 = 7.28ms
+* 300x300 = 5.61ms
+*/
+test ("Test sharp crop to buffer time", async () => {
+
+    const filename = getFilename(vodTestingFolder, page)
+    const iters = 200
+    
+    const s1 = new Stopwatch()
+    for (const i of iterateN(iters)) {
+        const mng = new UserNameBinarization(filename, true);
+        await mng.sharpImg.buildBuffer()
+    }
+    console.log(`Took avg ${Stopwatch.msToHUnits(s1.read()/iters,false)}`)
+
+    const s2 = new Stopwatch()
+    for (const j of iterateN(iters)) {
+        const croppedSharpImg = new SharpImg(filename).crop({x:700, y:100, w: 300, h: 900})
+        await croppedSharpImg.buildBuffer()
+    }
+    console.log(`Took avg ${Stopwatch.msToHUnits(s2.read()/iters,false)}`)
+
 })
 
 test("Test userbox pure timing",
