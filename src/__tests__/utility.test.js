@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 
 import { ColorSpace } from "../UsernameBinarization.mjs";
 import { iterateN } from "../UtilityModule.mjs";
+import { randInt } from '../Mathy.mjs';
 
 test("Confirms mathy iterator works", 
     () => {
@@ -28,5 +29,18 @@ test("Confirm colorspace rotation",
 test ("Working?",
     () => {
         assert.equal(1, 1);
+    }
+)
+
+test ("Math randInt",
+    () => {
+        const testVal = randInt(5)
+        assert.equal( testVal < 5, true)
+        assert.equal( testVal >= 0, true)
+
+        const testRange = randInt(2,4)
+        
+        assert.equal( testVal < 4, true)
+        assert.equal( testVal >= 2, true)
     }
 )

@@ -505,6 +505,10 @@ export class Direction2D {
     static LEFT = [-1,0]
     static UP = [0,-1]
     static DOWN = [0,1]
+    static UP_LEFT = [-1,-1]
+    static DOWN_LEFT = [-1,1]
+    static UP_RIGHT = [1,-1]
+    static DOWN_RIGHT = [1,-1]
 }
 
 /** Class for managing resolution & targetting */

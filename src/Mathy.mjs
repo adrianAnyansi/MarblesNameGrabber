@@ -75,3 +75,16 @@ export function inRange(testNum, sourceNum, range) {
 
     return testNum > testRange[0] && testNum < testRange[1]
 }
+
+/**
+ * @type {(end:number) => number} return random integer [0,end)
+ * @type {(start:number, end:number) => number} return random integer [start, end]
+ */
+export function randInt(end, start=null) {
+    if (!start) {
+        start = null
+    } else {
+        [end, start] = [start, end]
+    }
+    return Math.trunc(Math.random()*(end-start))
+}

@@ -6,7 +6,7 @@ Removes canvas elements and uses sharp instead
 
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
-import { rotPoint, toPct } from './Mathy.mjs'
+import { randInt, rotPoint, toPct } from './Mathy.mjs'
 import { iterateN, Stopwatch } from "./UtilityModule.mjs"
 import { PixelMeasure, Color,
     ImageTemplate, ImageBuffer, Direction2D, SharpImg} from './ImageModule.mjs'
@@ -328,6 +328,8 @@ export class VisualUsername {
  * Main class for cutting and parsing Username iamges from the Marbles UI
  */
 export class UserNameBinarization {
+
+    static LINE_DEBUG = false
 
     /** @type {import('./ImageModule.mjs').RectObj} rectangle for cropped usernames */
     static NAME_CROP_RECT = {
@@ -1081,19 +1083,19 @@ export class UserNameBinarization {
 
             const user_perf_sw = new Stopwatch()
             const userQLCheck = quickLength && quickLength.get(userIndex)
+            const IsUserIndex23 = userIndex == 23
 
             // check the right side wall
             if (appear) {
-                // TODO: Reduce the num of checks here, also 24 check
                 const APPEAR_MIN = 15
                 // TODO: during exitingState, this can trigger on the A of Play (edge-case)
                 // detect the top/bottom lines to verify this as well
                 let right_match = 0
                 for (let d=UN_BOX_HEIGHT/4; d < UN_BOX_HEIGHT * 3/4; d++) {
-                    if (user_y_start+d >= imgBuffer.height) break
+                    if (IsUserIndex23 && user_y_start+d >= imgBuffer.height) break
                     
                     // const rightLine = this.checkLine(UN_RIGHT_X, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
-                    const rightLine = this.checkLine2(UN_RIGHT_X, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
+                    const rightLine = this.checkLineThres(UN_RIGHT_X, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
                     // continue;
                     // if (rightLine != rightLine2) {
                     //     console.warn('diff ', rightLine, rightLine2)
@@ -1115,16 +1117,16 @@ export class UserNameBinarization {
             // Check length at this specific position only.
             // If the length check fails, length will remain on its previous value
             if (userQLCheck) {
-                const MATCH_MIN = 15;
+                const MATCH_MIN = !IsUserIndex23 ? 15 : 7;
                 const x_px_to_check = userQLCheck + UN_RIGHT_X
                 let left_match_pixels = 0;
 
                 for (const d of iterateN(UN_BOX_HEIGHT * 0.75, UN_BOX_HEIGHT * 0.25)) {
-                    if (user_y_start+d >= imgBuffer.height) break;
+                    if (IsUserIndex23 && user_y_start+d >= imgBuffer.height) break;
 
                     // lx+currLineX - UN_RIGHT_X
                     const testCoord = [x_px_to_check, user_y_start+d]
-                    const leftLineCheck = this.checkLine2(...testCoord, imgBuffer, 1, Direction2D.RIGHT)
+                    const leftLineCheck = this.checkLineThres(...testCoord, imgBuffer, 1, Direction2D.RIGHT)
 
                     if (leftLineCheck) {
                         left_match_pixels++
@@ -1140,7 +1142,85 @@ export class UserNameBinarization {
                     console.log(`Quick left-line detect took #${userIndex} ${user_perf_sw.time}`)
             }
 
-            if (length && !userQLCheck) {
+            if (length) {
+                if (visualUser.lenUnavailable) continue;
+                if (userQLCheck && visualUser.validLength) continue;
+
+                // NOTE: Could bin-search this but could be inaccurate if there's a line somewhere else
+                const [lx, _ly] = this.followUsernameLine(
+                    UN_RIGHT_X-20, user_y_start, imgBuffer, Direction2D.LEFT, Direction2D.DOWN);
+
+                if (this.debug) // can take anywhere to 0.15ms to 0.5ms
+                    console.log(`Line follow detect took #${userIndex} ${user_perf_sw.time}`)
+
+                const [X_RIGHT_START, X_LEFT_END] = [-2, -9];
+                const min_t = !IsUserIndex23 ? 10 : 6;
+                // const SAMPLE_SLICE = UN_BOX_HEIGHT*0.6/test_lines // Trunc this to prevent overlap
+
+                for (const x_offset of iterateN(X_LEFT_END, X_RIGHT_START)) {
+                    const x_line = lx + x_offset;
+                    let matchesThisLine = 0;
+                    
+                    for (const dy of iterateN(UN_BOX_HEIGHT*0.25, UN_BOX_HEIGHT*0.75)) {
+                        const testPoint = [x_line, user_y_start+dy]
+                        if (IsUserIndex23 && testPoint[1] >= imgBuffer.height) break
+                        const leftLine = this.checkLineThres(...testPoint, imgBuffer, 1,  Direction2D.RIGHT, 2)
+                        if (leftLine) matchesThisLine += 1
+                        if (this.debug && leftLine) imgBuffer.setPixel(...testPoint, Color.YELLOW)
+                    }
+                    if (matchesThisLine > min_t) {
+                        if (this.debug)
+                            console.log(`Pass Left edge detect took #${userIndex} ${user_perf_sw.time}`)
+                        
+                        if (this.debug)
+                            imgBuffer.setPixel(x_line, user_y_start+21, Color.GREEN)
+                        // left edge, now check corner matches
+                        const foundCorners = [Infinity, Infinity]
+                        const pixelCheck = 12
+                        
+                        const dirs = [Direction2D.LEFT, Direction2D.LEFT]
+                        const x_buffer = 0
+                        const [u_l_st, u_l_end] = [user_y_start+UN_BOX_HEIGHT*0.1, 
+                            user_y_start+UN_BOX_HEIGHT*0.9]
+
+                        for (const iter of iterateN(pixelCheck)) {
+                            const ulpoint = [lx + dirs[0][0] * iter, u_l_st + dirs[0][1] * iter]
+                            const ulCorner = this.checkLineThres(...ulpoint, imgBuffer, 1, Direction2D.RIGHT)
+                            if (ulCorner) foundCorners[0] = lx
+                            const dlPoint = [lx + dirs[1][0] * iter, u_l_end + dirs[1][1] * iter]
+                            const dlCorner = (!IsUserIndex23) 
+                                ? this.checkLineThres(...dlPoint, imgBuffer, 1, Direction2D.RIGHT)
+                                : true
+                            if (dlCorner) foundCorners[1] = lx
+
+                            if (Math.abs(foundCorners[0] - foundCorners[1]) < 2) {
+                                if (this.debug) {
+                                    if (!IsUserIndex23) imgBuffer.setPixel(...dlPoint, Color.HOT_PINK)
+                                    imgBuffer.setPixel(...ulpoint, Color.HOT_PINK)
+                                }
+                                break
+                            }
+                        }
+                        if (Math.abs(foundCorners[0] - foundCorners[1]) > 2) {
+                            continue
+                        }
+
+                        visualUser.length = x_line - UN_RIGHT_X
+                        
+                        if (this.debug)
+                            imgBuffer.setPixel(x_line, user_y_start+20, Color.RED)
+                        break
+                    }
+                    if (this.debug)
+                        console.log(`Miss Left box detect took #${userIndex} ${user_perf_sw.time}`)
+                }
+                if (!visualUser.length)
+                    visualUser.length = null
+                if (this.debug)
+                    console.log(`Length detect took #${userIndex} ${user_perf_sw.time}`)
+            } // userbox if-length check
+
+            if (false && length && !userQLCheck) {
                 if (visualUser.lenUnavailable) continue;
 
                 // NOTE: Could bin-search this but could be inaccurate if there's a line somewhere else
@@ -1155,16 +1235,16 @@ export class UserNameBinarization {
                 // Verify that rounded outline exists to increase the accuracy
 
                 /** Pixels to RIGHT to start checking from top-edge match */
-                const CHECK_FROM_RIGHT_X = 4
+                const CHECK_FROM_RIGHT_X = 2
                 /** Pixels to LEFT to end checking from top-edge match */
-                const CHECK_TO_LEFT_X = -12
+                const CHECK_TO_LEFT_X = -11
                 /** Pixels required to match left edge box */
                 const leftEdgeLineMatch = 12
                 /** When iterating from right->left, keep & skip line matches from N pixels back */
                 const MAX_CORNER_BUFFER = 4
                 // Because index 23 only contains top corner, require only half match num
                 /** Pixels required to match rounded corners of box */
-                const CORNER_MATCH = userIndex == 23 ? 3 : 7
+                const CORNER_MATCH = userIndex == 23 ? 3 : 6
 
                 const matchCornerYToX = new Map()
 
@@ -1185,6 +1265,7 @@ export class UserNameBinarization {
                     [UN_BOX_HEIGHT-5]: [2, 2],
                     [UN_BOX_HEIGHT-6]: [1, 1],
                 }
+                
 
                 leftfind: for (let x_offset=CHECK_FROM_RIGHT_X; x_offset > CHECK_TO_LEFT_X; x_offset--) {
                     const x_start = lx + x_offset;
@@ -1193,7 +1274,7 @@ export class UserNameBinarization {
                         // TODO: Skip checks if corner buffer already there
                         if (user_y_start+dy >= imgBuffer.height) break
                         const testPoint = [x_start, user_y_start+dy]
-                        const leftLine = this.checkLine2(...testPoint, imgBuffer, 1,  Direction2D.RIGHT)
+                        const leftLine = this.checkLineThres(...testPoint, imgBuffer, 1,  Direction2D.RIGHT)
                         // if (leftLine != leftLine2) {
                         //     console.warn('left diff ', leftLine, leftLine2)
                         //     imgBuffer.setPixel(...testPoint, Color.GREEN)
@@ -1209,7 +1290,7 @@ export class UserNameBinarization {
                         }
                     }
                     if (this.debug)
-                        console.log(`Left edge find detect took #${userIndex} ${user_perf_sw.time}`)
+                        console.log(`Left edge ${matchesForLine} find detect took #${userIndex} ${user_perf_sw.time}`)
 
                     if (matchesForLine > leftEdgeLineMatch) {
                         // this qualifies as a possible left edge, check for rounded corners
@@ -1252,7 +1333,6 @@ export class UserNameBinarization {
                 //     userBoxList[userIndex].length = null
             } // userbox if-length check
 
-            
             if (this.debug)
                 console.log(`User check took took #${userIndex} ${user_perf_sw.time}`)
         } // per user check
@@ -1324,6 +1404,7 @@ export class UserNameBinarization {
      * @param {ImageBuffer} imgBuffer
      * @param {number} [size=1] size of line to check
      * @param {Direction2D} [direction] direction to expect cliff
+     * @deprecated checkLineThres is more accurate*
      */
     checkLine(x,y, imgBuffer, size=1, direction=Direction2D.LEFT) {
 
@@ -1374,11 +1455,16 @@ export class UserNameBinarization {
      * @param {number} [size=1] size of line to check
      * @param {Direction2D} [direction] direction to expect cliff
      */
-    checkLine2 (x,y,imgBuffer, size=1, direction=Direction2D.LEFT) {
+    checkLineThres (x,y,imgBuffer, size=1, direction=Direction2D.LEFT, skip_px=2) {
 
-        const blurPixel = 2; // How many pixels to check for plane
-        const PX_DIFF = 180 // Expected 
-        const DIFF_TO_LINE = 90;
+        const blurPixel = 1; // How many pixels to check for plane
+        const PX_DIFF = 150 // Expected 
+        const DIFF_TO_LINE = 75; // TODO: scale based on plane pixel
+        // 0 avg tends to 180, 
+        // [80,100,127] -> [180, 207, 239] (100)
+        // [0,0,89] -> [160,160,255]
+        // [170] -> [230]
+        // [111] -> [170]
         const DIFF_TO_MAX = 30;
         const BG_CH_MAX = 180; // background max channel color
 
@@ -1386,21 +1472,27 @@ export class UserNameBinarization {
         for (let i=0; i<size; i++) {
             const [dx, dy] = [direction[0]*-i, direction[1]*-i]
             lineTest.push(imgBuffer.getPixel(x+dx, y+dy))
-            // if (this.debug)
+            // if (UserNameBinarization.LINE_DEBUG)
             //     imgBuffer.setPixel(x+dx, y+dy, Color.RED)
         }
 
         // NOTE: Skipping to 2 pixels here
         const planePixels = []
-        for (let i=2; i <= blurPixel; i++) {
+        for (let i=skip_px; i < skip_px+blurPixel; i++) {
             const [dx,dy] = [direction[0]*i, direction[1]*i]
             planePixels.push(imgBuffer.getPixel(x+dx, y+dy))
-            // if (this.debug)
+            // if (UserNameBinarization.LINE_DEBUG)
             //     imgBuffer.setPixel(x+dx, y+dy, Color.ORANGE)
         }
 
         // Plane should always be darker due to background opacity
-        if (!planePixels.at(-1).every(ch => ch <= BG_CH_MAX)) return false
+        if (!planePixels.at(-1).every(ch => ch <= BG_CH_MAX)) {
+            // console.log("Fail line check, above dark threshold")
+            
+            // const [dx,dy] = [direction[0]*2, direction[1]*2]
+            // imgBuffer.setPixel(x+dx, y+dy, Color.BLUE)
+            return false
+        }
 
         // expect a difference of around 180
         const diffPx = Color.diff(lineTest[0], planePixels.at(-1))
@@ -1409,7 +1501,8 @@ export class UserNameBinarization {
         // NOTE: calculate the max color, as color can cap
         const maxColor = Color.add(planePixels.at(-1), [PX_DIFF, PX_DIFF, PX_DIFF])
         const diffToExpected = Color.abs(Color.diff(maxColor, planePixels.at(-1)))
-        // console.log(`Diff is ${diffPx} : ${maxColor} ~ ${lineTest[0]}`)
+        // if (UserNameBinarization.LINE_DEBUG)
+        //     console.log(`Diff is ${diffPx} : ${maxColor} ~ ${lineTest[0]} but ${planePixels.at(-1)}`)
         if(Color.sumColor(diffToExpected) / 3 < DIFF_TO_MAX) return true
 
         return false

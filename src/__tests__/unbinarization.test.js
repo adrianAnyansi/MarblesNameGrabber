@@ -16,6 +16,7 @@ const vodTestingFolder = String.raw`testing\\vod_dump\\%s.jpg`
 const ocrTestingFolder = String.raw`testing/ocr_test/`
 
 const page = 303;
+const vodTestFilename = getFilename(vodTestingFolder, page)
 
 function getFilename(folder, page) {
     return folder.replace('%s', page)
@@ -36,7 +37,8 @@ test("Single pixel line test check",
 
 test("Test userbox appear & length check",
     async () => {
-        const filename = getFilename(vodTestingFolder, page)
+        // const filename = getFilename(vodTestingFolder, page)
+        const filename = chatTestingFolder + 'chat_clean.png'
 
         const mng = new UserNameBinarization(filename, true);
         const all_user_sw = new Stopwatch()
@@ -45,6 +47,29 @@ test("Test userbox appear & length check",
         all_user_sw.stop()
         console.log(`Took ${(all_user_sw.time)} for appear+len`)
         console.log("Users List", users.entries())
+        const validLens = 14
+        for (const index of iterateN(validLens))
+            assert.equal(users.get(index).validLength, true)
+        // console.log(users.entries().map((idx, user) => 
+        //     `[${idx.toString().padStart(2, ' ')}] ${JSON.stringify(user)}`
+        // ).join('\n'))
+    }
+);
+
+test("Test 1 userbox appear/length",
+    async () => {
+        const filename = getFilename(vodTestingFolder, page)
+
+        const mng = new UserNameBinarization(filename, true);
+        const all_user_sw = new Stopwatch()
+        const users = await mng.getUNBoundingBox(new Map([[6]]), {appear:true, length:true});
+        
+        all_user_sw.stop()
+        // console.log(`Took ${(all_user_sw.time)} for appear+len`)
+        // console.log("Users List", users.entries())
+        // const validLens = 14
+        // for (const index of iterateN(validLens))
+        //     assert.equal(users.get(index).validLength, true)
         // console.log(users.entries().map((idx, user) => 
         //     `[${idx.toString().padStart(2, ' ')}] ${JSON.stringify(user)}`
         // ).join('\n'))
@@ -65,9 +90,10 @@ test("Test userbox quick length check",
         all_user_sw.stop()
         console.log(`Took ${(all_user_sw.time)} for appear+len`)
         // console.log("Users List", users.entries())
-        assert.equal(users.get(1).length, undefined)
+        assert.equal(users.get(1).length, -200)
         assert.equal(users.get(2).length, -239)
-        assert.equal(users.get(3).length, undefined)
+        assert.equal(users.get(3).length, null)
+        assert.equal(users.get(3).lenUnavailable, true)
         assert.equal(users.get(12).length, -177)
         // console.log(users.entries().map((idx, user) => 
         //     `[${idx.toString().padStart(2, ' ')}] ${JSON.stringify(user)}`
@@ -77,11 +103,11 @@ test("Test userbox quick length check",
 
 
 test ("Test Crop user image and binarize", async () => {
-    const filename = curatedFolder+'chat_clean.png'
+    // const filename = curatedFolder+'chat_clean.png'
 
-    const userIdx = 4;
+    const userIdx = 9; // 4
 
-    const mng = new UserNameBinarization(filename, true);
+    const mng = new UserNameBinarization(vodTestFilename, true);
     const users = await mng.getUNBoundingBox(new Map([[userIdx]]), {appear:true, length:true})
     const userObj = users.get(userIdx)
     
