@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import { ColorSpace } from "../UsernameBinarization.mjs";
 import { iterateN } from "../UtilityModule.mjs";
 import { randInt } from '../Mathy.mjs';
+import { Heap } from '../DataStructureModule.mjs';
 
 test("Confirms mathy iterator works", 
     () => {
@@ -44,3 +45,18 @@ test ("Math randInt",
         assert.equal( testVal >= 2, true)
     }
 )
+
+test ("Heap test", () => {
+
+    const list = [45,36,5,89,32,49,49,86,4,7,2]
+
+    const minHeap = new Heap(list)
+    const minList = list.slice().sort((a,b) => a - b)
+    for(const l_val of minList.values())
+        assert.equal(minHeap.pop(), l_val)
+
+    const maxHeap = new Heap(list, null, false)
+    const maxList = list.slice().sort()
+    for(const l_val of maxList.values())
+        assert.equal(maxHeap.pop(), l_val)
+})

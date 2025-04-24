@@ -8,6 +8,7 @@ import sharp from 'sharp'
 import { Color, Direction2D, SharpImg } from '../ImageModule.mjs';
 import { Stopwatch, iterateN } from '../UtilityModule.mjs';
 import { NativeTesseractOCRManager, TestTesseractOCRManager } from '../OCRModule.mjs';
+import { TrackedUsername, UsernameAllTracker } from '../UsernameTrackerClass.mjs';
 
 const testingFolder = String.raw`testing\\`;
 const curatedFolder = String.raw`testing\curated\\`;
@@ -37,42 +38,46 @@ test("Single pixel line test check",
 
 test("Test userbox appear & length check",
     async () => {
-        // const filename = getFilename(vodTestingFolder, page)
-        const filename = chatTestingFolder + 'chat_clean.png'
 
-        const mng = new UserNameBinarization(filename, true);
-        const all_user_sw = new Stopwatch()
-        const users = await mng.getUNBoundingBox(null, {appear:true, length:true});
-        
-        all_user_sw.stop()
-        console.log(`Took ${(all_user_sw.time)} for appear+len`)
-        console.log("Users List", users.entries())
-        const validLens = 14
-        for (const index of iterateN(validLens))
-            assert.equal(users.get(index).validLength, true)
-        // console.log(users.entries().map((idx, user) => 
-        //     `[${idx.toString().padStart(2, ' ')}] ${JSON.stringify(user)}`
-        // ).join('\n'))
+        const filename = chatTestingFolder + 'chat_clean.png'
+        // TODO: Also get the length of users and check against each
+        const fileList = [
+            curatedFolder + 'chat_clean.png',
+            // I only have 1 example cause he's always left-side :(
+            // curatedFolder + 
+        ]
+
+        for (const filename of fileList) {
+            const mng = new UserNameBinarization(filename, true);
+            const all_user_sw = new Stopwatch()
+            const users = await mng.getUNBoundingBox(null, {appear:true, length:true});
+            
+            all_user_sw.stop()
+            console.log(`Took ${(all_user_sw.time)} for appear+len`)
+
+            // console.log("Users List", users.entries())
+            const validLens = 24
+            for (const index of iterateN(validLens))
+                assert.equal(users.get(index).validLength, true)
+        }
     }
 );
 
 test("Test 1 userbox appear/length",
     async () => {
-        const filename = getFilename(vodTestingFolder, page)
+        const filename = getFilename(vodTestingFolder, 258)
+        
+        const userIdx = 12;
+        // const filename = chatTestingFolder + 'chat_clean.png'
 
         const mng = new UserNameBinarization(filename, true);
         const all_user_sw = new Stopwatch()
-        const users = await mng.getUNBoundingBox(new Map([[6]]), {appear:true, length:true});
+        UserNameBinarization.LINE_DEBUG = true
+        const users = await mng.getUNBoundingBox(new Map([[userIdx]]), {appear:true, length:true});
         
         all_user_sw.stop()
-        // console.log(`Took ${(all_user_sw.time)} for appear+len`)
-        // console.log("Users List", users.entries())
-        // const validLens = 14
-        // for (const index of iterateN(validLens))
-        //     assert.equal(users.get(index).validLength, true)
-        // console.log(users.entries().map((idx, user) => 
-        //     `[${idx.toString().padStart(2, ' ')}] ${JSON.stringify(user)}`
-        // ).join('\n'))
+        console.log(`Len is ${users.get(userIdx).length}`)
+        // OCR since I want to get the name here
     }
 );
 
@@ -84,7 +89,7 @@ test("Test userbox quick length check",
         const buffer = await new SharpImg(filename).sharpImg.toBuffer()
         const mng = new UserNameBinarization(buffer, debug);
         const all_user_sw = new Stopwatch()
-        const users = await mng.getUNBoundingBox(new Map([[1],[2],[3],[12]]), {appear:true, length:true, 
+        const users = await mng.getUNBoundingBox(new Map([[1],[2],[3],[12]]), {appear:true, length:false, 
             quickLength:new Map([[1,-200], [2,-239], [12,-177]])});
         
         all_user_sw.stop()
@@ -92,8 +97,8 @@ test("Test userbox quick length check",
         // console.log("Users List", users.entries())
         assert.equal(users.get(1).length, -200)
         assert.equal(users.get(2).length, -239)
-        assert.equal(users.get(3).length, null)
-        assert.equal(users.get(3).lenUnavailable, true)
+        assert.equal(users.get(3).length, undefined)
+        assert.equal(users.get(3).lenUnavailable, false)
         assert.equal(users.get(12).length, -177)
         // console.log(users.entries().map((idx, user) => 
         //     `[${idx.toString().padStart(2, ' ')}] ${JSON.stringify(user)}`
@@ -105,20 +110,22 @@ test("Test userbox quick length check",
 test ("Test Crop user image and binarize", async () => {
     // const filename = curatedFolder+'chat_clean.png'
 
-    const userIdx = 9; // 4
+    const filename = getFilename(vodTestingFolder, 297)
+    const userIdx = 0; // 4
 
-    const mng = new UserNameBinarization(vodTestFilename, true);
+    const mng = new UserNameBinarization(filename, true);
     const users = await mng.getUNBoundingBox(new Map([[userIdx]]), {appear:true, length:true})
     const userObj = users.get(userIdx)
     
     assert.equal(userObj.appear, true)
     assert.equal(userObj.lenUnavailable, false)
     assert.equal(userObj.lenUnchecked, false)
-    assert.equal(userObj.length, -222)
+    // assert.equal(userObj.length, -222)
 
     if (!userObj.length) {
-        console.warn(`No length was found for this user`, userObj)
-        assert.fail("Length not found")
+        assert.fail("Length not found for user")
+    } else {
+        console.log(`Length found for user is ${userObj.length}`)
     }
     const userCropImg = await mng.cropTrackedUserName(userObj.vidx, userObj.length)
     userCropImg.toSharp({toPNG:true}).toFile(`testing/indv_user_crop.png`)
@@ -291,4 +298,31 @@ test ("Test OCR Promise Queue", {skip: "Long promise queue test"}, async () => {
         list.push(ocrm.queueOCR())
     }
     await Promise.all(list)
+})
+
+
+test ("Test user tracker length", async () => {
+    const userList = [
+        new TrackedUsername(),
+        new TrackedUsername(),
+        new TrackedUsername(),
+        new TrackedUsername(),
+        new TrackedUsername(),
+        new TrackedUsername(),
+        new TrackedUsername(),
+        new TrackedUsername()
+    ]
+
+    userList[0].setLen(-70)
+    userList[1].setLen(-168)
+    userList[2].setLen(-123)
+    userList[3].setLen(-123)
+    userList[4].setLen(-30)
+    userList[5].setLen(-84)
+    // userList[6].setLen(-30)
+    userList[7].setLen(-132)
+
+    const heap = UsernameAllTracker.genLengthChecks(userList)
+    
+    console.log("Heap: ",heap)
 })

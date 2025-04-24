@@ -26,30 +26,15 @@ The goal is every single name should be tracked even if I can't read it or get a
 
 # Focus today
 
-With the corner check issue known, lets completely ditch the old length code.
-New logic-
-    - 3 Feelers (random to prevent constant fails?) checking line
-        once 3 feelers trigger, do a line check
-        passing that, do a quick corner check (make sure N pixels are past the line)
-    
+I'm winging the line detection, works so far-
+    Nice thing about having a testing framework is I can literally throw testing at it and test really fast - but thats for later
 
-There are about 3 places to focus on, sorted by priority.
+Now flip-card logic, then I'll do an offset check against live.
+
+Bug:
 1. Fix length detection on blue/white backgrounds
-2. Optimize length detection by reducing pixels checked
-3. Optimize offset match by using the flip-card method.
-    - Also use quick-len checks to reduce this even further
-
-Without length check fix, both 2 & 3 are unreliable.
-Testing shows its likely a threshold issue... AGAIN
 
 ---
-
-- more offset tweaks
-- length check optimization
-    - use feelers to check left edge, then expand 
-    - check corners and also update thresholds
-        - corner check is bad on long names, corners are rounder
-- Add quick box - if length exists, check all aparts of edges appear
 
 (Note quickLen takes 0.50ms cold-start & 0.16ms warm)
 (length takes 2ms -> 4ms up to 5ms on misses)

@@ -3,6 +3,22 @@
 Writing down stuff thats not actionable but descriptive here
 
 
+# Edge tracking
+Huge issue is that left side tracking can spread the line across 2-3 pixels
+    This makes pixel calculations very hard on the left side
+
+The best solution is detecting the cliff regardless of channel value in 
+
+## Notes about tracking changes
+End result is that I don't have a linear or exponential function BECAUSE of the 
+2-3 pixel blur, so these values don't work
+---
+0 avg tends to 180, 
+[80,100,127] -> [180, 207, 239] (100)
+[0,0,89] -> [160,160,255]
+[170] -> [230]
+[111] -> [170]
+
 # Server summary
 How the server works
 ## Tracking Summary
@@ -163,3 +179,4 @@ ffmpeg -re '-f','mpegts', '-i','pipe:0', '-f','image2', '-pix_fmt','rgba', '-vf'
 
 
 # Font and OCR tracking
+TBD

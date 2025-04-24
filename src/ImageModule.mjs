@@ -115,6 +115,55 @@ export class Color {
         return Math.sqrt(redComp+greenComp+blueComp)
     }
 
+    /**
+     * From a list of colors, calc the bounding box of the color
+     * @param {*} colorList 
+     * @returns {[Number, Number]}
+     * @deprecated
+     */
+    static  calcMinColorDistance (colorList) {
+        // binary search across each color channel
+        const redRange =    [0,255]
+        const blueRange =   [0,255]
+        const greenRange =  [0,255]
+
+        const ranges = [redRange, blueRange, greenRange]
+        const midOfRange = range => parseInt((range[1] - range[0])/2) + range[0]
+
+        const RGBA_LIST = colorList.map( c => Color.toRGBA(c))
+    1
+        while (ranges.some(range => range[0] < range[1])) {
+            
+            for (let idx in ranges) {
+                const range = ranges[idx]
+                if (range[0] >= range[1]) continue
+                // let mid = parseInt((range[1] - range[0])/2) + range[0]
+                let rgbaTest = [midOfRange(ranges[0]), midOfRange(ranges[1]), midOfRange(ranges[2])]
+                let maxColorDist = Math.max(...RGBA_LIST.map( rgbaC => Color.redmean(rgbaTest, rgbaC)))
+
+                rgbaTest[idx] = (rgbaTest[idx]+1) % 255
+                let maxRightColorDist = Math.max(...RGBA_LIST.map( rgbaC => Color.redmean(rgbaTest, rgbaC)))
+
+                rgbaTest[idx] = Math.max((rgbaTest[idx]-2), 0)
+                let maxLeftColorDist = Math.max(...RGBA_LIST.map( rgbaC => Color.redmean(rgbaTest, rgbaC)))
+
+                let midPoint = midOfRange(ranges[idx])
+
+                if (maxColorDist < maxRightColorDist) {
+                    ranges[idx][1] = midPoint-1
+                } else if (maxColorDist < maxLeftColorDist) {
+                    ranges[idx][0] = midPoint+1
+                } else {
+                    ranges[idx][0] = ranges[idx][1]
+                }
+            }
+        }
+
+        const retRGBA = ranges.map( range => range[0])
+
+        return [retRGBA, Math.max(...RGBA_LIST.map( c => Color.redmean(retRGBA, c)))]
+    }
+
     static sqrColorDistance (rgba, rgba2) {
         let ans = 0
         for (let idx in rgba)

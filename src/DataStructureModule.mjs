@@ -138,34 +138,38 @@ export class LinkedList {
     }
 }
 
+/**
+ * This is not passing testing
+ * Do not use until fixed
+ * @deprecated
+ */
 export class Heap {
     // Thanks to https://stackfull.dev/heaps-in-javascript
     // Anish Kumar for this tutorial
 
-    MIN_HEAP = 'MIN_HEAP'
-    MAX_HEAP = 'MAX_HEAP'
+    static MIN_HEAP = 'MIN_HEAP'
+    static MAX_HEAP = 'MAX_HEAP'
 
     constructor (values=null, maxLength=Infinity, IsMinHeap=true) {
         this.heap = [] // Any type
         this._isMinHeap = IsMinHeap
         this.maxLength = maxLength
+        this.intLength = 0
 
         if (values == null) return
-        for (let value of values) {
+        for (const value of values) {
             this.push(value)
         }
     }
 
     // helper functions
     _swapIndex(idxA, idxB) {
-        const temp = this.heap[idxA]
-        this.heap[idxA] = this.heap[idxB]
-        this.heap[idxB] = temp
+        [this.heap[idxA], this.heap[idxB]] = [this.heap[idxA], this.heap[idxB]]
     }
-    _getLeftIdx(idx) {
+    static _getLeftIdx(idx) {
         return (2*idx+1)
     }
-    _getRightIdx(idx) {
+    static _getRightIdx(idx) {
         return (2*idx+2)
     }
 
@@ -183,7 +187,7 @@ export class Heap {
         let currIdx = this.heap.push(value) - 1  // push key
         
         while (currIdx > 0) {
-            let parentIdx = Math.floor((currIdx-1)/2)
+            const parentIdx = Math.floor((currIdx-1)/2)
             if ( this.valCompare(this.heap[currIdx], this.heap[parentIdx]) ) {
                 this._swapIndex(currIdx, parentIdx)
                 currIdx = parentIdx
@@ -192,23 +196,26 @@ export class Heap {
             }
         }
 
-        if (this.length > this.maxLength)
-            this.truncateLength(this.maxLength)
+        while (this.length > this.maxLength)
+            this.pop()
+            // this.truncateLength(this.maxLength)
     }
 
+    /**
+     * Removes top-most value from heap 
+     */
     pop () {
-        // Removes top-most value from heap
         this._swapIndex(0, this.heap.length-1) // swap to end
-        let retVal = this.heap.pop() // get top of heap
+        const retVal = this.heap.pop() // get top of heap
 
         let checkIdx = 0
         // const checkVal = this.heap[checkIdx]
 
-        while (this._getLeftIdx(checkIdx) < this.heap.length) {
-            let swapIdx = this._getLeftIdx(checkIdx) // left always exist
+        while (Heap._getLeftIdx(checkIdx) < this.heap.length) {
+            let swapIdx = Heap._getLeftIdx(checkIdx) // left always exist
             let swapVal = this.heap[swapIdx]
 
-            const rIdx = this._getRightIdx(checkIdx)
+            const rIdx = Heap._getRightIdx(checkIdx)
             if (rIdx < this.heap.length && this.valCompare(this.heap[rIdx], swapVal)) {
                 swapIdx = rIdx
                 swapVal = this.heap[rIdx]

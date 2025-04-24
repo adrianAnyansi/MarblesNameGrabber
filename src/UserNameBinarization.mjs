@@ -125,73 +125,17 @@ export class ColorSpace {
     }
 }
 
+// NOTE: Could set up this in the ColorSpace & etc 
+// but whatever, its in this module if you use it
 for (const color in ColorSpace.COLORCUBE_JSON) {
     ColorSpace.COLORS[color] =  ColorSpace.ImportCube(ColorSpace.COLORCUBE_JSON[color])
 }
 console.log(`[UsernameBinarization] Imported ${Object.keys(ColorSpace.COLORS).length} colors!`)
 
-// External programming things
-const START_NAME_LOCS = JSON.parse(fs.readFileSync(resolve("data/startpixels.json"), 'utf8'))
-const COLORSPACE_JSON = JSON.parse(fs.readFileSync(resolve("data/colorspace.json"), 'utf8'))
-
-
-const COLORSPACE_OBJ = {
-    WHITE: ColorSpace.Import(COLORSPACE_JSON.WHITE),
-    BLUE: ColorSpace.Import(COLORSPACE_JSON.BLUE)
-}
-
 
 // ==========================================
 // Utility functions
 // ==========================================
-
-/**
- * 
- * @param {*} colorList 
- * @returns {[Number, Number]}
- */
-function calcMinColorDistance (colorList) {
-    // binary search across each color channel
-    const redRange =    [0,255]
-    const blueRange =   [0,255]
-    const greenRange =  [0,255]
-
-    const ranges = [redRange, blueRange, greenRange]
-    const midOfRange = range => parseInt((range[1] - range[0])/2) + range[0]
-
-    const RGBA_LIST = colorList.map( c => Color.toRGBA(c))
-1
-    while (ranges.some(range => range[0] < range[1])) {
-        
-        for (let idx in ranges) {
-            const range = ranges[idx]
-            if (range[0] >= range[1]) continue
-            // let mid = parseInt((range[1] - range[0])/2) + range[0]
-            let rgbaTest = [midOfRange(ranges[0]), midOfRange(ranges[1]), midOfRange(ranges[2])]
-            let maxColorDist = Math.max(...RGBA_LIST.map( rgbaC => Color.redmean(rgbaTest, rgbaC)))
-
-            rgbaTest[idx] = (rgbaTest[idx]+1) % 255
-            let maxRightColorDist = Math.max(...RGBA_LIST.map( rgbaC => Color.redmean(rgbaTest, rgbaC)))
-
-            rgbaTest[idx] = Math.max((rgbaTest[idx]-2), 0)
-            let maxLeftColorDist = Math.max(...RGBA_LIST.map( rgbaC => Color.redmean(rgbaTest, rgbaC)))
-
-            let midPoint = midOfRange(ranges[idx])
-
-            if (maxColorDist < maxRightColorDist) {
-                ranges[idx][1] = midPoint-1
-            } else if (maxColorDist < maxLeftColorDist) {
-                ranges[idx][0] = midPoint+1
-            } else {
-                ranges[idx][0] = ranges[idx][1]
-            }
-        }
-    }
-
-    const retRGBA = ranges.map( range => range[0])
-
-    return [retRGBA, Math.max(...RGBA_LIST.map( c => Color.redmean(retRGBA, c)))]
-}
 
 // Define color space
 const colorSampling = {
@@ -211,39 +155,12 @@ const colorSampling = {
     // TEST:       [0x000000, 0x101010, 0x040404]
 }
 
-
 const userColors = {}
 for (let color in colorSampling) {
-    userColors[color] = calcMinColorDistance(colorSampling[color])
+    userColors[color] = Color.calcMinColorDistance(colorSampling[color])
 }
 
 const cacheColorMatch = new Map(Object.values(userColors).map(color => [color, new Map()]))
-
-// ------------------
-
-const screenSampling = {
-    DARK_GRAY :  [0x21303f, 0x1e303f, 0x23323c, 0x263141, 0x233241, 0x21303c, 0x1e3138, 0x26313f, 0x232e3f, 0x1e2a37],
-    ORANGE: [0xff5921, 0xfd5515, 0xff5921, 0xfa570f, 0xf26021, 0xf95400, 0xda5823, 0xf9560e, 0xc44007, 0xf9560e, 0xe54600, 0xda5823, 0xfd560b ]
-}
-
-const screenColorRanges = {}
-for (let color in screenSampling) {
-    screenColorRanges[color] = calcMinColorDistance(screenSampling[color])
-}
-
-const PRE_RACE_RECT_ORANGE = {
-    x: 1130/1920,
-    y: 98/1080,
-    w: (1244-1130)/1920,
-    h: (101-98)/1080
-}
-
-const PRE_RACE_RECT_GRAY = {
-    x: 1135/1920,
-    y: 105/1080,
-    w: (1196-1135)/1920,
-    h: (145-105)/1080
-}
 
 
 class UserNameConstant {
@@ -257,11 +174,9 @@ class UserNameConstant {
     /** @type {number} height of each username (excluding last one offscreen) */
     static HEIGHT = 40;
 
-    static ALPHA_UNVISITED = 0xFF;
-    static ALPHA_MATCH = 0xFE;
-    static ALPHA_NO_MATCH = 0xFD;
-
+    /** @type {number} constant where pixel has been matched */
     static MATCH_FLAG = 0x1;
+    /** @type {number} constant where pixel has not been matched */
     static NO_MATCH_FLAG = 0x2;
 
     /**
@@ -1060,7 +975,7 @@ export class UserNameBinarization {
         const imgBuffer = await this.sharpImg.buildBuffer();
         
         if (this.debug)
-            console.log(`Buffer wait took: ${un_bound_box.read()}`)
+            console.log(`Buffer wait took: ${Stopwatch.msToHUnits(un_bound_box.read(), false)}`)
 
         const UN_TOP_Y = UserNameConstant.FIRST_TOP_Y;
         const UN_RIGHT_X = UserNameConstant.RIGHT_EDGE_X;
@@ -1183,7 +1098,7 @@ export class UserNameBinarization {
                         const [u_l_st, u_l_end] = [user_y_start+UN_BOX_HEIGHT*0.1, 
                             user_y_start+UN_BOX_HEIGHT*0.9]
 
-                        for (const iter of iterateN(pixelCheck)) {
+                        for (const iter of iterateN(pixelCheck, -2)) {
                             const ulpoint = [lx + dirs[0][0] * iter, u_l_st + dirs[0][1] * iter]
                             const ulCorner = this.checkLineThres(...ulpoint, imgBuffer, 1, Direction2D.RIGHT)
                             if (ulCorner) foundCorners[0] = lx
@@ -1199,8 +1114,13 @@ export class UserNameBinarization {
                                     imgBuffer.setPixel(...ulpoint, Color.HOT_PINK)
                                 }
                                 break
+                            } else {
+                                // if (!IsUserIndex23) imgBuffer.setPixel(...dlPoint, Color.MAHOGANY)
+                                //     imgBuffer.setPixel(...ulpoint, Color.MAHOGANY)
                             }
                         }
+                        if (this.debug)
+                            console.log(`Finish corner detect #${userIndex} took ${user_perf_sw.time}`)
                         if (Math.abs(foundCorners[0] - foundCorners[1]) > 2) {
                             continue
                         }
@@ -1459,12 +1379,8 @@ export class UserNameBinarization {
 
         const blurPixel = 1; // How many pixels to check for plane
         const PX_DIFF = 150 // Expected 
-        const DIFF_TO_LINE = 75; // TODO: scale based on plane pixel
-        // 0 avg tends to 180, 
-        // [80,100,127] -> [180, 207, 239] (100)
-        // [0,0,89] -> [160,160,255]
-        // [170] -> [230]
-        // [111] -> [170]
+        const DIFF_TO_LINE = 72; 
+        // This isn't consistent, reducing this but need the cliff
         const DIFF_TO_MAX = 30;
         const BG_CH_MAX = 180; // background max channel color
 
@@ -1501,8 +1417,8 @@ export class UserNameBinarization {
         // NOTE: calculate the max color, as color can cap
         const maxColor = Color.add(planePixels.at(-1), [PX_DIFF, PX_DIFF, PX_DIFF])
         const diffToExpected = Color.abs(Color.diff(maxColor, planePixels.at(-1)))
-        // if (UserNameBinarization.LINE_DEBUG)
-        //     console.log(`Diff is ${diffPx} : ${maxColor} ~ ${lineTest[0]} but ${planePixels.at(-1)}`)
+        if (UserNameBinarization.LINE_DEBUG)
+            console.log(`Diff is ${diffPx} : ${maxColor} ~ ${lineTest[0]} but ${planePixels.at(-1)}`)
         if(Color.sumColor(diffToExpected) / 3 < DIFF_TO_MAX) return true
 
         return false

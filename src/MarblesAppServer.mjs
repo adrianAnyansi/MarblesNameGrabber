@@ -403,6 +403,7 @@ export class MarblesAppServer {
         let offsetMatch = null;
         /** Keep track of offset */
         const len_check_count = {
+            offset_ql: 0,
             offset: 0,
             post_match: 0,
             pre_ocr: 0
@@ -411,50 +412,78 @@ export class MarblesAppServer {
         // Reconcile offset by checking the prediction
         // ========================================================================
         // NOTE: always true, do not rely on prediction
-        if (true) { //(offset === null || offset >= 0) { 
-            // NOTE: If offset is a number [known], can use quickLen to check?
-            // TODO: Assuming list contains all checked frames here
+        // if (true) { //(offset === null || offset >= 0) {
             
-            /** list of users with length checked this frame */
-            const currLenList = []
-            const fstLenIdx = predictedUsers.findIndex(user => user.length !== null)
+        /** list of users with length checked this frame */
+        const currLenList = []
+        const fstLenIdx = predictedUsers.findIndex(user => user.length !== null)
+
+        // First, get the best length to check
+        const lenScoreMap = UsernameAllTracker.genLengthChecks(predictedUsers)
+
+        // loop lengths, trying to find at least 2 matches
+        for (const [score, vidx] of lenScoreMap) {
+            if (score == 0) break;
+            if (!screenVisibleUsers.has(vidx)) continue; // match is not-visible
             
-            for (const [vidx, vUser] of screenVisibleUsers.entries()) {
-                // const {vidx, vUser} = vobj
-                // length checks should center around first visible idx
-                if (vidx < (fstLenIdx - LEN_CHECK_MATCH/2)) continue 
-                
-                // calculate length from current screen
-                const vlenArr = await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
-                len_check_count.offset++
-                // vUser.length = vlenArr[vidx].length
-                vUser.debug.matchLen = true
-                // currLenList.push(vobj)
-                currLenList.push({vidx, vUser})
-                // NOTE: the available checks are reduced if length can't be determined
-                if (currLenList.filter(({vidx, vUser}) => vUser.validLength).length >= LEN_CHECK_MATCH) break;
+            const vUser = screenVisibleUsers.get(vidx)
+            await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, 
+                quickLength:new Map([[vidx, predictedUsers[vidx].length]])})
+            len_check_count.offset_ql += 1
+            
+            // if vUser has length, offset is valid but get another check
+            if (vUser.validLength) continue;
+            else {
+                // if not, pick an option at random, starting from 1st appear
+                const fstCheckPickIdx = predictedUsers.findIndex((user, idx) => (
+                    user.length !== null &&
+                    screenVisibleUsers.get(idx).lenUnchecked));
+                await mng.getUNBoundingBox(new Map[[fstCheckPickIdx, vUser]], {appear:false, length:true})
+                len_check_count.offset += 1
             }
-
-            // calculate best matching ofset
-            ({offset:offsetMatch} = UsernameAllTracker.findBestShiftMatch(
-                predictedUsers, currLenList
+            // Determine best prediction from result
+            let goodMatch = false
+            ({offset:offsetMatch, goodMatch} = UsernameAllTracker.findVisualOffset(
+                predictedUsers, screenVisibleUsers
             ))
+            if (goodMatch) break
+        }
+        
+        for (const [vidx, vUser] of screenVisibleUsers.entries()) {
+            // length checks should center around first visible idx
+            if (vidx < (fstLenIdx - LEN_CHECK_MATCH/2)) continue 
+            
+            // calculate length from current screen
+            const vlenArr = await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
+            len_check_count.offset++
+            // vUser.length = vlenArr[vidx].length
+            vUser.debug.matchLen = true
+            // currLenList.push(vobj)
+            currLenList.push({vidx, vUser})
+            // NOTE: the available checks are reduced if length can't be determined
+            if (currLenList.filter(({vidx, vUser}) => vUser.validLength).length >= LEN_CHECK_MATCH) break;
+        }
 
-            if (offsetMatch > 6 || offsetMatch < -2) {
-                console.warn(`No op offset detected`, offsetMatch)
-            } else
-            if (offsetMatch != null && offsetMatch > 0) {
-                this.usernameTracker.shiftOffset(offsetMatch); // update offset
-                // FYI this is a load-bearing semi-colon due to destructure object {o1, o2} below
+        // calculate best matching ofset
+        ({offset:offsetMatch} = UsernameAllTracker.findBestShiftMatch(
+            predictedUsers, currLenList
+        ))
 
-                // Predicted users is inaccurate, recalc
-                ({predictedUsers, offset} = this.usernameTracker.predict(processImgId, 
-                    {totalUsers:null, predictFullScreen:true}, this.ScreenState.knownScreen))
-            } 
+        if (offsetMatch > 6 || offsetMatch < -2) {
+            console.warn(`No op offset detected`, offsetMatch)
+        } else
+        if (offsetMatch != null && offsetMatch > 0) {
+            this.usernameTracker.shiftOffset(offsetMatch); // update offset
+            // FYI this is a load-bearing semi-colon due to destructure object {o1, o2} below
+
+            // Predicted users is inaccurate, recalc
+            ({predictedUsers, offset} = this.usernameTracker.predict(processImgId, 
+                {totalUsers:null, predictFullScreen:true}, this.ScreenState.knownScreen))
+        } 
             // else if (offsetMatch < 0) {
             //     console.error("Offset is negative! This is a DO NOTHING", offsetMatch)
             // }
-        }
+        // }
 
         // After this line, the predictedUsers is verified
         // =======================================================================
