@@ -80,11 +80,11 @@ export function inRange(testNum, sourceNum, range) {
  * @type {(end:number) => number} return random integer [0,end)
  * @type {(start:number, end:number) => number} return random integer [start, end]
  */
-export function randInt(end, start=null) {
+export function randInt(end, start=0) {
     if (!start) {
-        start = null
+        start = 0
     } else {
         [end, start] = [start, end]
     }
-    return Math.trunc(Math.random()*(end-start))
+    return Math.trunc(Math.random()*(end-start)+start)
 }

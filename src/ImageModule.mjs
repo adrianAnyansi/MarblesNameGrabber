@@ -252,9 +252,6 @@ export class Color {
 
     static compareWhite(rgb, rgb2) {
         return this.sumColor(this.diff(rgb, rgb2))
-        return rgb[0] - rgb2[0] 
-            + (rgb[1] - rgb2[1])
-            + (rgb[2] - rgb2[2])
     }
 
     /**

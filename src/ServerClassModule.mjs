@@ -448,7 +448,7 @@ export class ServerStatus {
                 ).filter(val => !isNaN(val))
         )
 
-        return `Frame Time:${avg.toFixed(2)}ms, SD:${stdDev.toFixed(2)}ms; DL_avg:${dl_avg.toFixed(2)}`
+        return `Frame Time:${avg.toFixed(2)}ms, SD:${stdDev.toFixed(2)}ms; DL_avg:${dl_avg.toFixed(2)}ms`
     }
 
     /**
@@ -535,9 +535,11 @@ export class ScreenState {
         
         if (vUser.appear && vUser.lenUnavailable)
             return 'D'
-        if (vUser.appear && vUser.debug.unknownLen == true)
+        if (vUser.appear && vUser.debug.qlLen)
+            return 'Q'//'Δ'
+        if (vUser.appear && vUser.debug.unknownLen)
             return 'U'//'Δ'
-        if (vUser.appear && vUser.debug.matchLen == true)
+        if (vUser.appear && vUser.debug.matchLen)
             return 'K'//'Δ'
         
         if (vUser.appear)

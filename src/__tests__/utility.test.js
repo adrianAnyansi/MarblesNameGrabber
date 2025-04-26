@@ -4,7 +4,7 @@ import {test} from 'node:test'
 import assert from 'node:assert/strict'
 
 import { ColorSpace } from "../UsernameBinarization.mjs";
-import { iterateN } from "../UtilityModule.mjs";
+import { iterateN, iterateRN } from "../UtilityModule.mjs";
 import { randInt } from '../Mathy.mjs';
 import { Heap } from '../DataStructureModule.mjs';
 
@@ -15,6 +15,9 @@ test("Confirms mathy iterator works",
         assert.deepStrictEqual(Array.from(iterateN(2,8)), [8,7,6,5,4,3]);
         assert.deepStrictEqual(Array.from(iterateN(-2,8)), [8,7,6,5,4,3,2,1,0,-1]);
         assert.deepStrictEqual(Array.from(iterateN(-10,2)), [2,1,0,-1,-2,-3,-4,-5,-6,-7,-8,-9]);
+
+        assert.deepStrictEqual(Array.from(iterateRN(5,2)),
+            [4,3,2])
     }
 )
 
@@ -40,9 +43,9 @@ test ("Math randInt",
         assert.equal( testVal >= 0, true)
 
         const testRange = randInt(2,4)
-        
-        assert.equal( testVal < 4, true)
-        assert.equal( testVal >= 2, true)
+        // fuzzy check this 
+        assert.equal( testRange < 4, true)
+        assert.equal( testRange >= 2, true)
     }
 )
 

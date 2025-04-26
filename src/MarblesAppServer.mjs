@@ -70,7 +70,7 @@ export class MarblesAppServer {
             screen_state_log: true,
             // fps: false,
             user_bin: false,
-            disable_ocr: false,
+            disable_ocr: true, // disable OCR checking
             frame_pacing: true // track & output fps 
         }
 
@@ -415,59 +415,76 @@ export class MarblesAppServer {
         // if (true) { //(offset === null || offset >= 0) {
             
         /** list of users with length checked this frame */
-        const currLenList = []
-        const fstLenIdx = predictedUsers.findIndex(user => user.length !== null)
+        // const currLenList = []
+        // const fstLenIdx = predictedUsers.findIndex(user => user.length !== null)
 
         // First, get the best length to check
         const lenScoreMap = UsernameAllTracker.genLengthChecks(predictedUsers)
+        let goodMatch = false; // load-bearing semi-colon
 
+        const trackQLTest = []
         // loop lengths, trying to find at least 2 matches
-        for (const [score, vidx] of lenScoreMap) {
+        for (let [score, pidx] of lenScoreMap) {
             if (score == 0) break;
-            if (!screenVisibleUsers.has(vidx)) continue; // match is not-visible
             
-            const vUser = screenVisibleUsers.get(vidx)
-            await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, 
-                quickLength:new Map([[vidx, predictedUsers[vidx].length]])})
-            len_check_count.offset_ql += 1
-            
-            // if vUser has length, offset is valid but get another check
-            if (vUser.validLength) continue;
-            else {
-                // if not, pick an option at random, starting from 1st appear
-                const fstCheckPickIdx = predictedUsers.findIndex((user, idx) => (
-                    user.length !== null &&
-                    screenVisibleUsers.get(idx).lenUnchecked));
-                await mng.getUNBoundingBox(new Map[[fstCheckPickIdx, vUser]], {appear:false, length:true})
-                len_check_count.offset += 1
-            }
+            let testIdx = pidx
+            // TODO: Limit checks based on offset minimums
+            do {    
+                const tvUser = screenVisibleUsers.get(testIdx)
+                if (!tvUser || tvUser.validLength) continue // not visible or known len
+
+                await mng.getUNBoundingBox(new Map([[testIdx, tvUser]]), 
+                    {appear:false, length:false,
+                        quickLength:new Map([[testIdx, predictedUsers[pidx].length]])})
+                len_check_count.offset_ql += 1
+                tvUser.debug.qlLen = true
+
+                trackQLTest.push({
+                    vidx:pidx, 
+                    testIdx:testIdx, 
+                    ql:tvUser.validLength, 
+                    testql:predictedUsers[pidx].length
+                })
+
+                if (tvUser.validLength) break
+            } while (--testIdx >= 0);
+
             // Determine best prediction from result
-            let goodMatch = false
-            ({offset:offsetMatch, goodMatch} = UsernameAllTracker.findVisualOffset(
+            ({offsetMatch, goodMatch} = UsernameAllTracker.findVisualOffset(
                 predictedUsers, screenVisibleUsers
             ))
             if (goodMatch) break
         }
-        
-        for (const [vidx, vUser] of screenVisibleUsers.entries()) {
-            // length checks should center around first visible idx
-            if (vidx < (fstLenIdx - LEN_CHECK_MATCH/2)) continue 
-            
-            // calculate length from current screen
-            const vlenArr = await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
-            len_check_count.offset++
-            // vUser.length = vlenArr[vidx].length
-            vUser.debug.matchLen = true
-            // currLenList.push(vobj)
-            currLenList.push({vidx, vUser})
-            // NOTE: the available checks are reduced if length can't be determined
-            if (currLenList.filter(({vidx, vUser}) => vUser.validLength).length >= LEN_CHECK_MATCH) break;
-        }
 
-        // calculate best matching ofset
-        ({offset:offsetMatch} = UsernameAllTracker.findBestShiftMatch(
-            predictedUsers, currLenList
-        ))
+        if (!goodMatch) {   // set to fail-back offset
+            if (screenVisibleUsers.size > 3) {
+                offsetMatch = predictedUsers.findLastIndex(pUser => pUser.validLength) + 1
+            } else {
+                offsetMatch = 0
+            }
+            console.warn(`No offset match with ${screenVisibleUsers.size} available: set to ${offsetMatch}`)
+        }
+        
+        
+        // for (const [vidx, vUser] of screenVisibleUsers.entries()) {
+        //     // length checks should center around first visible idx
+        //     if (vidx < (fstLenIdx - LEN_CHECK_MATCH/2)) continue 
+            
+        //     // calculate length from current screen
+        //     const vlenArr = await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
+        //     len_check_count.offset++
+        //     // vUser.length = vlenArr[vidx].length
+        //     vUser.debug.matchLen = true
+        //     // currLenList.push(vobj)
+        //     currLenList.push({vidx, vUser})
+        //     // NOTE: the available checks are reduced if length can't be determined
+        //     if (currLenList.filter(({vidx, vUser}) => vUser.validLength).length >= LEN_CHECK_MATCH) break;
+        // }
+
+        // // calculate best matching ofset
+        // ({offset:offsetMatch} = UsernameAllTracker.findBestShiftMatch(
+        //     predictedUsers, currLenList
+        // ))
 
         if (offsetMatch > 6 || offsetMatch < -2) {
             console.warn(`No op offset detected`, offsetMatch)
@@ -512,9 +529,8 @@ export class MarblesAppServer {
             
             if (pUser.length) continue;
             if (vUser.lenUnchecked) { // TODO: Do multiple checks at once
-                const resultObj = await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
+                await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
                 len_check_count.post_match++
-                // vUser.length = resultObj[vidx].length
                 vUser.debug.unknownLen = true // debug info
             }
             pUser.setLen(vUser.length)

@@ -83,7 +83,7 @@ export class Stopwatch {
  * @param {number} start integer to start at
  */
 export function iterateN(endAt, start = 0) {
-    const iterDir = endAt - start > 0 ? 1 : -1;
+    const iterDir = endAt > start ? 1 : -1;
     return {
         [Symbol.iterator]() {
             let count = start - iterDir;
@@ -99,5 +99,15 @@ export function iterateN(endAt, start = 0) {
             };
         }
     };
+}
+
+/**
+ * Helper for reverse iteration
+ * Returns [start,0) by default.
+ * Mostly useful for 
+ */
+export function iterateRN(startAt, end=0) {
+    const iterDir = end > startAt ? 1 : -1;
+    return iterateN(end+iterDir, startAt+iterDir)
 }
 

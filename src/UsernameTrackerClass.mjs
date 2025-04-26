@@ -9,6 +9,7 @@ import { Heap, LimitedList } from "./DataStructureModule.mjs"
 import { ImageBuffer, PixelMeasure } from "./ImageModule.mjs"
 import { inRange } from "./Mathy.mjs"
 import { UserNameBinarization, VisualUsername } from "./UsernameBinarization.mjs"
+import { iterateN, iterateRN } from "./UtilityModule.mjs"
 
 class Username {
     /**
@@ -818,6 +819,10 @@ export class TrackedUsername {
         this.length = inputLen
     }
 
+    get lengthUnknown () {
+        return this.length === null
+    }
+
     /**
      * Add new image to the user
      * @param {Buffer} jpgBuffer 
@@ -1018,26 +1023,55 @@ export class UsernameAllTracker {
             return {offset:null, goodMatch: false}
         }
         // let bestOffsetIdx = null
-        const predUserMap = new Map()
+        /** @type {Map<number, number[]>} length -> [idx] */
+        const duplLenTrack = new Map()
         // doing an exact match until I start getting bad hits?
-        // I kind of did a quick test for this and it was ok, but the hard test would need extensive data so why bother doing that when I can check for the offset compare to fail first 
+        // I kind of did a quick test for this and it was ok, but the hard test would need extensive data so why bother doing that when I can check for the offset compare to fail first
         for (const [idx, pUser] of predictedUsers.entries()) {
-            if (pUser.length !== null)
-                predUserMap.set(pUser.length, idx)
-        }
-        if (predUserMap.size !== predictedUsers.filter(pUser => pUser.length !== null)) {
-            console.log("Collision!")
+            if (pUser.length !== null) {
+                const idxArr = duplLenTrack.get(pUser.length) ?? []
+                idxArr.push(idx)
+                duplLenTrack.set(pUser.length, idxArr)
+            }
         }
 
-        // Get offset limit
+        // Get offset shift by checking all lengths
         const offsetList = []
-        for (const [vIdx, vUser] of visualUsers.entries()) {
-            const pUserIdx = predUserMap.get(vUser.length)
-            if (pUserIdx) offsetList.push(pUserIdx - vIdx)
+        let duplSortFlag = false;
+
+        for (const [vIdx, vUser] of visualUsers) {
+            const pUserIdxArr = duplLenTrack.get(vUser.length)
+            if (pUserIdxArr) {
+                offsetList.push(pUserIdxArr.map(pUserIdx => pUserIdx - vIdx))
+            }
+            if (pUserIdxArr?.length > 1) duplSortFlag = true
+        }
+        if (duplSortFlag) {
+            offsetList.sort((a,b) => a.length - b.length)
+            for (const idx of iterateRN(offsetList.length)) {
+                const offList = offsetList[idx]
+                if (offList.length < 2) break
+                else offList.sort((a,b) => Math.abs(a) - Math.abs(b)) // sort closer to 0
+            }
         }
 
-        const goodMatch = offsetList.length > 1 && offsetList.every(val => val == offsetList[0])
-        const offsetMatch = offsetList[0]
+        if (offsetList.length == 0) {
+            return {offsetMatch:null, goodMatch:false}
+        }
+
+        // determine offset with a reduce to get elements in every check
+        const offsetMatch = offsetList.reduce((pv, cv) => {
+            if (pv[0] === null) return [null]
+
+            const mergeSet = new Set();
+            for (const el of pv) mergeSet.add(el)
+            for (const el2 of cv) {
+                if (mergeSet.has(el2)) return [el2]
+            }
+            return [null] // no match between offsets
+        })?.at(0) ?? null
+
+        const goodMatch = (offsetList.length > 1) && (offsetMatch != null)
         return {offsetMatch, goodMatch}
     }
 
@@ -1048,26 +1082,42 @@ export class UsernameAllTracker {
      */
     static genLengthChecks(predictedUsers) {
         // compare each pUser.length against neighbours, giving more weight based on difference
-        // const lenScoreMap = new Map()
-        // const heap = new Heap(null, Infinity, false)
-        const dirtyHeap = []
-        for (const pidx of predictedUsers.keys()) {
-            const pUser = predictedUsers[pidx]
-            if (!pUser.length) {
-                // dirtyHeap.push([0, pidx])
-                // lenScoreMap.set(pidx, 0)
-                continue
-            }
-            // NOTE: Should increase this comparison if inaccurate
+        const scoredLenCheck = []
+        /** @type {Map<number, number[]>} list of indexes */
+        const duplIndexMap = new Map()
+        const duplKeys = new Set()
+        for (const [pidx, pUser] of predictedUsers.entries()) {
+            if (!pUser.length) continue
+
+            const lenArr = duplIndexMap.get(pUser.length) ?? []
+            if (lenArr.push(pidx) > 1) duplKeys.add(pUser.length)
+            duplIndexMap.set(pUser.length, lenArr)
+            
             const leftVal = Math.abs(pUser.length - 
                 (predictedUsers[pidx - 1]?.length ?? pUser.length))
             const rightVal = Math.abs(pUser.length - 
                 (predictedUsers[pidx + 1]?.length ?? pUser.length))
-            // lenScoreMap.set(pidx, (rightVal+leftVal)/2 + 1)
-            dirtyHeap.push([(rightVal+leftVal)/2 + 1, pidx])
+            
+            scoredLenCheck.push([(rightVal+leftVal)/2 + 1, pidx])
         }
 
-        return dirtyHeap.sort((a,b) => b[0]-a[0])
+        // penalize duplicates
+        for (const lenKey of duplKeys ) {
+            const idxArr = duplIndexMap.get(lenKey)
+            if (idxArr.length < 2) continue
+            for (const idxKey of idxArr)
+                scoredLenCheck[idxKey][0] /= idxArr.length
+        }
+
+        return scoredLenCheck.sort((a,b) => b[0]-a[0])
+    }
+
+    /**
+     * Return fallback offset giving a best case match
+     */
+    static fallBackOffset(predictedUsers, visibleUsers) {
+
+        // assumption is that 
     }
 
     /**

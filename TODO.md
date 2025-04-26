@@ -31,10 +31,43 @@ I'm winging the line detection, works so far-
 
 Now flip-card logic, then I'll do an offset check against live.
 
+gotta handle duplicates.
+- divide by length on all duplicates to reduce use
+- take the closest duplicate to other checks, using 0 as default
+- if I cannot determine the best fit, just nothing I can really do about it
+
 Bug:
 1. Fix length detection on blue/white backgrounds
 
 ---
+
+I'm malding over offset detection. Imma write it out
+Main assumption is that at least 2 ordered lengths is enough to valid the offset. Will test this.
+
+2 things to worry about
+- how best to utilize the quicklength time save
+    Assuming QL takes 1/5 the time, but in general its just more efficient than length UNLESS its actually an unknown length. So I'm not going to use length during offset checks.
+    If I'm going to take quickLen as fact, I should test as many positions on QL, as I only need 2 successes to verify.
+- (DUMB) what if 2 offsets are equally possible?
+    The only way this can happen is if 3 duplicates occur, and then only 2 are verified causing a valid length in 2 positions. This is kinda just-
+   - Oh there's another- 2 duplicate sets; if sets are disjointed so technically match should verify; but if the 1st duplicate defaults to the minimum offset or other, it will not choose the matching indexes
+    I could merge both lists, picking the value thats listed more than once to fix this
+    (this doesn't and can't fix the offset issue, but both offsets are equally valid so I just have to assume this is a super rare case)
+- what if no known lengths match visible?
+    There is an edge-case, admittedly a dumb one where every known length is covered BUT offset is valid. Currently the logic will just push all known lengths off-screen and then push the new users on the end of the stack.
+    The only way to detect this is to realize that an offset in the gaps is possible- and return this after testing all visible names (and maybe verifying visible names are not X length?)
+    I'm deciding to ignore this case because of how rare it is- The screen would need to perfectly cover every name in 1 screen and show names from other screen while NOT just being lower on screen when the code can track names even over a 3 name-window.
+
+I've sort of using this to delay working on this- but since offset problems tend to cascade I'm very worried about rewritting this.
+Have to make a decision though- this is delaying my time.
+Only practical testing and checks will show this, and I really don't think edge-case 2,3 will occur.
+
+offset check logic
+1. calc the len checks by optim
+2. in optim len order, QL
+    2a. If no length, check -1 until exhausted.
+    2b. If length, update offset. If goodMatch (2 offset), break
+3. If 5 QL all fail, use fall-back offset; defaults to 0 or sets offset at the next possible 
 
 (Note quickLen takes 0.50ms cold-start & 0.16ms warm)
 (length takes 2ms -> 4ms up to 5ms on misses)
@@ -54,19 +87,6 @@ Bug:
 - Need to track and save images whenever OCR fails/reads nothing
     - useful for debug and to help track names that don't get binarized correctly
 
-
-Looks like its about #FFFFFF with 70% opacity
-So the issue is that I need to re-write the line detection
-    - currently uses 
-        - white-balance (all channels difference < 70 pixels)
-        - white-enough (channel avg >  140)
-    - to use this new change
-        - base pixel is during testing is [7,50,204]
-        - plane pixel is [4,33,133] # cut in half?
-            - background color is #000000 at ~35% opacity 
-        - the outline is [158,176,255]
-            - outline color is #FFFFFF at ~75% but white line very inconsistent
-            - increase of about 180 to plane
 
 ## Think about
 - When to do temporal, and is this accurate?

@@ -215,7 +215,9 @@ export class VisualUsername {
             /** length checked during unknown length check */
             unknownLen: false,
             /** length checked during OCR */
-            ocrLen: false
+            ocrLen: false,
+            /** length checked during quickLength phase */
+            qlLen: false,
         }
     }
 
@@ -986,7 +988,7 @@ export class UserNameBinarization {
             for (const idx of iterateN(24))
                 usersToCheck.set(idx, new VisualUsername(idx))
         } else {
-            // NOTE ineffient check+set but its cool
+            // NOTE ineffient check+set but its alr
             for (const [idx, vUser] of usersToCheck) {
                 if (!vUser) usersToCheck.set(idx, new VisualUsername(idx));
             }
@@ -1039,14 +1041,12 @@ export class UserNameBinarization {
                 for (const d of iterateN(UN_BOX_HEIGHT * 0.75, UN_BOX_HEIGHT * 0.25)) {
                     if (IsUserIndex23 && user_y_start+d >= imgBuffer.height) break;
 
-                    // lx+currLineX - UN_RIGHT_X
                     const testCoord = [x_px_to_check, user_y_start+d]
                     const leftLineCheck = this.checkLineThres(...testCoord, imgBuffer, 1, Direction2D.RIGHT)
 
                     if (leftLineCheck) {
-                        left_match_pixels++
                         if (this.debug) imgBuffer.setPixel(...testCoord, Color.BRIGHT_GREEN)
-                        if (x_px_to_check > MATCH_MIN) {
+                        if (left_match_pixels++ > MATCH_MIN) {
                             visualUser.length = x_px_to_check - UN_RIGHT_X; // set early and quit
                             break;
                         }
@@ -1057,9 +1057,9 @@ export class UserNameBinarization {
                     console.log(`Quick left-line detect took #${userIndex} ${user_perf_sw.time}`)
             }
 
-            if (length) {
-                if (visualUser.lenUnavailable) continue;
-                if (userQLCheck && visualUser.validLength) continue;
+            if (length && visualUser.lenUnchecked) {
+                // if (visualUser.lenUnavailable) continue;
+                // if (userQLCheck && visualUser.validLength) continue;
 
                 // NOTE: Could bin-search this but could be inaccurate if there's a line somewhere else
                 const [lx, _ly] = this.followUsernameLine(
@@ -1090,11 +1090,10 @@ export class UserNameBinarization {
                         if (this.debug)
                             imgBuffer.setPixel(x_line, user_y_start+21, Color.GREEN)
                         // left edge, now check corner matches
-                        const foundCorners = [Infinity, Infinity]
+                        const foundCorners = [10_000, 20_000]
                         const pixelCheck = 12
                         
                         const dirs = [Direction2D.LEFT, Direction2D.LEFT]
-                        const x_buffer = 0
                         const [u_l_st, u_l_end] = [user_y_start+UN_BOX_HEIGHT*0.1, 
                             user_y_start+UN_BOX_HEIGHT*0.9]
 
@@ -1108,10 +1107,10 @@ export class UserNameBinarization {
                                 : true
                             if (dlCorner) foundCorners[1] = lx
 
-                            if (Math.abs(foundCorners[0] - foundCorners[1]) < 2) {
+                            if (Math.abs(foundCorners[0] - foundCorners[1]) <= 2) {
                                 if (this.debug) {
-                                    if (!IsUserIndex23) imgBuffer.setPixel(...dlPoint, Color.HOT_PINK)
-                                    imgBuffer.setPixel(...ulpoint, Color.HOT_PINK)
+                                    if (!IsUserIndex23) imgBuffer.setPixel(...dlPoint, Color.BRIGHT_GREEN)
+                                    imgBuffer.setPixel(...ulpoint, Color.BRIGHT_GREEN)
                                 }
                                 break
                             } else {
@@ -1121,14 +1120,12 @@ export class UserNameBinarization {
                         }
                         if (this.debug)
                             console.log(`Finish corner detect #${userIndex} took ${user_perf_sw.time}`)
-                        if (Math.abs(foundCorners[0] - foundCorners[1]) > 2) {
-                            continue
-                        }
-
-                        visualUser.length = x_line - UN_RIGHT_X
                         
-                        if (this.debug)
+                        if (Math.abs(foundCorners[0] - foundCorners[1]) <= 2) {
+                            visualUser.length = x_line - UN_RIGHT_X
+                            if (this.debug)
                             imgBuffer.setPixel(x_line, user_y_start+20, Color.RED)
+                        }  
                         break
                     }
                     if (this.debug)
@@ -1402,8 +1399,9 @@ export class UserNameBinarization {
         }
 
         // Plane should always be darker due to background opacity
-        if (!planePixels.at(-1).every(ch => ch <= BG_CH_MAX)) {
-            // console.log("Fail line check, above dark threshold")
+        if (!(Color.sumColor(planePixels.at(-1)) <= BG_CH_MAX*3)) {
+            if (UserNameBinarization.LINE_DEBUG)
+                console.log("Fail line check, above dark threshold")
             
             // const [dx,dy] = [direction[0]*2, direction[1]*2]
             // imgBuffer.setPixel(x+dx, y+dy, Color.BLUE)

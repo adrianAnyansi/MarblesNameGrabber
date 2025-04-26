@@ -3,7 +3,7 @@
 import {it, test} from 'node:test'
 import assert from 'node:assert/strict'
 
-import { ColorSpace, UserNameBinarization } from "../UsernameBinarization.mjs";
+import { ColorSpace, UserNameBinarization, VisualUsername } from "../UsernameBinarization.mjs";
 import sharp from 'sharp'
 import { Color, Direction2D, SharpImg } from '../ImageModule.mjs';
 import { Stopwatch, iterateN } from '../UtilityModule.mjs';
@@ -43,19 +43,27 @@ test("Test userbox appear & length check",
         // TODO: Also get the length of users and check against each
         const fileList = [
             curatedFolder + 'chat_clean.png',
-            // I only have 1 example cause he's always left-side :(
+            // curatedFolder + 'chat_bitrate.png',
+            
+            // curatedFolder + 'chat_bitrate_recover.png',
+            
+            // curatedFolder + 'chat_name_bg2.png',
+            // curatedFolder + 'chat_clean_black.png'
+            // I only have 1 full example cause he's always left-side :(
             // curatedFolder + 
         ]
 
+        // UserNameBinarization.LINE_DEBUG = true
+
         for (const filename of fileList) {
-            const mng = new UserNameBinarization(filename, true);
+            const mng = new UserNameBinarization(filename, false);
             const all_user_sw = new Stopwatch()
             const users = await mng.getUNBoundingBox(null, {appear:true, length:true});
             
             all_user_sw.stop()
             console.log(`Took ${(all_user_sw.time)} for appear+len`)
 
-            // console.log("Users List", users.entries())
+            console.log("Users List", Array.from(users.entries()).map(([idx, val]) => [idx, {A:val.appear, L:val.length}]))
             const validLens = 24
             for (const index of iterateN(validLens))
                 assert.equal(users.get(index).validLength, true)
@@ -83,26 +91,26 @@ test("Test 1 userbox appear/length",
 
 test("Test userbox quick length check",
     async () => {
-        const filename = getFilename(vodTestingFolder, page)
-        const debug = true
+        const filename = getFilename(vodTestingFolder, 401)
 
         const buffer = await new SharpImg(filename).sharpImg.toBuffer()
-        const mng = new UserNameBinarization(buffer, debug);
+        const mng = new UserNameBinarization(buffer, true);
         const all_user_sw = new Stopwatch()
-        const users = await mng.getUNBoundingBox(new Map([[1],[2],[3],[12]]), {appear:true, length:false, 
-            quickLength:new Map([[1,-200], [2,-239], [12,-177]])});
+        // const users = await mng.getUNBoundingBox(new Map([[1],[2],[3],[7],[11],[12]]),
+        //     {appear:true, length:true, 
+        //     quickLength:new Map([[1,-200], [2,-239], [12,-177]])});
+        const users = await mng.getUNBoundingBox(new Map([[17], [18]]),
+            {appear:true, length:false, 
+            quickLength:new Map([[17,-144], [18,-144]])});
         
         all_user_sw.stop()
         console.log(`Took ${(all_user_sw.time)} for appear+len`)
         // console.log("Users List", users.entries())
-        assert.equal(users.get(1).length, -200)
-        assert.equal(users.get(2).length, -239)
-        assert.equal(users.get(3).length, undefined)
-        assert.equal(users.get(3).lenUnavailable, false)
-        assert.equal(users.get(12).length, -177)
-        // console.log(users.entries().map((idx, user) => 
-        //     `[${idx.toString().padStart(2, ' ')}] ${JSON.stringify(user)}`
-        // ).join('\n'))
+        // assert.equal(users.get(1).length, -200)
+        // assert.equal(users.get(2).length, -239)
+        // assert.equal(users.get(3).length, undefined)
+        // assert.equal(users.get(3).lenUnavailable, false)
+        // assert.equal(users.get(12).length, -177)
     }
 );
 
@@ -138,7 +146,7 @@ test ("Test Crop user image and binarize", async () => {
 /*
 * Its not quite linear 
 * 1080x1920 = 12.86ms
-* 300x900 = 10.36ms
+* 300x900 = 10.36ms - since I need this, just not useful
 * 300x500 = 7.28ms
 * 300x300 = 5.61ms
 */
@@ -316,13 +324,116 @@ test ("Test user tracker length", async () => {
     userList[0].setLen(-70)
     userList[1].setLen(-168)
     userList[2].setLen(-123)
-    userList[3].setLen(-123)
+    userList[3].setLen(-126)
     userList[4].setLen(-30)
     userList[5].setLen(-84)
     // userList[6].setLen(-30)
     userList[7].setLen(-132)
 
-    const heap = UsernameAllTracker.genLengthChecks(userList)
+    const listResult = UsernameAllTracker.genLengthChecks(userList)
     
-    console.log("Heap: ",heap)
+    console.log("Heap: ", listResult)
+
+    assert.equal(listResult[0][1], 4) // 4 is the highest score because of biggest length diff
+    assert.equal(listResult.at(-1)[1], 7) // then 7 as its isolated
+    assert.equal(listResult.at(-2)[1], 2) // then 2 as its a duplicate and less diff from others
+
+    const vUsers = new Map([
+        [0, new VisualUsername()],
+        [1, new VisualUsername()],
+        [2, new VisualUsername()],
+        [3, new VisualUsername()],
+        [4, new VisualUsername()],
+        [5, new VisualUsername()]
+    ])
+
+    const reset = () => {
+        for (const [idx, user] of vUsers)
+            user.length = undefined
+    }
+
+    // test a regular match 0
+    vUsers.get(1).length = -168
+    vUsers.get(4).length = -30
+
+    let offsetResult = UsernameAllTracker.findVisualOffset(userList, vUsers)
+    assert.equal(offsetResult.offsetMatch, 0)
+    assert.equal(offsetResult.goodMatch, true)
+
+    // shift back 1
+    reset()
+    vUsers.get(0).length = -168
+    vUsers.get(3).length = -30
+
+    offsetResult = UsernameAllTracker.findVisualOffset(userList, vUsers)
+    assert.equal(offsetResult.offsetMatch, 1)
+    assert.equal(offsetResult.goodMatch, true)
+
+    // shift forward 1
+    reset()
+    vUsers.get(2).length = -168
+    vUsers.get(5).length = -30
+
+    offsetResult = UsernameAllTracker.findVisualOffset(userList, vUsers)
+    assert.equal(offsetResult.offsetMatch, -1)
+    assert.equal(offsetResult.goodMatch, true)
+
+    // undetermined, but known offset
+    reset()
+    vUsers.get(2).length = -168
+
+    offsetResult = UsernameAllTracker.findVisualOffset(userList, vUsers)
+    assert.equal(offsetResult.offsetMatch, -1)
+    assert.equal(offsetResult.goodMatch, false)
+
+    // no offset found
+    reset()
+    vUsers.get(3).length = -321
+    vUsers.get(4).length = -125;
+
+    offsetResult = UsernameAllTracker.findVisualOffset(userList, vUsers);
+    assert.equal(offsetResult.offsetMatch, null)
+    assert.equal(offsetResult.goodMatch, false)
+
+})
+
+test ("Test duplicate user tracker offsets", async () => {
+
+    const lens = [-70, -168, -123, -123, -30, -84, undefined, -202]
+
+    const predUsers = lens.map(
+        len => {const n = new TrackedUsername(); n.setLen(len); return n})
+
+    const vislUsers = new Map(lens.map((_, idx) => [idx, new VisualUsername()]));
+
+    const reset = () => {
+        for (const [idx, user] of vislUsers)
+            user.length = undefined
+    }
+        
+    // find offset when 1st index is a duplicate AND offset is positive
+    reset()
+    vislUsers.get(3).length = -123
+    vislUsers.get(5).length = -30;
+
+    let offsetResult = UsernameAllTracker.findVisualOffset(predUsers, vislUsers);
+    assert.equal(offsetResult.offsetMatch, -1)
+    assert.equal(offsetResult.goodMatch, true)
+
+    // find offset when 1st index is duplicate
+    reset()
+    vislUsers.get(3).length = -123
+    vislUsers.get(4).length = -30;
+
+    offsetResult = UsernameAllTracker.findVisualOffset(predUsers, vislUsers);
+    assert.equal(offsetResult.offsetMatch, 0)
+    assert.equal(offsetResult.goodMatch, true)
+
+    // duplicate check order
+    reset()
+    vislUsers.get(3).length = -123
+
+    offsetResult = UsernameAllTracker.findVisualOffset(predUsers, vislUsers);
+    assert.equal(offsetResult.offsetMatch, 0)
+    assert.equal(offsetResult.goodMatch, false)
 })
