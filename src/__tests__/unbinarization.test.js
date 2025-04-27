@@ -42,13 +42,14 @@ test("Test userbox appear & length check",
         const filename = chatTestingFolder + 'chat_clean.png'
         // TODO: Also get the length of users and check against each
         const fileList = [
-            curatedFolder + 'chat_clean.png',
+            // curatedFolder + 'chat_clean.png',
             // curatedFolder + 'chat_bitrate.png',
             
             // curatedFolder + 'chat_bitrate_recover.png',
             
             // curatedFolder + 'chat_name_bg2.png',
             // curatedFolder + 'chat_clean_black.png'
+            getFilename(vodTestingFolder, 881)
             // I only have 1 full example cause he's always left-side :(
             // curatedFolder + 
         ]
@@ -56,7 +57,7 @@ test("Test userbox appear & length check",
         // UserNameBinarization.LINE_DEBUG = true
 
         for (const filename of fileList) {
-            const mng = new UserNameBinarization(filename, false);
+            const mng = new UserNameBinarization(filename, true);
             const all_user_sw = new Stopwatch()
             const users = await mng.getUNBoundingBox(null, {appear:true, length:true});
             
@@ -114,11 +115,38 @@ test("Test userbox quick length check",
     }
 );
 
+test("Test userbox quick length fail before actual length",
+    async () => {
+        // const filename = getFilename(vodTestingFolder, 401)
+        const filename = curatedFolder + 'chat_transition_read2.png'
+
+        const buffer = await new SharpImg(filename).sharpImg.toBuffer()
+        const mng = new UserNameBinarization(buffer, true);
+        const all_user_sw = new Stopwatch()
+
+        const expectedLen = 294
+
+        for (const len of iterateN(expectedLen+1)) {
+            const usersList = await mng.getUNBoundingBox(new Map([[10]]),
+                {appear:true, length:false,
+                quickLength:new Map([[10,-len]])});
+            
+            const user = usersList.get(10)
+            const validOnLen = (len == expectedLen)
+            assert.equal(user.validLength, validOnLen)
+            assert.equal(user.lenUnchecked, !validOnLen)
+        }
+        
+        all_user_sw.stop()
+        console.log(`Took ${(all_user_sw.time)} for appear+len`)
+    }
+);
+
 
 test ("Test Crop user image and binarize", async () => {
-    // const filename = curatedFolder+'chat_clean.png'
-
-    const filename = getFilename(vodTestingFolder, 297)
+    
+    const filename = curatedFolder+'chat_clean.png'
+    // const filename = getFilename(vodTestingFolder, 297)
     const userIdx = 0; // 4
 
     const mng = new UserNameBinarization(filename, true);
@@ -198,11 +226,17 @@ test("Test userbox pure timing",
 
 test("Test chat detection", async () => {
 
-    const filename = curatedFolder+'91.png'
-    const mng = new UserNameBinarization(filename, true);
-    const imgBuffer = await mng.sharpImg.buildBuffer()
+    let filename = curatedFolder+'chat_overlay_all.png'
+    let mng = new UserNameBinarization(filename, true);
+    let imgBuffer = await mng.sharpImg.buildBuffer()
 
     assert.equal(mng.verifyChatBlockingNames(imgBuffer), true)
+
+    filename = curatedFolder+'chat_clean.png'
+    mng = new UserNameBinarization(filename, true);
+    imgBuffer = await mng.sharpImg.buildBuffer()
+
+    assert.equal(mng.verifyChatBlockingNames(imgBuffer), false)
 })
 
 test ("Test old binarization", {skip: "Old logic is broken"}, async () => {

@@ -429,6 +429,7 @@ export class MarblesAppServer {
             
             let testIdx = pidx
             // TODO: Limit checks based on offset minimums
+            // Roll offset and make QL more reliable
             do {    
                 const tvUser = screenVisibleUsers.get(testIdx)
                 if (!tvUser || tvUser.validLength) continue // not visible or known len
@@ -437,7 +438,6 @@ export class MarblesAppServer {
                     {appear:false, length:false,
                         quickLength:new Map([[testIdx, predictedUsers[pidx].length]])})
                 len_check_count.offset_ql += 1
-                tvUser.debug.qlLen = true
 
                 trackQLTest.push({
                     vidx:pidx, 
@@ -446,7 +446,10 @@ export class MarblesAppServer {
                     testql:predictedUsers[pidx].length
                 })
 
-                if (tvUser.validLength) break
+                if (tvUser.validLength) {
+                    tvUser.debug.qlLen = true
+                    break
+                }
             } while (--testIdx >= 0);
 
             // Determine best prediction from result
@@ -458,33 +461,12 @@ export class MarblesAppServer {
 
         if (!goodMatch) {   // set to fail-back offset
             if (screenVisibleUsers.size > 3) {
-                offsetMatch = predictedUsers.findLastIndex(pUser => pUser.validLength) + 1
+                offsetMatch = predictedUsers.length - predictedUsers.findLastIndex(pUser => pUser.validLength) + 1
             } else {
                 offsetMatch = 0
             }
             console.warn(`No offset match with ${screenVisibleUsers.size} available: set to ${offsetMatch}`)
         }
-        
-        
-        // for (const [vidx, vUser] of screenVisibleUsers.entries()) {
-        //     // length checks should center around first visible idx
-        //     if (vidx < (fstLenIdx - LEN_CHECK_MATCH/2)) continue 
-            
-        //     // calculate length from current screen
-        //     const vlenArr = await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
-        //     len_check_count.offset++
-        //     // vUser.length = vlenArr[vidx].length
-        //     vUser.debug.matchLen = true
-        //     // currLenList.push(vobj)
-        //     currLenList.push({vidx, vUser})
-        //     // NOTE: the available checks are reduced if length can't be determined
-        //     if (currLenList.filter(({vidx, vUser}) => vUser.validLength).length >= LEN_CHECK_MATCH) break;
-        // }
-
-        // // calculate best matching ofset
-        // ({offset:offsetMatch} = UsernameAllTracker.findBestShiftMatch(
-        //     predictedUsers, currLenList
-        // ))
 
         if (offsetMatch > 6 || offsetMatch < -2) {
             console.warn(`No op offset detected`, offsetMatch)

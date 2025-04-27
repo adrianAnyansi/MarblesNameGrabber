@@ -1087,7 +1087,7 @@ export class UsernameAllTracker {
         const duplIndexMap = new Map()
         const duplKeys = new Set()
         for (const [pidx, pUser] of predictedUsers.entries()) {
-            if (!pUser.length) continue
+            if (!pUser.length) scoredLenCheck.push([-100, pidx])
 
             const lenArr = duplIndexMap.get(pUser.length) ?? []
             if (lenArr.push(pidx) > 1) duplKeys.add(pUser.length)
@@ -1102,14 +1102,14 @@ export class UsernameAllTracker {
         }
 
         // penalize duplicates
-        for (const lenKey of duplKeys ) {
+        for (const lenKey of duplKeys) {
             const idxArr = duplIndexMap.get(lenKey)
             if (idxArr.length < 2) continue
             for (const idxKey of idxArr)
                 scoredLenCheck[idxKey][0] /= idxArr.length
         }
 
-        return scoredLenCheck.sort((a,b) => b[0]-a[0])
+        return scoredLenCheck.filter(([score, _pidx]) => score > 0).sort((a,b) => b[0]-a[0])
     }
 
     /**

@@ -536,11 +536,13 @@ export class ScreenState {
         if (vUser.appear && vUser.lenUnavailable)
             return 'D'
         if (vUser.appear && vUser.debug.qlLen)
-            return 'Q'//'Δ'
+            return 'Q'
         if (vUser.appear && vUser.debug.unknownLen)
-            return 'U'//'Δ'
+            return 'U'
         if (vUser.appear && vUser.debug.matchLen)
-            return 'K'//'Δ'
+            return 'K'
+        if (vUser.appear && vUser.debug.ocrLen)
+            return 'G'
         
         if (vUser.appear)
             return 'A'

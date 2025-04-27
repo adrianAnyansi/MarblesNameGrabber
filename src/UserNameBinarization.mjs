@@ -504,7 +504,7 @@ export class UserNameBinarization {
                             && firstColorRangeMatch 
                             && colorRange != firstColorRangeMatch) {  
                             // console.warn(`Color match redone at ${y_start+check_px_off}`)
-                            if (this.debug) this.setPixel(x_start, y_start+check_px_off, Color.BRIGHT_GREEN)
+                            if (this.debug) this.setPixel(x_start, y_start+check_px_off, Color.LIME)
                             continue
                         }
 
@@ -1038,17 +1038,32 @@ export class UserNameBinarization {
                 const x_px_to_check = userQLCheck + UN_RIGHT_X
                 let left_match_pixels = 0;
 
-                for (const d of iterateN(UN_BOX_HEIGHT * 0.75, UN_BOX_HEIGHT * 0.25)) {
+                qlRolling: for (const d of iterateN(UN_BOX_HEIGHT * 0.75, UN_BOX_HEIGHT * 0.25)) {
                     if (IsUserIndex23 && user_y_start+d >= imgBuffer.height) break;
 
                     const testCoord = [x_px_to_check, user_y_start+d]
                     const leftLineCheck = this.checkLineThres(...testCoord, imgBuffer, 1, Direction2D.RIGHT)
 
                     if (leftLineCheck) {
-                        if (this.debug) imgBuffer.setPixel(...testCoord, Color.BRIGHT_GREEN)
+                        if (this.debug) imgBuffer.setPixel(...testCoord, Color.LIME)
                         if (left_match_pixels++ > MATCH_MIN) {
-                            visualUser.length = x_px_to_check - UN_RIGHT_X; // set early and quit
-                            break;
+
+                            // Perform the corner check
+                            const pixelRange = [-6, 0]
+                            const y_px_to_check = user_y_start + UserNameConstant.HEIGHT * 0.1;
+                            for (const iter of iterateN(...pixelRange)) {
+                                const ulpoint = [x_px_to_check + Direction2D.LEFT[0] * iter, y_px_to_check]
+                                const ulCornerCheck = this.checkLineThres(...ulpoint, imgBuffer, 1, Direction2D.RIGHT)
+                                if (ulCornerCheck && ulpoint[1] < x_px_to_check) {
+                                    if (this.debug)
+                                        imgBuffer.setPixel(...ulpoint, Color.HOT_PINK)
+                                    visualUser.length = x_px_to_check - UN_RIGHT_X; // set early and quit
+                                    break qlRolling;
+                                }
+                            }
+
+                            // visualUser.length = x_px_to_check - UN_RIGHT_X; // set early and quit
+                            // break;
                         }
                     }
                 }
@@ -1088,7 +1103,7 @@ export class UserNameBinarization {
                             console.log(`Pass Left edge detect took #${userIndex} ${user_perf_sw.time}`)
                         
                         if (this.debug)
-                            imgBuffer.setPixel(x_line, user_y_start+21, Color.GREEN)
+                            imgBuffer.setPixel(x_line, user_y_start+21, Color.LIME)
                         // left edge, now check corner matches
                         const foundCorners = [10_000, 20_000]
                         const pixelCheck = 12
@@ -1109,8 +1124,8 @@ export class UserNameBinarization {
 
                             if (Math.abs(foundCorners[0] - foundCorners[1]) <= 2) {
                                 if (this.debug) {
-                                    if (!IsUserIndex23) imgBuffer.setPixel(...dlPoint, Color.BRIGHT_GREEN)
-                                    imgBuffer.setPixel(...ulpoint, Color.BRIGHT_GREEN)
+                                    if (!IsUserIndex23) imgBuffer.setPixel(...dlPoint, Color.LIME)
+                                    imgBuffer.setPixel(...ulpoint, Color.LIME)
                                 }
                                 break
                             } else {
@@ -1303,7 +1318,7 @@ export class UserNameBinarization {
             if (Color.sumColor(linePx)/3 < 145 && linePx[2] < 145) {
                 fails += 1
                 if (this.debug)
-                    imgBuffer.setPixel(x_offset, y_offset, Color.BRIGHT_GREEN)
+                    imgBuffer.setPixel(x_offset, y_offset, Color.LIME)
                 // break;
             }
 
@@ -1436,12 +1451,14 @@ export class UserNameBinarization {
         const cleanMin = 220
         let checkPx = imgBuffer.getPixel(chatCheck.x, chatCheck.y)
 
-        if (Color.sumColor(checkPx)/3 > cleanMin) {
-            console.log("Chat on screen")
-        } else {
-            console.log("Chat not on screen")
+        if (this.debug) {
+            if (Color.sumColor(checkPx)/3 < cleanMin) {
+                console.log("Chat on screen")
+            } else {
+                console.log("Chat not on screen")
+            }
         }
-        return Color.sumColor(checkPx)/3 > cleanMin;
+        return Color.sumColor(checkPx)/3 < cleanMin;
     }
 
 }

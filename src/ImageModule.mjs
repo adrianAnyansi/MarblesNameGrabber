@@ -12,20 +12,49 @@ import {Buffer} from 'node:buffer'
 /** Color utility class */
 export class Color {
 
-    static BLACK           = Color.toRGBA(0x000000);
-    static DARKGRAY        = Color.toRGBA(0x555555);
-    static WHITE           = Color.toRGBA(0xFFFFFF);
-    static YELLOW          = Color.toRGBA(0xFFFF00);
-    static ORANGE          = Color.toRGBA(0xFFA500);
-    static MAHOGANY        = Color.toRGBA(0xC04000);
-    static MAHOGANY_DARK   = Color.toRGBA(0x902000);
-    static RED             = Color.toRGBA(0xFF0000);
-    static BLUE            = Color.toRGBA(0x0000FF);
-    static GREEN           = Color.toRGBA(0x00FF00);
+    // Black
+    static BLACK            = Color.toRGBA(0x000000);
+    static DARKGRAY         = Color.toRGBA(0x555555);
+    static WHITE            = Color.toRGBA(0xFFFFFF);
 
-    static SUB_BLUE        = Color.toRGBA(0x7b96dc);
-    static BRIGHT_GREEN    = Color.toRGBA(0x00FF00);
-    static HOT_PINK        = Color.toRGBA(0xFF00FF);
+    // Yellows & orange
+    static YELLOW           = Color.toRGBA(0xFFFF00);
+    static LIGHT_YELLOW     = Color.toRGBA(0xFFFFE0);
+    static ORANGE           = Color.toRGBA(0xFFA500);
+
+    // Browns
+    static MAHOGANY         = Color.toRGBA(0xC04000);
+    static MAHOGANY_DARK    = Color.toRGBA(0x902000);
+    static TAN              = Color.toRGBA(0xD2B48C);
+    static GOLDENROD        = Color.toRGBA(0xDAA520);
+
+    // Reds
+    static RED              = Color.toRGBA(0xFF0000);
+    static CRIMSON          = Color.toRGBA(0xDC143C);
+    static DARK_RED         = Color.toRGBA(0x8B0000);
+    
+    // Pink
+    static HOT_PINK         = Color.toRGBA(0xFF00FF);
+    static PINK             = Color.toRGBA(0xFFC0CB);
+    static MAGENTA          = Color.toRGBA(0xFF00FF);
+    static DARK_VIOLET      = Color.toRGBA(0x9400D3);
+    static PURPLE           = Color.toRGBA(0x800080);
+
+    // Blues
+    static BLUE             = Color.toRGBA(0x0000FF);
+    static DEEP_BLUE        = Color.toRGBA(0x483D8B);
+    static TEAL             = Color.toRGBA(0x008080);
+    static AQUA             = Color.toRGBA(0x00FFFF);
+    static NAVY             = Color.toRGBA(0x000080);
+    // static SUB_BLUE         = Color.toRGBA(0x7b96dc);
+
+    // Greens
+    static GREEN            = Color.toRGBA(0x008000);
+    static GREEN_YELLOW     = Color.toRGBA(0xADFF2F);
+    static LIME             = Color.toRGBA(0x00FF00);
+    static LIME_GREEN       = Color.toRGBA(0x32CD32);
+
+
 
     /** Default Alpha value */
     static DEFAULT_ALPHA =      0xFF;
