@@ -738,7 +738,7 @@ export class TrackedUsername {
         /** @type {number} ingest timestamp in ms */
         this.enterFrameTime = enterFrameTime
         // this.exitFrameTime = undefined
-        this.debugexitFrame = null
+        this.debugExitFrame = null
 
         /** @type {UserImage<>} images of the user */
         this.partialImgList = []
@@ -778,7 +778,7 @@ export class TrackedUsername {
     set exitingFrameTime (time) {
         // TODO: Set the enteringFrameTime
         // also should have some flag to confirm if this is top of frame disappear or overlay disappear
-        this.debugexitFrame = time
+        this.debugExitFrame = time
     }
 
 
@@ -864,7 +864,8 @@ export class TrackedUsername {
             conf: this.confidence,
             aliases: Array.from(this.aliases.keys()),
             enterTime: this.enterFrameTime,
-            exitingTime: this?.debugexitFrame
+            // exitingTime: this?.debugexitFrame
+            debugExitTime: this.debugExitFrame
         }
     }
 }
@@ -1087,7 +1088,10 @@ export class UsernameAllTracker {
         const duplIndexMap = new Map()
         const duplKeys = new Set()
         for (const [pidx, pUser] of predictedUsers.entries()) {
-            if (!pUser.length) scoredLenCheck.push([-100, pidx])
+            if (!pUser.length) {
+                scoredLenCheck.push([-100, pidx])
+                continue
+            }
 
             const lenArr = duplIndexMap.get(pUser.length) ?? []
             if (lenArr.push(pidx) > 1) duplKeys.add(pUser.length)
@@ -1159,8 +1163,14 @@ export class UsernameAllTracker {
     /**
      * Move offset (must be positive)
      * @param {number} positiveShift 
+     * @param {number} currFrame current frame
      */
-    shiftOffset (positiveShift) {
+    shiftOffset (positiveShift, currFrame = null) {
+        if (currFrame) {
+            for (const shift of iterateN(positiveShift)) {
+                this.usersInOrder[this.currentScreenFirstIndex + shift].debugExitFrame = currFrame
+            }
+        }
         this.currentScreenFirstIndex += positiveShift;
     }
 

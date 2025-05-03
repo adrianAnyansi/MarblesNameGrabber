@@ -1073,8 +1073,6 @@ export class UserNameBinarization {
             }
 
             if (length && visualUser.lenUnchecked) {
-                // if (visualUser.lenUnavailable) continue;
-                // if (userQLCheck && visualUser.validLength) continue;
 
                 // NOTE: Could bin-search this but could be inaccurate if there's a line somewhere else
                 const [lx, _ly] = this.followUsernameLine(

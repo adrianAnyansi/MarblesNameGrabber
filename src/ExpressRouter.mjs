@@ -127,12 +127,13 @@ server.get('/list', (req, res) => {
 })
 
 server.post('/localTest', async (req, res) => {
-    let source = req.query?.source
-    let ocrType = req.query?.ocr
+    const source = req.query?.source
+    const ocrType = req.query?.ocr
+    const skipTo = parseInt(req.query?.skipTo, 10) ?? null
     const vodDump = req.query?.vodDump ?? false
 
     try {
-        let json_resp = await app_server.localTest(source, ocrType, vodDump)
+        const json_resp = await app_server.localTest(source, ocrType, vodDump, skipTo)
         res.send(json_resp)
     } catch (err) {
         res.status(400).send(`Error occurred during testing. ${err}`)

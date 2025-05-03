@@ -32,9 +32,6 @@ export class MarblesAppServer {
 
     /** Determines some programs/settings */
     static ENV = 'dev' // set from router
-
-    // TODO: Change tesseract cmd in object
-    static TESSERACT_LOC = String.raw`C:\Program Files\Tesseract-OCR\tesseract.exe`
     
     // Needs to handle both linux for prod and windows for dev
     static FFMPEG_LOC = String.raw`C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe` // NOTE: should work on all streamlink installations
@@ -68,10 +65,10 @@ export class MarblesAppServer {
             lambda: false,
             vod_dump: false,
             screen_state_log: true,
-            // fps: false,
-            user_bin: false,
-            disable_ocr: true, // disable OCR checking
-            frame_pacing: true // track & output fps 
+            user_bin: false, // 
+            disable_ocr: false, // disable OCR checking
+            disable_ocr_len: false, // disable pre OCR length check
+            frame_pacing: false // track & output fps 
         }
 
         // Processors & Commands
@@ -83,8 +80,6 @@ export class MarblesAppServer {
         this.ffmpegCmd = [MarblesAppServer.FFMPEG_LOC, '-re', '-i','pipe:0', '-f','image2pipe', 
                             '-c:v', ...this.streamImgFormat[1],
                             '-vf', `fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
-        /** Tesseract command-line location */
-        // this.tesseractCmd = MarblesAppServer.TESSERACT_LOC
 
         // Processors
         // ========================================================
@@ -112,22 +107,6 @@ export class MarblesAppServer {
         this.OCRManager = new NativeTesseractOCRManager(3, 
             this.debug_obj.native_tesseract, true)
 
-        /** OCR Worker object */
-        // this.OCRScheduler = null
-        // this.numOCRWorkers = 0
-
-        // Lambda state
-        // if (this.debugLambda)  AWS_LAMBDA_CONFIG["logger"] = console
-        // this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
-        // this.uselambda = USE_LAMBDA
-        /** @type {LambdaClient} AWS lambda */
-        // this.lambdaClient = null
-        // this.lambdaQueue = 0    // Keep track of images sent to lambda for processing
-
-        // Username Tracking
-        // ==================================================
-        // /** @type {UsernameTracker} Userlist for server */
-        // this.usernameList = new UsernameTracker() 
         /** @type {UsernameAllTracker} Userlist but better */
         this.usernameTracker = new UsernameAllTracker()
 
@@ -180,9 +159,6 @@ export class MarblesAppServer {
         this.streamlinkProcess = spawn(this.streamlinkCmd[0], this.streamlinkCmd.slice(1), {
             stdio: ['inherit', 'pipe', 'pipe']
         })
-        // this.ffmpegProcess = spawn(this.ffmpegCmd[0], this.ffmpegCmd.slice(1), {
-        //     stdio: ['pipe', 'pipe', 'pipe']
-        // })
         this.startFFMPEGProcess()
 
         this.streamlinkProcess.stdout.pipe(this.ffmpegProcess.stdin) // pipe to ffmpeg
@@ -201,35 +177,10 @@ export class MarblesAppServer {
             }
         })
 
-        // On FFMpeg start, make log
-        // let outputFFMPEGBuffer = false
-        // this.ffmpegProcess.stderr.on('data', (data) => {
-        //     const stringOut = data.toString()
-        //     if (this.debug_obj.process)
-        //         console.log(stringOut)
-        //     if (!outputFFMPEGBuffer & stringOut.includes('frame=')) {
-        //         outputFFMPEGBuffer = true
-        //         console.debug('FFMpeg is outputting images to buffer-')
-        //     }
-        // })
-
-        // this.ffmpegProcess.stdout.on('data', (/** @type {Buffer}*/ streamImgBuffer) => {
-        //     // NOTE: Data is a buffer with partial image data
-        //     const newFrameBuffer = this.StreamImage.addToBuffer(streamImgBuffer)
-        //     if (newFrameBuffer !== null) {
-        //         if (this.debug_obj.frame_pacing)
-        //             this.ServerState.frame_pacing.push(performance.now())
-        //         this.handleImage(newFrameBuffer)
-        //     }
-        // })
-
         // Error-handling
         this.streamlinkProcess.on('error', (err) => {
             console.warn("An unknown error occurred while writing Streamlink process." + err)
         })
-        // this.ffmpegProcess.on('error', () => {
-        //     console.warn("An unknown error occurred while writing FFMpeg process.")
-        // })
 
         // Closed handling
         this.streamlinkProcess.on('close', () => {
@@ -237,12 +188,6 @@ export class MarblesAppServer {
             this.spinDown()
             this.ServerState.enterStopState()
         })
-        // this.ffmpegProcess.on('close', () => {
-        //     console.debug('FFMpeg process has closed.')
-        //     // NOTE: Ignoring the spinDown server state as both shutdown each other
-        //     this.ServerState.enterStopState()
-        // })
-
         console.debug("Set up streamlink processes")
     }
 
@@ -334,7 +279,7 @@ export class MarblesAppServer {
             fs.writeFile(`${VOD_DUMP_LOC}${imgId}.${this.streamImgFormat[0]}`, imageLike)
         }
 
-        const EMPTY_IMAGE_NUM = parseInt(MarblesAppServer.FFMPEG_FPS) * 3
+        const EMPTY_IMAGE_NUM = MarblesAppServer.EMPTY_PAGE_COMPLETE
         if (this.ScreenState.frames_without_names > EMPTY_IMAGE_NUM) {
             console.log(`Found ${EMPTY_IMAGE_NUM} empty frames @ ${imgId};
                 Dumping remaining images and changing to COMPLETE state.`)
@@ -421,10 +366,10 @@ export class MarblesAppServer {
         // First, get the best length to check
         const lenScoreMap = UsernameAllTracker.genLengthChecks(predictedUsers)
         let goodMatch = false; // load-bearing semi-colon
-
+        offsetMatch = 0;
         const trackQLTest = []
         // loop lengths, trying to find at least 2 matches
-        for (let [score, pidx] of lenScoreMap) {
+        for (const [score, pidx] of lenScoreMap) {
             if (score == 0) break;
             
             let testIdx = pidx
@@ -450,7 +395,7 @@ export class MarblesAppServer {
                     tvUser.debug.qlLen = true
                     break
                 }
-            } while (--testIdx >= 0);
+            } while (--testIdx >= 0); // load-bearing ;
 
             // Determine best prediction from result
             ({offsetMatch, goodMatch} = UsernameAllTracker.findVisualOffset(
@@ -460,9 +405,19 @@ export class MarblesAppServer {
         }
 
         if (!goodMatch) {   // set to fail-back offset
+            // TODO: do discontinuity code
             if (screenVisibleUsers.size > 3) {
-                offsetMatch = predictedUsers.length - predictedUsers.findLastIndex(pUser => pUser.validLength) + 1
-            } else {
+
+                const knownLenVUsers = Array.from(screenVisibleUsers.values()).filter( u => u.validLength)
+                if (knownLenVUsers.length > 0 && offsetMatch != null) {
+                    console.warn(`Only able to find 1 match in ${screenVisibleUsers.length}, allowing offset ${offsetMatch}`)
+                } else {
+                    // Pick a random user and try and get length. Usually this failure occurs on bad bitrate
+                    console.warn("Discontinuity offset reconcil")
+                    offsetMatch = predictedUsers.length - predictedUsers.findLastIndex(pUser => pUser.validLength) + 1
+                }
+                
+            } else if (offsetMatch == null ) {
                 offsetMatch = 0
             }
             console.warn(`No offset match with ${screenVisibleUsers.size} available: set to ${offsetMatch}`)
@@ -479,9 +434,6 @@ export class MarblesAppServer {
             ({predictedUsers, offset} = this.usernameTracker.predict(processImgId, 
                 {totalUsers:null, predictFullScreen:true}, this.ScreenState.knownScreen))
         } 
-            // else if (offsetMatch < 0) {
-            //     console.error("Offset is negative! This is a DO NOTHING", offsetMatch)
-            // }
         // }
 
         // After this line, the predictedUsers is verified
@@ -494,17 +446,20 @@ export class MarblesAppServer {
             if (!pUser.seen && vUserVisible) { // if screen is known, set seen & time
                 pUser.seen = vUserVisible
                 if (this.ScreenState.knownScreen)
-                    pUser.enterFrameTime = performance.now()
+                    pUser.enterFrameTime = processImgId
+            
             // once user can't be seen, set exitingFrameTime
             // TODO: Need to check against overlap logic imo
-            } else if (pUser.seen && pUser.exitingFrameTime == null && !vUserVisible) {
-                pUser.exitingFrameTime = performance.now()
+            } else if (pUser.seen && pUser.debugExitFrame == null && !vUserVisible) {
+                // pUser.exitingFrameTime = performance.now()
+                pUser.debugExitFrame = processImgId
             }
         }
 
         this.ScreenState.addPredictedFrame(predictedUsers)
 
         // Now do as many length checks for visible names that do not have length checks first
+        // =========================
         const LEN_LIMIT_PER_FRAME = 25; // NOTE: Maxing this for testing
         for (const [vidx, vUser] of screenVisibleUsers.entries()) {
             const pUser = predictedUsers[vidx]
@@ -524,17 +479,18 @@ export class MarblesAppServer {
         // There's nothing between these 2 loops
 
         // Need to run OCR separately as length check out-priorities OCR 
+        // TODO: Get image async in-case length can't get checked this frame
+        // =========================
         for (const [vidx, vUser] of screenVisibleUsers.entries()) {
             if (vidx == 23) continue; // cropping fails on last index, just skip
             if (vUser.lenUnavailable) continue; // Already failed to calc length this frame
 
             const pUser = predictedUsers[vidx]
-            if (pUser.readyForOCR) {
+            if (pUser.readyForOCR && !this.debug_obj.disable_ocr_len) {
                 if (vUser.lenUnchecked) { // must have a valid length this frame
-                    // TODO: Use quickLength only here, don't need to find left section
-                    const resultObj = await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
+                    // TODO: Use quick box here
+                    await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
                     len_check_count.pre_ocr++
-                    // vUser.length = resultObj[vidx].length
                     vUser.debug.ocrLen = true
                 }
                 pUser.setLen(vUser.length)
@@ -547,6 +503,7 @@ export class MarblesAppServer {
 
         this.ScreenState.addVisibleFrame(Array.from(screenUsersMap.values()))
         
+        // Some screen state tracking things
         const post_match_len_checks = len_check_count.post_match + len_check_count.pre_ocr
         if (this.debug_obj.screen_state_log && 
             (this.ScreenState.shouldDisplaySmth || post_match_len_checks > 0)) {
@@ -562,14 +519,10 @@ export class MarblesAppServer {
 
         if (this.debug_obj.frame_pacing) {
             this.ServerState.frame_end_time[imgId] = performance.now()
-            console.log(`Curr Frame:${this.ServerState.frameTiming(imgId).toFixed(2)}ms lenChecks ${JSON.stringify(len_check_count)}`)
-            console.log(this.ServerState.frameAvg(imgId))
+            console.log(`${this.ServerState.frameAvg(imgId)} Curr Frame:${this.ServerState.frameTiming(imgId).toFixed(2)}ms lenChecks ${JSON.stringify(len_check_count)}`)
         }
 
         console.log('--- End Frame ---')
-
-        // const frameTime = performance.measure(frameStartMark, frameStartMark).duration;
-        // console.debug(`Frame took ${frameTime.toFixed(2)}ms to complete`)
 
     }
 
@@ -605,7 +558,8 @@ export class MarblesAppServer {
 
             this.ServerState.addUserReconLagTime(time)
             if (data.lines.length == 0) {
-                console.warn(`Got nothing for #${processImgId} @ ${user.index}`)
+                if (this.debug_obj.user_bin)
+                    console.warn(`Got nothing for #${processImgId} @ ${user.index}`)
                 return
             }
             for (const line of data.lines) {
@@ -638,62 +592,62 @@ export class MarblesAppServer {
      * @param {Buffer} imgBuffer An buffer containing a png image
      * @returns {Promise} Promise containing lambda result with tesseract info. Or throws an error
      */
-    async sendImgToLambda(bufferCrop, imgMetadata, info, jobId='test', lambdaTest=false) {
+    // async sendImgToLambda(bufferCrop, imgMetadata, info, jobId='test', lambdaTest=false) {
 
-        const payload = {
-            buffer: bufferCrop.toString('base64'),
-            imgMetadata: imgMetadata,
-            info: info,
-            jobId: jobId,
-            test: lambdaTest
-        }
+    //     const payload = {
+    //         buffer: bufferCrop.toString('base64'),
+    //         imgMetadata: imgMetadata,
+    //         info: info,
+    //         jobId: jobId,
+    //         test: lambdaTest
+    //     }
 
-        const input = { // Invocation request
-            FunctionName: "OCR-on-Marbles-Image",
-            InvocationType: "RequestResponse",
-            LogType: "Tail",
-            // ClientContext: "Context",
-            Payload: JSON.stringify(payload), // stringified value
-            // Qualifier: "Qualifier"
-        }
+    //     const input = { // Invocation request
+    //         FunctionName: "OCR-on-Marbles-Image",
+    //         InvocationType: "RequestResponse",
+    //         LogType: "Tail",
+    //         // ClientContext: "Context",
+    //         Payload: JSON.stringify(payload), // stringified value
+    //         // Qualifier: "Qualifier"
+    //     }
 
         
-        const command = new InvokeCommand(input)
-        console.debug(`Sending lambda request ${jobId}`)
-        let result = await this.lambdaClient.send(command)
+    //     const command = new InvokeCommand(input)
+    //     console.debug(`Sending lambda request ${jobId}`)
+    //     let result = await this.lambdaClient.send(command)
 
-        if (result['StatusCode'] != 200)
-            throw Error(result["LogResult"])
-        else {
-            let resPayload = JSON.parse(Buffer.from(result["Payload"]).toString())
-            // let {data, info, jobId} = resPayload
-            return resPayload
-        }
-    }
+    //     if (result['StatusCode'] != 200)
+    //         throw Error(result["LogResult"])
+    //     else {
+    //         let resPayload = JSON.parse(Buffer.from(result["Payload"]).toString())
+    //         // let {data, info, jobId} = resPayload
+    //         return resPayload
+    //     }
+    // }
 
     /** Send Warmup request to lambda */
-    async sendWarmupLambda(jobId='test') {
+    // async sendWarmupLambda(jobId='test') {
 
-        const payload = {
-            buffer: "",
-            jobId: jobId,
-            warmup: true
-        }
+    //     const payload = {
+    //         buffer: "",
+    //         jobId: jobId,
+    //         warmup: true
+    //     }
 
-        const input = { // Invocation request
-            FunctionName: "OCR-on-Marbles-Image",
-            InvocationType: "RequestResponse",
-            LogType: "Tail",
-            Payload: JSON.stringify(payload), // stringified value
-        }
+    //     const input = { // Invocation request
+    //         FunctionName: "OCR-on-Marbles-Image",
+    //         InvocationType: "RequestResponse",
+    //         LogType: "Tail",
+    //         Payload: JSON.stringify(payload), // stringified value
+    //     }
 
         
-        const command = new InvokeCommand(input)
-        console.debug(`Sending lambda warmup ${jobId}`)
-        return this.lambdaClient.send(command)
-        .then(resp => resp['StatusCode'])
+    //     const command = new InvokeCommand(input)
+    //     console.debug(`Sending lambda warmup ${jobId}`)
+    //     return this.lambdaClient.send(command)
+    //     .then(resp => resp['StatusCode'])
 
-    }
+    // }
 
     /**
      * Stop stream-monitor, stop OCR but do not clear state
@@ -701,8 +655,10 @@ export class MarblesAppServer {
      */
     spinDown () {
         this.shutdownStreamMonitor()
-        if (this.OCRScheduler)
-            this.OCRScheduler.jobQueue = 0
+        if (this.OCRManager)
+            this.OCRManager.shutdown()
+        // if (this.OCRScheduler)
+        //     this.OCRScheduler.jobQueue = 0
     }
 
     // --------------------------------------------------------------------
@@ -741,11 +697,6 @@ export class MarblesAppServer {
                 "Authorization": `Bearer ${this.twitch_access_token}`,
                 "Client-Id": `${TWITCH_ACCESS_TOKEN_BODY.client_id}`
             }
-            // set timeout to clear this token
-            // const timeoutMs = parseInt(res.data['expires_in']) * 1_000
-            // const timeoutMs = 15* 24 * 60 * 60 * 1_000 // Capped to 24 days due to int overflow.
-            // FIXME: Setup a new callback that triggers comparing Date.now instead
-            // setTimeout(()=> {this.twitch_access_token = null}, timeoutMs)
             
             console.log("Retrieved Twitch Access Token")
             return this.twitch_access_token
@@ -795,7 +746,6 @@ export class MarblesAppServer {
                             this.getTwitchToken()
                         }
                     }
-                    // clearInterval(this.game_type_monitor_interval) // Don't clear monitor
                 })
             }, 1_000 * 3) // Check every 3 seconds
         }
@@ -896,14 +846,15 @@ export class MarblesAppServer {
      * @param {string} source 
      * @param {OCRTypeEnum} ocrType 
      * @param {boolean} [vodDump=false]
+     * @param {number} skipTo Skip to this index when starting
      */
-    async localTest (source, ocrType, vodDump=false) {
+    async localTest (source, ocrType, vodDump=false, skipTo=null) {
 
         if (fsAll.statSync(source).isDirectory()) {
             
-            const fileList = await fs.reaaddir(source);
+            const fileList = await fs.readdir(source);
             fileList.sort( (fileA, fileB) => {
-                return parseInt(fileA.split('.')[0]) - parseInt(fileB.split('.')[0])
+                return parseInt(fileA.split('.')[0], 10) - parseInt(fileB.split('.')[0], 10)
             })
 
             if (fileList == null)
@@ -918,14 +869,20 @@ export class MarblesAppServer {
             const filePromiseList = []
             for (const fileName of fileList) {
                 if (fileName.endsWith('txt')) {
-                    continue // NOTE: Going to provide this separately
+                    continue // NOTE: Going to provide this separately probably
+                }
+                
+                const fileIdx = parseInt(fileName.split('.')[0], 10)
+                if (skipTo != null && fileIdx < skipTo) {
+                    console.debug(`Skip filename ${fileName}`)
+                    continue
                 }
 
                 const filepath = path.resolve(source, fileName)
                 console.debug(`Parse filename ${fileName}`)
-                filePromiseList.push(this.handleImage(filepath))
+                filePromiseList.push(this.handleImage(filepath, fileIdx))
                 // Wait FPS time
-                await setTimeout( ()=> {}, 1_000 / parseInt(this.FFMPEG_FPS))
+                await setTimeout(1_000 / parseInt(MarblesAppServer.FFMPEG_FPS), `Sent ${fileName}`)
             }
             
             this.ServerState.enterStopState()

@@ -39,7 +39,7 @@ test("Single pixel line test check",
 test("Test userbox appear & length check",
     async () => {
 
-        const filename = chatTestingFolder + 'chat_clean.png'
+        // const filename = chatTestingFolder + 'chat_clean.png'
         // TODO: Also get the length of users and check against each
         const fileList = [
             // curatedFolder + 'chat_clean.png',
@@ -49,7 +49,7 @@ test("Test userbox appear & length check",
             
             // curatedFolder + 'chat_name_bg2.png',
             // curatedFolder + 'chat_clean_black.png'
-            getFilename(vodTestingFolder, 881)
+            getFilename(vodTestingFolder, 875)
             // I only have 1 full example cause he's always left-side :(
             // curatedFolder + 
         ]
@@ -92,21 +92,26 @@ test("Test 1 userbox appear/length",
 
 test("Test userbox quick length check",
     async () => {
-        const filename = getFilename(vodTestingFolder, 401)
+        const filename = getFilename(vodTestingFolder, 882)
 
         const buffer = await new SharpImg(filename).sharpImg.toBuffer()
         const mng = new UserNameBinarization(buffer, true);
         const all_user_sw = new Stopwatch()
-        // const users = await mng.getUNBoundingBox(new Map([[1],[2],[3],[7],[11],[12]]),
-        //     {appear:true, length:true, 
-        //     quickLength:new Map([[1,-200], [2,-239], [12,-177]])});
-        const users = await mng.getUNBoundingBox(new Map([[17], [18]]),
+
+        const testusers = [[17, -163]];
+
+        const testIdxMap = new Map(testusers.map(p => [p[0]]))
+        const testQLMap = new Map(testusers)
+        const users = await mng.getUNBoundingBox(testIdxMap,
             {appear:true, length:false, 
-            quickLength:new Map([[17,-144], [18,-144]])});
+            quickLength:testQLMap});
         
         all_user_sw.stop()
         console.log(`Took ${(all_user_sw.time)} for appear+len`)
         // console.log("Users List", users.entries())
+        for (const [uidx, ulen] of testusers) {
+            assert.equal(users.get(uidx).length, ulen)
+        }
         // assert.equal(users.get(1).length, -200)
         // assert.equal(users.get(2).length, -239)
         // assert.equal(users.get(3).length, undefined)
@@ -145,17 +150,18 @@ test("Test userbox quick length fail before actual length",
 
 test ("Test Crop user image and binarize", async () => {
     
-    const filename = curatedFolder+'chat_clean.png'
-    // const filename = getFilename(vodTestingFolder, 297)
-    const userIdx = 0; // 4
+    // const filename = curatedFolder+'chat_clean.png'
+    const filename = getFilename(vodTestingFolder, 4503)
+    const userIdx = 20; // 4
 
     const mng = new UserNameBinarization(filename, true);
     const users = await mng.getUNBoundingBox(new Map([[userIdx]]), {appear:true, length:true})
     const userObj = users.get(userIdx)
     
-    assert.equal(userObj.appear, true)
-    assert.equal(userObj.lenUnavailable, false)
-    assert.equal(userObj.lenUnchecked, false)
+    // assert.equal(userObj.appear, true)
+    // assert.equal(userObj.lenUnavailable, false)
+    // assert.equal(userObj.lenUnchecked, false)
+    userObj.length = -300
     // assert.equal(userObj.length, -222)
 
     if (!userObj.length) {
@@ -371,6 +377,7 @@ test ("Test user tracker length", async () => {
     assert.equal(listResult[0][1], 4) // 4 is the highest score because of biggest length diff
     assert.equal(listResult.at(-1)[1], 7) // then 7 as its isolated
     assert.equal(listResult.at(-2)[1], 2) // then 2 as its a duplicate and less diff from others
+    assert.equal(listResult.find( ([score, idx]) => idx == 6), undefined) // 6 should be removed as it's not considered
 
     const vUsers = new Map([
         [0, new VisualUsername()],

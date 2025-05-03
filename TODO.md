@@ -41,27 +41,56 @@ The goal is every single name should be tracked even if I can't read it or get a
 [ ] Complete user tracking via length
 [ ] Tweak OCR values to increase OCR confidence
 [ ] Update lambda to use the new functions
+[ ] Production testing
+[ ] Update UI + admin page
 
 # Focus today
 
-Quick-length is still causing bugs, I'm going to add the extra corners as I'm sure it's getting
-caught on letters.
-Other option is using more checks to increase confidence; which I might do as I'm getting tired of this project. Its been 2 MONTHS OMG
+Discontinunity code time
+I think doing the stitching is probably not eomsething im interested in right now-
+So I'm doing some other cases first.
+Then I'll test on the other marbles (the 3-4 list one)
 
-(also thank god I thought about duplicate prevention, its way more common than I realized)
+So there are basically 2 cases-
+1. Where multiple recongitions occur and a fail match occurs (likely quicklength fails again somehow)
+2. Not enough matches and then it does a disconinuity
 
-If quicklength is still inaccurate, then it will still fail offset check
-I don't want to do fail checks because
-1. If quicklen is inaccurate then I don't know which to trust. I don't like using a 90% accurate thing when I could make it 100% accurate but only 90% precise.
-2. The code I spent 2 days working on does not care about %, its all-or-nothing and it's frustating to take that apart.
+Both cases can be solved by this option- failing the check if no names can be read.
+Because these causes usually come from degraded pages but first I need to verify that no length can be determined from these cause it appears to work
+which means running on old video again
+Running on vod_dump to check
+
+First error was bad code check
+Error at 882
+
+
+Long term thoughts on the project
+    - I think striving for perfection for 2.0 isn't the way; I desparately need a break from this project, at least for a bit. I'm going to take the first goal: Super accurate username tracking, and leave my other goal of better OCR for now.
+
+Thoughts on run test on 2436099273
+    957-960 names, about 96% accuracy.
+    2 discontinuities occur, both due to bitrate issues.
+        - Case 1- lost about 8 names
+        - Case 2- loses about ~20 names; very hard to recover this one as it occurs over a screen boundary
+
+    Names keep having _<name>. Appears on both white/blue. Might be cause of the white border.
+    Long names have 1-2 characters cut-off. Ignoring this for now.
+
+    need fallback when only 1 name is visible
+    need to log 
+    
+    Name timing detection was a bit of a fluke. I used performance.now() which isn't accurate to the actual timing but I forgot that chat also counts as an obstacle so it's seriously messed up the logic. I need to detect offset instead- Also its 3 names not 2 off screen
 
 ---
 
-- Fix quicklength and write a UT for it
-- Test offset matching, try and get through an entire run
-- Find 
+- More run-testing, write names for debug (got 960 for current run despite no obstacles)
+- Try and debug appear/leave times
+- Think about discontinuity resolution, especially over multiple frames
+
 
 ## Think about
+- Thinking about a new paradigm for offset matching for inconsistencies
+    - Basically stitch after the fact, keep track of where the discontinuity occurred and always try to mend it until I've 
 - Instead of length check, limit by ms? 
     - Far more reliable for keeping time, but I can accept slow down as long as it runs sequentially
     - Also doesn't recover the same way
