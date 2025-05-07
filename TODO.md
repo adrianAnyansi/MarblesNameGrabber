@@ -5,6 +5,8 @@ Plan is validating individual steps then putting them together with heavy testin
 Don't think about the obstacle detection validation or individual OCR right now.
 
 # Goal - Track Every Username
+Long term thoughts on the project
+    - I think striving for perfection for 2.0 isn't the way; I desparately need a break from this project, at least for a bit. I'm going to take the first goal: Super accurate username tracking, and leave my other goal of better OCR for now.
 ---
 The goal is every single name should be tracked even if I can't read it or get a good look.
 - Internal count should match on-screen count.
@@ -44,76 +46,63 @@ The goal is every single name should be tracked even if I can't read it or get a
 [ ] Production testing
 [ ] Update UI + admin page
 
-# Focus today
-
-Discontinunity code time
-I think doing the stitching is probably not eomsething im interested in right now-
-So I'm doing some other cases first.
-Then I'll test on the other marbles (the 3-4 list one)
-
-So there are basically 2 cases-
-1. Where multiple recongitions occur and a fail match occurs (likely quicklength fails again somehow)
-2. Not enough matches and then it does a disconinuity
-
-Both cases can be solved by this option- failing the check if no names can be read.
-Because these causes usually come from degraded pages but first I need to verify that no length can be determined from these cause it appears to work
-which means running on old video again
-Running on vod_dump to check
-
-First error was bad code check
-Error at 882
-
-
-Long term thoughts on the project
-    - I think striving for perfection for 2.0 isn't the way; I desparately need a break from this project, at least for a bit. I'm going to take the first goal: Super accurate username tracking, and leave my other goal of better OCR for now.
-
-Thoughts on run test on 2436099273
-    957-960 names, about 96% accuracy.
-    2 discontinuities occur, both due to bitrate issues.
-        - Case 1- lost about 8 names
-        - Case 2- loses about ~20 names; very hard to recover this one as it occurs over a screen boundary
-
-    Names keep having _<name>. Appears on both white/blue. Might be cause of the white border.
-    Long names have 1-2 characters cut-off. Ignoring this for now.
-
-    need fallback when only 1 name is visible
-    need to log 
-    
-    Name timing detection was a bit of a fluke. I used performance.now() which isn't accurate to the actual timing but I forgot that chat also counts as an obstacle so it's seriously messed up the logic. I need to detect offset instead- Also its 3 names not 2 off screen
-
----
-
-- More run-testing, write names for debug (got 960 for current run despite no obstacles)
-- Try and debug appear/leave times
-- Think about discontinuity resolution, especially over multiple frames
-
 
 ## Think about
-- Thinking about a new paradigm for offset matching for inconsistencies
-    - Basically stitch after the fact, keep track of where the discontinuity occurred and always try to mend it until I've 
 - Instead of length check, limit by ms? 
     - Far more reliable for keeping time, but I can accept slow down as long as it runs sequentially
     - Also doesn't recover the same way
     - Since most of the issue is in the buffer, I probably can't save this anyway
-- Update and use lambda OCR
-    - IIRC, this should work with old code, I just need to read HOCR output
-    - This still needs to be rewritten with new codebase though
 - Need to track and save images whenever OCR fails/reads nothing
     - useful for debug and to help track names that don't get binarized correctly
-
 - When to do temporal, and is this accurate?
     - I think I might not need this since most names are on screen CLEAN at some point
-- Stopping mechanism without OCR? Oh I can just match the 1000/1000 check
+- Stopping mechanism without OCR? Oh I can just match the 1000/1000 check + old check
     - Just use old check, time-based after first name read
-- See if there's a pattern for name timing
-- How to detect and solve for image compression issues (probably not issue)
+
+# Current Thoughts
+So testing is in and the name prediction is not reliable enough, and again the main concern is tracking the timing especially in low name cases.
+I'm thinking about this in terms of perfection again- the fact is at ANY point the names can be obscured; how MUCH accuracy can I get? What am I working towards?
+
+Currently its 96% accurate, could be 98% if I fix the discontinuity problem.
+If I use blue/white tracking, I could maybe get temporal working. But temporal also needs bit-rate checking, which needs overlap detection, which needs-
+
+Also need to make a config separate from code so prod isn't editing code for changes/testing
+
+## Priorities
+- Blue/White tracking - this will capture the bit-rate edge cases
+- Need to split the code for prediction, its very long
+- Discontinuity tracking
+
+## Discontinuity/Stitching
+Here's how this works;
+1. When no offset can be found BUT a length can be found, create an discontinuity tracker at that position, then shift the entire screen down.
+2. As the screen continues to get filled*, server tries to stitch the disconnect back together but only if length matches, not trying to fill gaps of null.
+    This handles a full screen disconnect (i.e overlay/bitrate cant see screen and full update) without the bug that server assumes top-half is already known while the bottom screen gets matched
+3. If a match is found, remove disconunity marker and add the results of the predictedUsers together
+4. Otherwise, once the entire 2nd screen is populated (a stitch cannot be made), discontinue trying to stitch.
+
+## Blue/White tracking
+Summarizing this
+If I can track the blue/white names (particularly white), I can track offset despite bit-rate issues.
+This has to be done during length check; and will only activate as a QL backup.
+
+## Average Length
+NOTE: Need to check if this is even possible- 
+If I can determine the average length of a bit-crushed name, this is a better tracker than Blue/White.
+However this is only better when very few names are visible because the Blue/White will always work over a lot of names due to randomness.
+
+
+# Focus today
+- ~Lambda checking~ (already did it, the code works but I'd have to change things later)
+- Check if names hit the threshold of long name (around -290) and change the cropping logic
+
+- Pull the old code for bin and try and detect behind chat
+- Change server config to external
+
 
 ## Bugs
 ---
-
-- Still inaccuracies with offset (negative), usually because there's not enough testing name lengths to test with
 - Really long names offset the !play and don't get read by OCR or length
-- Some lengths are not detectable because the smear for the line is too much
 - sometimes the blue background can override the name and cause a blank read
     - need to look at the black pixels to determine colour imo?
 
@@ -188,7 +177,6 @@ Server should focus on only a few things
 3. Getting the data to the front-end when requested
 4. Managing twitch monitoring 
 
-So I need to move OCR out of this to be cleaner
 
 # ScreenState summary
 I'm gonna summarize this as I've written this too many times

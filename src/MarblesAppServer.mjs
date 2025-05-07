@@ -38,9 +38,9 @@ export class MarblesAppServer {
     static STREAMLINK_LOC = 'streamlink' // on PATH
 
     /** FPS to view stream */
-    static FFMPEG_FPS = '30'
+    static FFMPEG_FPS = 30
     /** number of frames/seconds without any valid names on them */
-    static EMPTY_PAGE_COMPLETE = 5 * parseInt(MarblesAppServer.FFMPEG_FPS)
+    static EMPTY_PAGE_COMPLETE = 5 * MarblesAppServer.FFMPEG_FPS
     
     static DEFAULT_STEAM_URL = LIVE_URL
 
@@ -65,7 +65,8 @@ export class MarblesAppServer {
             lambda: false,
             vod_dump: false,
             screen_state_log: true,
-            user_bin: false, // 
+            user_bin: false, // show logs for username binarization & no log
+            ocr_output: false,
             disable_ocr: false, // disable OCR checking
             disable_ocr_len: false, // disable pre OCR length check
             frame_pacing: false // track & output fps 
@@ -110,21 +111,6 @@ export class MarblesAppServer {
         /** @type {UsernameAllTracker} Userlist but better */
         this.usernameTracker = new UsernameAllTracker()
 
-    }
-
-    // LAMBDA Functions
-    // -------------------------------------------------------
-
-    /** Warmup lambda by sending an empty file */
-    async warmupLambda (workers) {
-        if (!this.lambdaClient) {
-            this.lambdaClient = new LambdaClient(AWS_LAMBDA_CONFIG)
-
-            let lambda_id=0
-            while (lambda_id < workers) {
-                this.sendWarmupLambda(`warmup ${lambda_id++}`)
-            }
-        }
     }
 
     // -------------------------
@@ -244,7 +230,7 @@ export class MarblesAppServer {
      */
     shutdownStreamMonitor() {
 
-        if (this.streamlinkProcess) {
+        if (this.streamlinkProcess || this.ffmpegProcess) {
             console.log("Stopping processes & image parser")
 
             if (this.streamlinkProcess) {
@@ -261,6 +247,17 @@ export class MarblesAppServer {
         }
 
         return false
+    }
+
+    
+    /**
+     * Stop stream-monitor, stop OCR but do not clear state
+     * reset base parameters
+     */
+    spinDown () {
+        this.shutdownStreamMonitor()
+        if (this.OCRManager)
+            this.OCRManager.shutdown()
     }
 
     /**
@@ -343,9 +340,13 @@ export class MarblesAppServer {
             {totalUsers:null, predictFullScreen:true}, this.ScreenState.knownScreen)
         
         /** Num of users to use for length check against prediction */
-        const LEN_CHECK_MATCH = 6;
+        // const LEN_CHECK_MATCH = 6;
         /** Actual offset from on-screen analysis */
-        let offsetMatch = null;
+        // let offsetMatch = null;
+        /** If true, do not update or check any lengths this frame and immediately quit */
+        let skipFrameBadOffset = false;
+        /** Allow offset greater than limits */
+        let allowBigOffset = false;
         /** Keep track of offset */
         const len_check_count = {
             offset_ql: 0,
@@ -355,38 +356,34 @@ export class MarblesAppServer {
         }
         
         // Reconcile offset by checking the prediction
-        // ========================================================================
-        // NOTE: always true, do not rely on prediction
-        // if (true) { //(offset === null || offset >= 0) {
-            
-        /** list of users with length checked this frame */
-        // const currLenList = []
-        // const fstLenIdx = predictedUsers.findIndex(user => user.length !== null)
+        // =======================================================================
 
         // First, get the best length to check
         const lenScoreMap = UsernameAllTracker.genLengthChecks(predictedUsers)
-        let goodMatch = false; // load-bearing semi-colon
-        offsetMatch = 0;
+        let goodMatch = false; 
+        /** Determine offset from length matching */
+        let offsetMatch = 0;
+        /** Keep track of length checks */
         const trackQLTest = []
         // loop lengths, trying to find at least 2 matches
         for (const [score, pidx] of lenScoreMap) {
             if (score == 0) break;
             
             let testIdx = pidx
-            // TODO: Limit checks based on offset minimums
-            // Roll offset and make QL more reliable
-            do {    
-                const tvUser = screenVisibleUsers.get(testIdx)
+            // TODO
+            do {
+                const offsetTestIdx = Math.max(0, testIdx - offsetMatch)
+                const tvUser = screenVisibleUsers.get(offsetTestIdx)
                 if (!tvUser || tvUser.validLength) continue // not visible or known len
 
-                await mng.getUNBoundingBox(new Map([[testIdx, tvUser]]), 
+                await mng.getUNBoundingBox(new Map([[offsetTestIdx, tvUser]]), 
                     {appear:false, length:false,
-                        quickLength:new Map([[testIdx, predictedUsers[pidx].length]])})
+                        quickLength:new Map([[offsetTestIdx, predictedUsers[pidx].length]])})
                 len_check_count.offset_ql += 1
 
-                trackQLTest.push({
+                trackQLTest.push({ // debug logging
                     vidx:pidx, 
-                    testIdx:testIdx, 
+                    testIdx:offsetTestIdx, 
                     ql:tvUser.validLength, 
                     testql:predictedUsers[pidx].length
                 })
@@ -395,7 +392,7 @@ export class MarblesAppServer {
                     tvUser.debug.qlLen = true
                     break
                 }
-            } while (--testIdx >= 0); // load-bearing ;
+            } while ((--testIdx) - offsetMatch >= 0); // load-bearing ;
 
             // Determine best prediction from result
             ({offsetMatch, goodMatch} = UsernameAllTracker.findVisualOffset(
@@ -404,55 +401,61 @@ export class MarblesAppServer {
             if (goodMatch) break
         }
 
-        if (!goodMatch) {   // set to fail-back offset
+        if (lenScoreMap.length > 0 && !goodMatch) {   // set to fail-back offset
             // TODO: do discontinuity code
             if (screenVisibleUsers.size > 3) {
-
                 const knownLenVUsers = Array.from(screenVisibleUsers.values()).filter( u => u.validLength)
-                if (knownLenVUsers.length > 0 && offsetMatch != null) {
-                    console.warn(`Only able to find 1 match in ${screenVisibleUsers.length}, allowing offset ${offsetMatch}`)
+                const lenString = `${knownLenVUsers.length}/${screenVisibleUsers.size}`
+
+                if (knownLenVUsers.length > 0) {
+                    if (offsetMatch != null) { // Found goodMatchNum-1, allow
+                        console.warn(`No offset match ${lenString}; Only 1 match, allowing offset ${offsetMatch}`)
+                    } else { // Found no match, skip (likely testing against unknown lengths)
+                        console.warn(`No offset match ${lenString}; Inconsistent match, skipping`)
+                        skipFrameBadOffset = true
+                    }
                 } else {
                     // Pick a random user and try and get length. Usually this failure occurs on bad bitrate
-                    console.warn("Discontinuity offset reconcil")
-                    offsetMatch = predictedUsers.length - predictedUsers.findLastIndex(pUser => pUser.validLength) + 1
+                    // console.warn("Discontinuity offset reconcil")
+                    // offsetMatch = predictedUsers.findLastIndex(pUser => pUser.validLength) + 1
+                    // allowBigOffset = true
+                    console.warn(`No offset match ${lenString}; Unreadable frame skipping`)
+                    skipFrameBadOffset = true
                 }
-                
-            } else if (offsetMatch == null ) {
+            } else if (offsetMatch == null) {
                 offsetMatch = 0
+                console.warn(`No offset match with ${screenVisibleUsers.size} available: set to ${offsetMatch}`)
+            } else {
+                console.warn(`Unclear offset status?`)
             }
-            console.warn(`No offset match with ${screenVisibleUsers.size} available: set to ${offsetMatch}`)
         }
 
-        if (offsetMatch > 6 || offsetMatch < -2) {
+        if (!allowBigOffset && (offsetMatch > 6 || offsetMatch < -2)) {
             console.warn(`No op offset detected`, offsetMatch)
-        } else
-        if (offsetMatch != null && offsetMatch > 0) {
-            this.usernameTracker.shiftOffset(offsetMatch); // update offset
+        } else if (offsetMatch != null && offsetMatch > 0) {
+            this.usernameTracker.shiftOffset(offsetMatch, processImgId); // update offset
             // FYI this is a load-bearing semi-colon due to destructure object {o1, o2} below
 
             // Predicted users is inaccurate, recalc
             ({predictedUsers, offset} = this.usernameTracker.predict(processImgId, 
                 {totalUsers:null, predictFullScreen:true}, this.ScreenState.knownScreen))
-        } 
-        // }
+        }
+        
+        this.ScreenState.offsetMatchFrame.push(offset)
+
+        if (skipFrameBadOffset)
+            return
 
         // After this line, the predictedUsers is verified
         // =======================================================================
-        this.ScreenState.offsetMatchFrame.push(offset)
 
-        // verify predictedUsers if not seen before
+        // mostly for debug to see track first appearance
         for (const [idx, pUser] of predictedUsers.entries()) {
             const vUserVisible = screenUsersMap.get(idx).appear
             if (!pUser.seen && vUserVisible) { // if screen is known, set seen & time
                 pUser.seen = vUserVisible
                 if (this.ScreenState.knownScreen)
                     pUser.enterFrameTime = processImgId
-            
-            // once user can't be seen, set exitingFrameTime
-            // TODO: Need to check against overlap logic imo
-            } else if (pUser.seen && pUser.debugExitFrame == null && !vUserVisible) {
-                // pUser.exitingFrameTime = performance.now()
-                pUser.debugExitFrame = processImgId
             }
         }
 
@@ -461,44 +464,66 @@ export class MarblesAppServer {
         // Now do as many length checks for visible names that do not have length checks first
         // =========================
         const LEN_LIMIT_PER_FRAME = 25; // NOTE: Maxing this for testing
-        for (const [vidx, vUser] of screenVisibleUsers.entries()) {
+        const lastVisibleIdx = Array.from(screenVisibleUsers.keys()).at(-1)
+        for (const [vidx, vUser] of screenUsersMap.entries()) {
+
+            if (vidx > lastVisibleIdx) continue; // if not on screen, dont do anything
             const pUser = predictedUsers[vidx]
+            const ocrAvailable = vidx != 23 && !this.debug_obj.disable_ocr_len
+            const shouldCheckLen = vUser.appear && vUser.lenUnchecked
             
-            if (pUser.length) continue;
-            if (vUser.lenUnchecked) { // TODO: Do multiple checks at once
+            if (!pUser.length && shouldCheckLen) {
                 await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
                 len_check_count.post_match++
-                vUser.debug.unknownLen = true // debug info
+                vUser.debug.unknownLen = true
+            } else if (ocrAvailable && pUser.readyForOCR && shouldCheckLen) {
+                // TODO: Use quick box if length already exists
+                await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
+                len_check_count.pre_ocr++
+                vUser.debug.ocrLen = true
+            } else if (!pUser.hasImageAvailable && vidx != 23 && vidx >= lastVisibleIdx) {
+                // Get ANY image to make sure I have something
+                this.captureBasicImage(pUser, vidx, mng, processImgId)
+            } else {
+                continue // skip length & ocr
             }
+
+            // TODO: Need to save image even if no length for posterity
+            
+            // if (vUser.lenUnchecked) { // TODO: Do multiple checks at once
+            //     await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
+            //     len_check_count.post_match++
+            //     vUser.debug.unknownLen = true // debug info
+            // }
             pUser.setLen(vUser.length)
-
-            if (len_check_count.post_match > LEN_LIMIT_PER_FRAME) break;
-        }
-
-        // TODO: Need to understand if length or OCR should be prioritized?
-        // There's nothing between these 2 loops
-
-        // Need to run OCR separately as length check out-priorities OCR 
-        // TODO: Get image async in-case length can't get checked this frame
-        // =========================
-        for (const [vidx, vUser] of screenVisibleUsers.entries()) {
-            if (vidx == 23) continue; // cropping fails on last index, just skip
-            if (vUser.lenUnavailable) continue; // Already failed to calc length this frame
-
-            const pUser = predictedUsers[vidx]
-            if (pUser.readyForOCR && !this.debug_obj.disable_ocr_len) {
-                if (vUser.lenUnchecked) { // must have a valid length this frame
-                    // TODO: Use quick box here
-                    await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
-                    len_check_count.pre_ocr++
-                    vUser.debug.ocrLen = true
-                }
-                pUser.setLen(vUser.length)
-                if (pUser.length && !this.debug_obj.disable_ocr) {
-                    pUser.ocr_processing = true;
-                    this.queueIndividualOCR(pUser, vidx, mng, processImgId)
-                }
+            if (pUser.length && ocrAvailable && pUser.readyForOCR) {
+                pUser.ocr_processing = true;
+                this.queueIndividualOCR(pUser, vidx, mng, processImgId)
             }
+
+        //     if (len_check_count.post_match > LEN_LIMIT_PER_FRAME) break;
+        // }
+
+        // TODO: Need to save image even if no length for posterity
+        // =========================
+        // for (const [vidx, vUser] of screenUsersMap.entries()) {
+            // if (vidx == 23) continue; // cropping fails on last index, just skip
+            // if (vUser.lenUnavailable) continue; // Already failed to calc length this frame
+
+            // const pUser = predictedUsers[vidx]
+            // if (pUser.readyForOCR && !this.debug_obj.disable_ocr_len) {
+            //     if (vUser.lenUnchecked) { // must have a valid length this frame
+            //         // TODO: Use quick box here
+            //         await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
+            //         len_check_count.pre_ocr++
+            //         vUser.debug.ocrLen = true
+            //     }
+            //     pUser.setLen(vUser.length)
+            //     if (pUser.length && !this.debug_obj.disable_ocr) {
+            //         pUser.ocr_processing = true;
+            //         this.queueIndividualOCR(pUser, vidx, mng, processImgId)
+            //     }
+            // }
         }
 
         this.ScreenState.addVisibleFrame(Array.from(screenUsersMap.values()))
@@ -508,9 +533,8 @@ export class MarblesAppServer {
         if (this.debug_obj.screen_state_log && 
             (this.ScreenState.shouldDisplaySmth || post_match_len_checks > 0)) {
             console.log(
-                `Frame_num ${imgId.toString().padStart(5, ' ')} | Offset: ${offsetMatch} | User: ${this.usernameTracker.count}\n`+
-                `V: ${this.ScreenState.visibleScreenFrame.at(-1)}`+'\n'+
-                `P: ${this.ScreenState.predictedFrame.at(-1)}`
+                `V: ${this.ScreenState.visibleScreenFrame.at(-1)} | Offset: ${offsetMatch}\n`+
+                `P: ${this.ScreenState.predictedFrame.at(-1)} | ${JSON.stringify(len_check_count)}`
             )
         }
 
@@ -519,10 +543,10 @@ export class MarblesAppServer {
 
         if (this.debug_obj.frame_pacing) {
             this.ServerState.frame_end_time[imgId] = performance.now()
-            console.log(`${this.ServerState.frameAvg(imgId)} Curr Frame:${this.ServerState.frameTiming(imgId).toFixed(2)}ms lenChecks ${JSON.stringify(len_check_count)}`)
+            console.log(`${this.ServerState.frameAvg(imgId)} Curr Frame:${this.ServerState.frameTiming(imgId).toFixed(2)}ms`)
         }
 
-        console.log('--- End Frame ---')
+        console.log(`-- End Frame_num ${imgId.toString().padStart(5, ' ')} -- Total Users: ${this.usernameTracker.count} `)
 
     }
 
@@ -543,7 +567,6 @@ export class MarblesAppServer {
             console.warn("Failed to crop the image correctly")
             return
         }
-        // console.log(`Queuing OCR user vidx: ${visibleIdx} index ${user.index}`)
 
         const binUserImg = await mng.binTrackedUserName([sharpBuffer])
         if (this.debug_obj.user_bin)
@@ -552,7 +575,6 @@ export class MarblesAppServer {
         const binSharp = SharpImg.FromRawBuffer(binUserImg).toSharp({toJPG:true, scaleForOCR:true})
         const binBuffer = await binSharp.toBuffer()
 
-        // await this.nativeTesseractProcess(pngBuffer)
         await this.OCRManager.queueOCR(binBuffer)
         .then( async ({data, info, jobId, time}) => {
 
@@ -567,11 +589,13 @@ export class MarblesAppServer {
                 const text = line.text.trim()
                 const saveImg = await sharpBuffer.toSharp({toJPG:true}).toBuffer()
                 user.addImage(saveImg, text, line.confidence);
+                user.ocr_time = time
                 this.usernameTracker.updateHash(text, user)
                 // TODO: NOTE this will double if multiple lines get detected somehow
             }
             
-            console.log(`Recognized name #${processImgId} @ ${user.index} as ${user.name} conf:${user.confidence.toFixed(1)}% in ${time.toFixed(0)}ms`)
+            if (this.debug_obj.ocr_output)
+                console.log(`Recognized name #${processImgId} @ ${user.index} as ${user.name} conf:${user.confidence.toFixed(1)}% in ${time.toFixed(0)}ms`)
         })
         .finally(
             _ => {
@@ -581,85 +605,22 @@ export class MarblesAppServer {
         
     }
 
-
-    // -----------------------
-    // LAMBDA FUNCTIONS
-    // -----------------------
-
     /**
-     * Sends image file to lambda function, which returns a payload containing the tesseract information
-     * 
-     * @param {Buffer} imgBuffer An buffer containing a png image
-     * @returns {Promise} Promise containing lambda result with tesseract info. Or throws an error
+     * Crop individual image at -300 to ensure something is captured
+     * @param {TrackedUsername} user 
+     * @param {number} visibleIdx current index on this frame
+     * @param {UserNameBinarization} mng binarization object
+     * @param {number} processImgId img_processed image
      */
-    // async sendImgToLambda(bufferCrop, imgMetadata, info, jobId='test', lambdaTest=false) {
+    async captureBasicImage (user, visibleIdx, mng, processImgId) {
 
-    //     const payload = {
-    //         buffer: bufferCrop.toString('base64'),
-    //         imgMetadata: imgMetadata,
-    //         info: info,
-    //         jobId: jobId,
-    //         test: lambdaTest
-    //     }
-
-    //     const input = { // Invocation request
-    //         FunctionName: "OCR-on-Marbles-Image",
-    //         InvocationType: "RequestResponse",
-    //         LogType: "Tail",
-    //         // ClientContext: "Context",
-    //         Payload: JSON.stringify(payload), // stringified value
-    //         // Qualifier: "Qualifier"
-    //     }
-
-        
-    //     const command = new InvokeCommand(input)
-    //     console.debug(`Sending lambda request ${jobId}`)
-    //     let result = await this.lambdaClient.send(command)
-
-    //     if (result['StatusCode'] != 200)
-    //         throw Error(result["LogResult"])
-    //     else {
-    //         let resPayload = JSON.parse(Buffer.from(result["Payload"]).toString())
-    //         // let {data, info, jobId} = resPayload
-    //         return resPayload
-    //     }
-    // }
-
-    /** Send Warmup request to lambda */
-    // async sendWarmupLambda(jobId='test') {
-
-    //     const payload = {
-    //         buffer: "",
-    //         jobId: jobId,
-    //         warmup: true
-    //     }
-
-    //     const input = { // Invocation request
-    //         FunctionName: "OCR-on-Marbles-Image",
-    //         InvocationType: "RequestResponse",
-    //         LogType: "Tail",
-    //         Payload: JSON.stringify(payload), // stringified value
-    //     }
-
-        
-    //     const command = new InvokeCommand(input)
-    //     console.debug(`Sending lambda warmup ${jobId}`)
-    //     return this.lambdaClient.send(command)
-    //     .then(resp => resp['StatusCode'])
-
-    // }
-
-    /**
-     * Stop stream-monitor, stop OCR but do not clear state
-     * reset base parameters
-     */
-    spinDown () {
-        this.shutdownStreamMonitor()
-        if (this.OCRManager)
-            this.OCRManager.shutdown()
-        // if (this.OCRScheduler)
-        //     this.OCRScheduler.jobQueue = 0
+        const sharpBuffer = await mng.cropTrackedUserName(visibleIdx, -300)
+        const saveImg = await sharpBuffer.toSharp({toJPG:true}).toBuffer()
+        user.addImage(saveImg, null, -1);
+        if (this.debug_obj.ocr_output)
+            console.log(`Add generic image for #${processImgId} @ ${user.index}`)
     }
+
 
     // --------------------------------------------------------------------
     // Router/Server functions
@@ -882,7 +843,7 @@ export class MarblesAppServer {
                 console.debug(`Parse filename ${fileName}`)
                 filePromiseList.push(this.handleImage(filepath, fileIdx))
                 // Wait FPS time
-                await setTimeout(1_000 / parseInt(MarblesAppServer.FFMPEG_FPS), `Sent ${fileName}`)
+                await setTimeout(1_000 / MarblesAppServer.FFMPEG_FPS, `Sent ${fileName}`)
             }
             
             this.ServerState.enterStopState()
@@ -916,15 +877,18 @@ export class MarblesAppServer {
         console.debug(`Test against name list, len: ${user_list.length}`)
 
         let totalScore = 0;
-        const [scoreArr, notFound] = [[], []];
+        /** @type {number[]} */
+        const scoreArr = [];
+        /** @type {string[]} */
+        const notFound = [];
 
         for (const [idx, name] of user_list.entries()) {
             const list = this.find(name)
-            const bestDistScore = list[0][0]
+            const bestDistScore = list?.at(0)?.at(0) ?? Infinity
             scoreArr.push(bestDistScore)
             totalScore += bestDistScore;
             if (bestDistScore > 7) {
-                notFound.push(`[${idx}]${name}`)
+                notFound.push(`[${idx.toString().padStart(' ', 4)}] ${name}`)
             }
         }
 
@@ -941,11 +905,13 @@ export class MarblesAppServer {
             }
         }
 
-        console.debug(`Score Map: ${Array.from(map.entries()).sort().map(([key, val]) => `${[key]}=${val}`).join('\n')} `)
-        console.debug(`Final score: ${totalScore}, mean: ${totalScore/nameList.length}`)
-        console.debug(`median: ${median}, avg-non-perfect ${nonPerfectAvg/nonPerfectCount}`)
-        console.debug(`Not found list [${notFound.length}]: \n${notFound.join(', ')}`)
-        // console.debug(`Completed test in ${((ed-st)/(60*1000)).toFixed(3)}m`)
+        const scoreMap = `Score Map: ${Array.from(map.entries()).sort().join('|')}`;
+        const stats = [`Final score: ${totalScore}, mean: ${(totalScore/user_list.length).toFixed(2)}`,
+            `median: ${median}, avg-non-perfect ${(nonPerfectAvg/nonPerfectCount).toFixed(2)}`,
+            `Not found list (${notFound.length}): ${notFound.join(', ')}`,
+            `Completed test in ${listTest_sw.time}`]
+
+        console.debug(scoreMap, stats.join('\n'))
         
     }
 }

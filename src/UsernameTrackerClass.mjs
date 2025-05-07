@@ -624,7 +624,7 @@ export class UsernameSearcher {
      * @param {String} searchUsername username to search for
      * @param {TrackedUsername[]} userNameList List of username objects (must have .aliases property)
      * @param {Number} lowestRank Lowest rank to consider, otherwise match is ignored
-     * @returns {LimitedList} 
+     * @returns {Array<number, string>} 
      */
     static find (searchUsername, userNameList, lowestRank=Infinity, lowerCasePenalty=true) {
         // Attempt to find the 5 closest usernames to this text
@@ -636,7 +636,7 @@ export class UsernameSearcher {
         for (const userObj of userNameList) {
             if (!userObj) continue
             for (const userAlias of userObj.aliases) {
-                // const testUsername = userAlias
+                if (userAlias == null) continue;
                 const dist = UsernameSearcher.calcLevenDistance(searchUsername, userAlias, currentMax, lowerCasePenalty)
                 const userRankObj = [dist, userObj]
 
@@ -740,7 +740,10 @@ export class TrackedUsername {
         // this.exitFrameTime = undefined
         this.debugExitFrame = null
 
-        /** @type {UserImage<>} images of the user */
+        /** @type {number} Time taken to recognize the name */
+        this.ocr_time = null
+
+        /** @type {UserImage[]} images of the user */
         this.partialImgList = []
 
         /** @type {ArrayBuffer} Image to display to user */
@@ -824,6 +827,13 @@ export class TrackedUsername {
     }
 
     /**
+     * Get if length is a valid value
+     */
+    get validLength () {
+        return this.length < 0
+    }
+
+    /**
      * Add new image to the user
      * @param {Buffer} jpgBuffer 
      * @param {string} name 
@@ -838,8 +848,14 @@ export class TrackedUsername {
             this.confidence = confidence
             this.bestImg = jpgBuffer
         }
-        this.aliases.add(name)
-    } 
+        if (name != null)
+            this.aliases.add(name)
+    }
+
+    /** Determine if user has an image */
+    get hasImageAvailable() {
+        return this.partialImgList.length > 0
+    }
 
     /**
      * Checks if user is available for OCR processing
@@ -865,7 +881,8 @@ export class TrackedUsername {
             aliases: Array.from(this.aliases.keys()),
             enterTime: this.enterFrameTime,
             // exitingTime: this?.debugexitFrame
-            debugExitTime: this.debugExitFrame
+            debugExitTime: this.debugExitFrame,
+            timeOnScreen: (this.debugExitFrame ?? Infinity) - this.enterFrameTime
         }
     }
 }

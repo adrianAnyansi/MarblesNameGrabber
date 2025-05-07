@@ -7,7 +7,7 @@ import { ColorSpace, UserNameBinarization, VisualUsername } from "../UsernameBin
 import sharp from 'sharp'
 import { Color, Direction2D, SharpImg } from '../ImageModule.mjs';
 import { Stopwatch, iterateN } from '../UtilityModule.mjs';
-import { NativeTesseractOCRManager, TestTesseractOCRManager } from '../OCRModule.mjs';
+import { LambdaOCRManager, NativeTesseractOCRManager, TestTesseractOCRManager } from '../OCRModule.mjs';
 import { TrackedUsername, UsernameAllTracker } from '../UsernameTrackerClass.mjs';
 
 const testingFolder = String.raw`testing\\`;
@@ -346,6 +346,26 @@ test ("Test OCR Promise Queue", {skip: "Long promise queue test"}, async () => {
         list.push(ocrm.queueOCR())
     }
     await Promise.all(list)
+})
+
+test ("Test Send image for OCR Lamba", async () => {
+    
+    const filename = "testing/singleLineText.png"
+
+    const lambdaOCRM = new LambdaOCRManager(10, true)
+    const sharpImg = new SharpImg(filename)
+    const promWait = [
+        sharpImg.toSharp({toJPG:true, scaleForOCR:true}).toBuffer(),
+        // sharpImg.buildBuffer() // dont need buffer but metadata
+    ]
+    await Promise.all(promWait)
+    const jpgBuffer = (await promWait[0])
+    // const jpgSharpImg = new SharpImg(jpgBuffer)
+    const imgMetadata = {w:1920, h:1080}
+    // const info = {w: }
+    
+    const lambdaRet = await lambdaOCRM.sendImgToLambda(jpgBuffer, imgMetadata, null, "unittest-job", true)
+    console.log(JSON.stringify(lambdaRet))
 })
 
 

@@ -69,9 +69,9 @@ export class OCRManager {
 
     /**
      * Shutdown the OCR, quitting workers and releasing resources
+     * Really only Node workers use this
      */
     shutdown () {
-
     }
 
     /**
@@ -351,11 +351,14 @@ export class LambdaOCRManager extends OCRManager {
     static NAME = "LambdaTesseract"
     static AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
     // static USE_LAMBDA = true
-    // static NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
+    static NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
 
-    constructor (concurrency=null, debug=false, hocr=true) {
-        super(concurrency, debug)
+    constructor (expectedWorkers=LambdaOCRManager.DEFAULT_WORKERS, 
+            debug=false, hocr=true) {
+        // concurrency is handled by lambda*
+        super(null, debug)
 
+        this.expectedWorkers = expectedWorkers
         // this.lambdaQueue = 0
         if (this.debug)
             LambdaOCRManager.AWS_LAMBDA_CONFIG["logger"] = console
@@ -366,19 +369,25 @@ export class LambdaOCRManager extends OCRManager {
     }
     
     get queueSize () {
-        return this.lambdaQueue
+        return this.lambdaQueueNum
     }
 
     warmUp() {
         let lambda_id = 0
-        while (lambda_id < workers) {
-            this.sendWarmupLambda(`warmup ${lambda_id++}`)
+        while (lambda_id < this.expectedWorkers) {
+            this.lambdaQueueNum++
+            this.sendWarmupLambda(`warmup ${lambda_id++}`).then( _ => 
+                this.lambdaQueueNum--
+            )
         }
     }
 
-    /** Send Warmup request to lambda */
+    /** Send Warmup request to lambda, 
+     * lambda knows to ignore buffer content and just load workers
+     * @param {string} [jobId='test'] jobId to label lambda job
+     * @returns {Promise<number>} returns the status code of the request
+    */
     async sendWarmupLambda(jobId='test') {
-
         const payload = {
             buffer: "",
             jobId: jobId,
@@ -393,7 +402,8 @@ export class LambdaOCRManager extends OCRManager {
         }
 
         const command = new InvokeCommand(input)
-        console.debug(`Sending lambda warmup ${jobId}`)
+        if (this.debug)
+            console.debug(`Sending lambda warmup ${jobId}`)
         return this.lambdaClient.send(command)
             .then(resp => resp['StatusCode'])
 
@@ -410,10 +420,14 @@ export class LambdaOCRManager extends OCRManager {
     /**
      * Sends image file to lambda function, which returns a payload containing the tesseract information
      * 
-     * @param {Buffer} input_buffer An buffer containing a image
-     * @returns {Promise} Promise containing lambda result with tesseract info. Or throws an error
+     * @param {Buffer} input_buffer An buffer containing a image, raw or not depends on options
+     * @param {Object} imgMetadata The w/h of the root image
+     * @param {Object} info The full info of the current buffer (on raw)
+     * @returns {Promise<Object>} Promise containing lambda result with tesseract info. Or throws an error
      */
     async sendImgToLambda(input_buffer, imgMetadata, info, jobId='test', lambdaTest=false) {
+
+        const lambda_sw = new Stopwatch()
         const payload = {
             buffer: input_buffer.toString('base64'),
             imgMetadata: imgMetadata,
@@ -435,13 +449,19 @@ export class LambdaOCRManager extends OCRManager {
         const command = new InvokeCommand(input)
         if (this.debug)
             console.debug(`Sending lambda request ${jobId}`)
-        let result = await this.lambdaClient.send(command)
+        const result = await this.lambdaClient.send(command)
+        lambda_sw.stop()
 
         if (result['StatusCode'] != 200)
             throw Error(result["LogResult"])
         else {
             let resPayload = JSON.parse(Buffer.from(result["Payload"]).toString())
             // let {data, info, jobId} = resPayload
+            // manually setting these
+            resPayload["info"] = LambdaOCRManager.NAME
+            resPayload["time"] = lambda_sw.read()
+            resPayload["jobId"] = jobId
+
             return resPayload
         }
     }

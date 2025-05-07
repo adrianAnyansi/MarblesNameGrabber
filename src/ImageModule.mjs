@@ -551,8 +551,7 @@ export class SharpImg {
                     height: this.imgBuffer.height, 
                     channels: this.imgBuffer.channels, 
                 }
-                // TODO: Update if I decide to handle premultiplied
-                // premultiplied: this.bufferSize.premultiplied}
+                // TODO: premultiplied: this.bufferSize.premultiplied}
             })
         else if (this.sharpImg)
             bufferPromise = this.sharpImg

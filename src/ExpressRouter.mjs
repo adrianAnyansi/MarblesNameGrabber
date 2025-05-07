@@ -140,6 +140,17 @@ server.post('/localTest', async (req, res) => {
     }
 })
 
+server.post('/user_list_test', async (req, res) => {
+    const userlist = req.query?.source
+
+    try {
+        const json_resp = await app_server.testAgainstList(null, userlist)
+        res.send(json_resp)
+    } catch (err) {
+        res.status(400).send(`Error occurred during testList ${err}`)
+    }
+})
+
 
 server.listen(PORT, (socket) => {
     let server_env = (env == 'development') ? 'DEV' : 'PROD'
