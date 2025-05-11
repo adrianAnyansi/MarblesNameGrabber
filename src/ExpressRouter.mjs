@@ -56,10 +56,10 @@ server.post(['/start', '/start/{*route}'], (req, res) => {
 server.all(['/force'], (req, res) => {
     
     console.log(`Recieved FORCE command ${req.originalUrl}.`)
-    if (app_server.ServerState.notReading) {
+    if (app_server.ServerStatus.notReading) {
         app_server.start()
         // Now into wait state if not started previously
-        app_server.ServerState.enterReadState()
+        app_server.ServerStatus.enterReadState()
         res.json({'res':"Forced into READING state"})
         // TODO: Tell users that it started late
     } else {
@@ -131,6 +131,10 @@ server.post('/localTest', async (req, res) => {
     const ocrType = req.query?.ocr
     const skipTo = parseInt(req.query?.skipTo, 10) ?? null
     const vodDump = req.query?.vodDump ?? false
+    const listSource = req.query?.listSource
+
+    if (listSource)
+        app_server.ServerStatus.localListSource = listSource
 
     try {
         const json_resp = await app_server.localTest(source, ocrType, vodDump, skipTo)

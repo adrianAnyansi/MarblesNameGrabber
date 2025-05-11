@@ -21,13 +21,14 @@ export class ColorSpace {
      * @param {[Number]} center 
      * @param {[Number]} rot 
      */
-    constructor(min, max, center, rot) {
+    constructor(min, max, center, rot, name) {
         this.min = min
         this.max = max
         this.center = center
         this.rot = rot
+        this.name = name
 
-        /**  @type {Map<number, number[]>} internal cache of colors, which can be toggled class wide */
+        /**  @type {Map<string, number[]>} internal cache of colors, which can be toggled class wide */
         this.cache = new Map();
     }
     
@@ -40,7 +41,7 @@ export class ColorSpace {
         return retObj
     }
 
-    static ImportCube(jsonObj) {
+    static ImportCube(jsonObj, colorName) {
         const {l,w,h} = jsonObj.dim
         const {x,y,z} = jsonObj.center
         const center = [x,y,z]
@@ -48,24 +49,20 @@ export class ColorSpace {
         const min = [-l/2, -w/2,    -h/2]
         const max = [ l/2,  w/2,     h/2]
 
-        return new ColorSpace(min, max, center, jsonObj.matrix)
+        return new ColorSpace(min, max, center, jsonObj.matrix, colorName)
     }
 
-    static CACHE_ACTIVE = true;
+    static CACHE_ENABLED = true;
 
     translatePoint(point) {
         // translation
-        const t_point = 
-            [this.center[0] - point[0],
+        const t_point = new Float32Array([
+            this.center[0] - point[0],
             this.center[1] - point[1],
-            this.center[2] - point[2]];
-        // return t_point
-
-        // rotation
-        let r_point = undefined;
-        // TODO: If identity matrix, skip this
-        // NOTE: This rotation is kills performance, by like a LOT
-        r_point = rotPoint(this.rot, t_point)
+            this.center[2] - point[2]
+        ]);
+        
+        const r_point = (this.rot) ? rotPoint(this.rot, t_point) : t_point
         return r_point
     }
 
@@ -73,12 +70,13 @@ export class ColorSpace {
      * Checks if sent point is within the colorSpace
      * NOTE: alpha is discarded
      * @param {Array[number]} point 
+     * @param {number} scale divide point by scale to reduce point dis
      * @returns {boolean} if point is within this color space
      */
-    check (point) {
+    check (point, scale=1) {
         let r_point = undefined;
         // retrieve cache
-        if (ColorSpace.CACHE_ACTIVE) {
+        if (ColorSpace.CACHE_ENABLED) {
             const hashColor = Color.toHex(point)
             r_point = this.cache.get(hashColor)
             if (r_point === undefined) {
@@ -88,11 +86,18 @@ export class ColorSpace {
         } else {
             r_point = this.translatePoint(point)
         }
-        
-        for (const idx in this.min) {
-            if (r_point[idx] < this.min[idx]) return false
-            if (r_point[idx] > this.max[idx]) return false
+        if (scale != 1) {
+            r_point = new Float32Array([
+                r_point[0]/scale,
+                r_point[1]/scale,
+                r_point[2]/scale,
+            ])
         }
+
+        if (r_point[0] < this.min[0] || r_point[0] > this.max[0] ||
+            r_point[1] < this.min[1] || r_point[1] > this.max[1] ||
+            r_point[2] < this.min[2] || r_point[2] > this.max[2]) return false
+        
         return true;
     }
 
@@ -107,7 +112,7 @@ export class ColorSpace {
     }
 
     getPoint(rgba) {
-        if (ColorSpace.CACHE_ACTIVE) {
+        if (ColorSpace.CACHE_ENABLED) {
             const hashColor = Color.toHex(rgba)
             return this.cache.get(hashColor)
         } else {
@@ -120,6 +125,7 @@ export class ColorSpace {
     // Load color cube data
     static COLORCUBE_JSON = JSON.parse(fs.readFileSync(resolve("data/colorcube.json"), "utf-8"))
 
+    /** @type {Object<string, ColorSpace>} */
     static COLORS = {
         // SUB_BLUE: ColorSpace.ImportCube(this.COLORCUBE_JSON.SUB_BLUE),
     }
@@ -128,7 +134,7 @@ export class ColorSpace {
 // NOTE: Could set up this in the ColorSpace & etc 
 // but whatever, its in this module if you use it
 for (const color in ColorSpace.COLORCUBE_JSON) {
-    ColorSpace.COLORS[color] =  ColorSpace.ImportCube(ColorSpace.COLORCUBE_JSON[color])
+    ColorSpace.COLORS[color] =  ColorSpace.ImportCube(ColorSpace.COLORCUBE_JSON[color], color)
 }
 console.log(`[UsernameBinarization] Imported ${Object.keys(ColorSpace.COLORS).length} colors!`)
 
@@ -208,6 +214,12 @@ export class VisualUsername {
          * if negative, valid value.
         */
         this.length = length
+
+        /**
+         * Colorspace color detected
+         */
+        this.color = null
+
         /** debug object for tracking some things */
         this.debug = {
             /** length matched  */
@@ -964,15 +976,14 @@ export class UserNameBinarization {
      * @param {Object} checkDetails 
      * @param {boolean} [checkDetails.appear=true] check that this user exists (right line)
      * @param {boolean} [checkDetails.length=true] check the length of the user
+     * * @param {boolean} [checkDetails.color=true] check the color of the user
      * @param {Map<number, number>} [checkDetails.quickLength] check length at x_coord
      * 
      * @returns {Promise<Map<number,VisualUsername>>} retObj, sparse* array {appear:bool, length:number, quickLen:bool}
      */
-    async getUNBoundingBox(usersToCheck=null, {appear=true, length=true, quickLength=new Map()}) {
+    async getUNBoundingBox(usersToCheck=null, {appear=true, length=true, color=false, quickLength=new Map()}) {
 
-        let un_bound_box = null
-        if (this.debug)
-            un_bound_box = new Stopwatch()
+        const un_bound_box = this.debug ? new Stopwatch() : null;
         
         const imgBuffer = await this.sharpImg.buildBuffer();
         
@@ -996,28 +1007,24 @@ export class UserNameBinarization {
 
         for (const [userIndex, visualUser] of usersToCheck.entries()) {
 
+            /** @type {number} y_coord relative to the top of the user box */
             const user_y_start = UN_TOP_Y + UN_BOX_HEIGHT * userIndex
 
             const user_perf_sw = new Stopwatch()
+            /** @type {boolean | undefined} is user enabled for quickLength check */
             const userQLCheck = quickLength && quickLength.get(userIndex)
             const IsUserIndex23 = userIndex == 23
 
             // check the right side wall
             if (appear) {
-                const APPEAR_MIN = 15
+                const APPEAR_MIN = !IsUserIndex23 ? 13 : 9
                 // TODO: during exitingState, this can trigger on the A of Play (edge-case)
                 // detect the top/bottom lines to verify this as well
                 let right_match = 0
                 for (let d=UN_BOX_HEIGHT/4; d < UN_BOX_HEIGHT * 3/4; d++) {
                     if (IsUserIndex23 && user_y_start+d >= imgBuffer.height) break
                     
-                    // const rightLine = this.checkLine(UN_RIGHT_X, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
                     const rightLine = this.checkLineThres(UN_RIGHT_X, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
-                    // continue;
-                    // if (rightLine != rightLine2) {
-                    //     console.warn('diff ', rightLine, rightLine2)
-                    //     imgBuffer.setPixel(UN_RIGHT_X, user_y_start+d, Color.GREEN)
-                    // }
                     if (rightLine) {
                         right_match++
                         if (this.debug) imgBuffer.setPixel(UN_RIGHT_X, user_y_start+d, Color.RED)    
@@ -1150,121 +1157,55 @@ export class UserNameBinarization {
                     console.log(`Length detect took #${userIndex} ${user_perf_sw.time}`)
             } // userbox if-length check
 
-            if (false && length && !userQLCheck) {
-                if (visualUser.lenUnavailable) continue;
+            if (color && visualUser.appear && !visualUser.color) {
+                // pick an arbitary spot/letter to check
+                const user_y_range = [64,64+28] // 16 is the width of the underscore + kerning, 64 is arbitary sample spot
+                const sample_y = 26; // 26 pixels covers the low = underscore & high = Most capitals
+                const user_x_range = [UN_BOX_HEIGHT/2 - sample_y/2, UN_BOX_HEIGHT/2 + sample_y/2]
+                // const magicNum = 17;
 
-                // NOTE: Could bin-search this but could be inaccurate if there's a line somewhere else
-                const [lx, _ly] = this.followUsernameLine(
-                        UN_RIGHT_X-20, user_y_start, imgBuffer, Direction2D.LEFT, Direction2D.DOWN);
+                /** @type {Map<ColorSpace, number>} */
+                const colorSpaceResult = new Map()
+                const MATCH_LIMIT = 12;
+                const resultArr = []
+
+                outer: for (const ux of iterateN(...user_y_range)) {
+                    for (const uy of iterateN(...user_x_range)) {
+
+                        const testPoint = [UN_RIGHT_X - ux, user_y_start+uy]
+                        const px_rgb = imgBuffer.getPixel(...testPoint)
+
+                        for (const colorSpace of Object.values(ColorSpace.COLORS)) {
+                            if (colorSpace.check(px_rgb, 1.3)) {
+                                const num = colorSpaceResult.get(colorSpace) ?? 0
+                                if (num >= MATCH_LIMIT) {
+                                    resultArr.push(colorSpace)
+                                    imgBuffer.setPixel(...testPoint, Color.PINK)
+                                    break outer;
+                                }
+                                colorSpaceResult.set(colorSpace, num + 1)
+                                
+                                if (this.debug)
+                                    imgBuffer.setPixel(...testPoint, Color.AQUA)
+                                // break; // break the colorspace check
+                            }
+                        }
+                    }
+                }
+
+                if (resultArr.length > 1) {
+                    console.warn("Multiple matches")
+                } else {
+                    visualUser.color = resultArr[0]
+                }
 
                 if (this.debug)
-                    console.log(`Line follow detect took #${userIndex} ${user_perf_sw.time}`)
-                // console.log(`Line-follow took ${performance.measure('line-follow', userstart).duration}`)
-                // 7ms
+                    console.log(`User color check #${userIndex} = ${visualUser.color?.name} took ${user_perf_sw.time}`)
 
-                // Verify that rounded outline exists to increase the accuracy
-
-                /** Pixels to RIGHT to start checking from top-edge match */
-                const CHECK_FROM_RIGHT_X = 2
-                /** Pixels to LEFT to end checking from top-edge match */
-                const CHECK_TO_LEFT_X = -11
-                /** Pixels required to match left edge box */
-                const leftEdgeLineMatch = 12
-                /** When iterating from right->left, keep & skip line matches from N pixels back */
-                const MAX_CORNER_BUFFER = 4
-                // Because index 23 only contains top corner, require only half match num
-                /** Pixels required to match rounded corners of box */
-                const CORNER_MATCH = userIndex == 23 ? 3 : 6
-
-                const matchCornerYToX = new Map()
-
-                // NOTE: The first item is mirrored on the bottom, do this programmatically
-                // TODO: Tweak this with actual math & testing
-                const cornerMatchTemplate = {
-                    [1]: [8, 2],
-                    [2]: [7, 2],
-                    [3]: [5, 1],
-                    [4]: [4, 1],
-                    [5]: [2, 2],
-                    [6]: [1, 1],
-                    
-                    [UN_BOX_HEIGHT-1]: [8, 2],
-                    [UN_BOX_HEIGHT-2]: [7, 2],
-                    [UN_BOX_HEIGHT-3]: [5, 1],
-                    [UN_BOX_HEIGHT-4]: [4, 1],
-                    [UN_BOX_HEIGHT-5]: [2, 2],
-                    [UN_BOX_HEIGHT-6]: [1, 1],
-                }
-                
-
-                leftfind: for (let x_offset=CHECK_FROM_RIGHT_X; x_offset > CHECK_TO_LEFT_X; x_offset--) {
-                    const x_start = lx + x_offset;
-                    let matchesForLine = 0;
-                    for (let dy=0; dy < UN_BOX_HEIGHT; dy++) {
-                        // TODO: Skip checks if corner buffer already there
-                        if (user_y_start+dy >= imgBuffer.height) break
-                        const testPoint = [x_start, user_y_start+dy]
-                        const leftLine = this.checkLineThres(...testPoint, imgBuffer, 1,  Direction2D.RIGHT)
-                        // if (leftLine != leftLine2) {
-                        //     console.warn('left diff ', leftLine, leftLine2)
-                        //     imgBuffer.setPixel(...testPoint, Color.GREEN)
-                        // }
-                        if (leftLine) {
-                            if (this.debug) imgBuffer.setPixel(...testPoint, Color.YELLOW)
-
-                            const Ypx = matchCornerYToX.get(dy)
-                            if (!Ypx || Ypx - x_offset > MAX_CORNER_BUFFER ) {
-                                matchCornerYToX.set(dy, x_offset)
-                            }
-                            matchesForLine += 1
-                        }
-                    }
-                    if (this.debug)
-                        console.log(`Left edge ${matchesForLine} find detect took #${userIndex} ${user_perf_sw.time}`)
-
-                    if (matchesForLine > leftEdgeLineMatch) {
-                        // this qualifies as a possible left edge, check for rounded corners
-                        const currLineX = x_offset;
-                        let cornerMatches = 0
-                        for (const crnYPosStr in cornerMatchTemplate) {
-                            const crnYPos = parseInt(crnYPosStr)
-                            const [crnXPos, crnRange] = cornerMatchTemplate[crnYPosStr]
-                            const cornerPxMatch = Math.abs(matchCornerYToX.get(crnYPos) - (currLineX+crnXPos)) <= crnRange
-                            if (cornerPxMatch) cornerMatches += 1
-                        }
-
-                        if (cornerMatches >= CORNER_MATCH) {
-                            // consider this a match and solve
-                            visualUser.length = lx+currLineX - UN_RIGHT_X
-                            if (!this.debug)
-                                break leftfind;
-
-                            // If debug, consider this a match, color this up
-                            for (const [user_y_offset, x_offset] of matchCornerYToX.entries()) {
-                                if (!cornerMatchTemplate[user_y_offset]) continue
-                                // const user_y_offset = parseInt(user_y_offset)
-                                // const x_offset = matchCornerYToX.get(user_y_offset)
-                                const [crn_x_offset, crnRange] = cornerMatchTemplate[user_y_offset]
-
-                                if (this.debug && Math.abs(x_offset - (currLineX+crn_x_offset)) <= crnRange)
-                                    imgBuffer.setPixel(lx+x_offset, user_y_start+user_y_offset, Color.HOT_PINK)
-                            }
-                            if (this.debug)
-                                imgBuffer.setPixel(lx+currLineX, user_y_start+20, Color.RED)
-
-                        }
-                        if (this.debug)
-                            console.log(`Left box detect took #${userIndex} ${user_perf_sw.time}`)
-                    }
-                }
-                if (!visualUser.length)
-                    visualUser.length = null
-                // if (userBoxList[userIndex].length == undefined) 
-                //     userBoxList[userIndex].length = null
-            } // userbox if-length check
+            } // userbox color-check
 
             if (this.debug)
-                console.log(`User check took took #${userIndex} ${user_perf_sw.time}`)
+                console.log(`All User check #${userIndex} took ${user_perf_sw.time}`)
         } // per user check
 
         // 13ms
@@ -1389,7 +1330,7 @@ export class UserNameBinarization {
 
         const blurPixel = 1; // How many pixels to check for plane
         const PX_DIFF = 150 // Expected 
-        const DIFF_TO_LINE = 72; 
+        const DIFF_TO_LINE = 65; // was about 72
         // This isn't consistent, reducing this but need the cliff
         const DIFF_TO_MAX = 30;
         const BG_CH_MAX = 180; // background max channel color

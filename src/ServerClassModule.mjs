@@ -361,6 +361,8 @@ export class ServerStatus {
         /** @type {DOMHighResTimeStamp[]} tracking frame finish parsing time */
         this.frame_end_time = []
 
+        /** @type {string} if true, queue a user list source check */
+        this.localListSource = null;
     }
 
     /** Clear all tracked values */

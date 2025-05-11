@@ -37,14 +37,22 @@ export function toPct(decimal) {
  */ 
 export function rotPoint (rotMatrix, pointMatrix) {
 
-    const resPoint = [0, 0, 0]
-    for (let i in rotMatrix[0]) {
-        for (let j in pointMatrix) {
-            resPoint[i] += rotMatrix[i][j] * pointMatrix[j]
-        }
-    }
+    // const resPoint = [0, 0, 0]
+    const [x, y, z] = [...pointMatrix]
+    // const resPoint = new Float32Array(3)
 
-    return resPoint
+    pointMatrix[0] = x * rotMatrix[0][0] + y * rotMatrix[1][0] + z * rotMatrix[2][0];
+    pointMatrix[1] = x * rotMatrix[0][1] + y * rotMatrix[1][1] + z * rotMatrix[2][1];
+    pointMatrix[2] = x * rotMatrix[0][2] + y * rotMatrix[1][2] + z * rotMatrix[2][2];
+    return pointMatrix
+
+    // for (let i in rotMatrix[0]) {
+    //     for (let j in pointMatrix) {
+    //         resPoint[i] += rotMatrix[i][j] * pointMatrix[j]
+    //     }
+    // }
+
+    // return resPoint
 }
 
 /**

@@ -82,8 +82,8 @@ export class Stopwatch {
  * @param {number} endAt int to stop at (not inclusive)
  * @param {number} start integer to start at
  */
-export function iterateN(endAt, start = 0) {
-    const iterDir = endAt > start ? 1 : -1;
+export function iterateN(endAt, start = 0, step=1) {
+    const iterDir = endAt > start ? 1 * step : -1 * step;
     return {
         [Symbol.iterator]() {
             let count = start - iterDir;
@@ -92,7 +92,7 @@ export function iterateN(endAt, start = 0) {
             return {
                 next() {
                     count += iterDir;
-                    if ((iterDir == 1 && count >= end) || (iterDir == -1 && count <= end))
+                    if ((iterDir > 0 && count >= end) || (iterDir < 0 && count <= end))
                         return { done: true, value: count };
                     else return { done: false, value: count };
                 }
@@ -111,3 +111,17 @@ export function iterateRN(startAt, end=0) {
     return iterateN(end+iterDir, startAt+iterDir)
 }
 
+/**
+ * Creating a nice way to format map objects
+ * @param {Map<>} map 
+ * @param {string} [key_value_sep=','] Separator for key value
+ * @param {string} [entry_sep='|'] Separator for entries
+ * @param {(a: any, b: any) => void} [sort_func=(a,b) => {a-b}] sort function for keys default is subtraction
+ */
+export function formatMap(map, key_value_sep=',', entry_sep='|', sort_func=(a,b) => {a-b}) {
+    /** @type {string[]} return string of 'key<separator>value' */
+    const keyValueStrs = Array.from(map.entries().map( ([k,v]) => `${k}${key_value_sep}${v}`))
+    if (sort_func)
+        keyValueStrs.sort(sort_func)
+    return keyValueStrs.join(entry_sep)
+}

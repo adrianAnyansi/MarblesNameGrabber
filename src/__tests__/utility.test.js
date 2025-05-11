@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 
 import { ColorSpace } from "../UsernameBinarization.mjs";
 import { iterateN, iterateRN } from "../UtilityModule.mjs";
-import { randInt } from '../Mathy.mjs';
+import { randInt, rotPoint } from '../Mathy.mjs';
 import { Heap } from '../DataStructureModule.mjs';
 
 test("Confirms mathy iterator works", 
@@ -25,6 +25,16 @@ test("Confirm colorspace rotation",
     () => {
         const point = [115,145,245];
         assert.equal(ColorSpace.COLORS.SUB_BLUE.check(point), true)
+
+        const point2 = [100,0,0];
+        const matrix = [
+            [0,0,1],
+            [0,1,0],
+            [-1,0,0]
+        ]
+        const rotdPoint = rotPoint(matrix, point2)
+        const expPoint = new Float32Array([0, 0, 100]) // rotate into the Z axis
+        assert.deepEqual(rotdPoint, expPoint)
     }
 )
 

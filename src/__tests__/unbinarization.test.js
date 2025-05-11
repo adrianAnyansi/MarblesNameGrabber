@@ -42,14 +42,14 @@ test("Test userbox appear & length check",
         // const filename = chatTestingFolder + 'chat_clean.png'
         // TODO: Also get the length of users and check against each
         const fileList = [
-            // curatedFolder + 'chat_clean.png',
+            curatedFolder + 'chat_clean.png',
             // curatedFolder + 'chat_bitrate.png',
             
             // curatedFolder + 'chat_bitrate_recover.png',
             
             // curatedFolder + 'chat_name_bg2.png',
             // curatedFolder + 'chat_clean_black.png'
-            getFilename(vodTestingFolder, 875)
+            // getFilename(vodTestingFolder, 875)
             // I only have 1 full example cause he's always left-side :(
             // curatedFolder + 
         ]
@@ -59,7 +59,7 @@ test("Test userbox appear & length check",
         for (const filename of fileList) {
             const mng = new UserNameBinarization(filename, true);
             const all_user_sw = new Stopwatch()
-            const users = await mng.getUNBoundingBox(null, {appear:true, length:true});
+            const users = await mng.getUNBoundingBox(null, {appear:true, length:true, color:false});
             
             all_user_sw.stop()
             console.log(`Took ${(all_user_sw.time)} for appear+len`)
@@ -146,6 +146,19 @@ test("Test userbox quick length fail before actual length",
         console.log(`Took ${(all_user_sw.time)} for appear+len`)
     }
 );
+
+test("Test color checking", async () => {
+    // const filename = curatedFolder + 'chat_clean.png'
+    const filename = curatedFolder + 'chat_super_bitrate.png'
+
+    const mng = new UserNameBinarization(filename, true)
+
+    const usersList = await mng.getUNBoundingBox(null, // new Map([[15]]),
+        {appear:true, length:false, color: true });
+    // for (const [idx, user] of usersList) {
+    //     assert.equal(user.color != null, true)
+    // }
+});
 
 
 test ("Test Crop user image and binarize", async () => {

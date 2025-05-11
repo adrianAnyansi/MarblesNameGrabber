@@ -577,6 +577,14 @@ export class UsernameTracker {
  */
 export class UsernameSearcher {
 
+    static SCORING = {
+        PERFECT: 0,
+        LIKELY: 2,
+        UNLIKELY: 4,
+        BAD: 7,
+        UNKNOWN: 10,
+    }
+
     static DEFINED_ADJC_SETS = [
         ['o', 'O', '0', 'n'],               // o & rounded set
         ['i', 't', 'r', 'n'],               // r set (flick on r is hard to capture)

@@ -68,6 +68,8 @@ If I use blue/white tracking, I could maybe get temporal working. But temporal a
 
 Also need to make a config separate from code so prod isn't editing code for changes/testing
 
+Consider active multi-threading of username box testing to save more time
+
 ## Priorities
 - Blue/White tracking - this will capture the bit-rate edge cases
 - Need to split the code for prediction, its very long

@@ -7,13 +7,13 @@ import fs from 'fs/promises'
 import fsAll from 'fs'
 
 import { UserNameBinarization, VisualUsername } from './UsernameBinarization.mjs'
-import {UsernameAllTracker, TrackedUsername} from './UsernameTrackerClass.mjs'
+import {UsernameAllTracker, TrackedUsername, UsernameSearcher} from './UsernameTrackerClass.mjs'
 
 import { setTimeout } from 'node:timers/promises'
 import { SharpImg } from './ImageModule.mjs'
 import { StreamingImageBuffer, ServerStatus, StreamImageTracking, ScreenState } from './ServerClassModule.mjs'
 import { NativeTesseractOCRManager, OCRManager, LambdaOCRManager } from './OCRModule.mjs'
-import { Stopwatch } from './UtilityModule.mjs'
+import { formatMap, iterateN, Stopwatch } from './UtilityModule.mjs'
 
 const TWITCH_URL = 'https://www.twitch.tv/'
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
@@ -55,7 +55,7 @@ export class MarblesAppServer {
         /** @type {StreamImageTracking} used to parse streaming buffer into images */
         this.StreamImage = new StreamImageTracking(this.streamImgFormat)
         /** @type {ServerStatus} Track overall server status for outside observation */
-        this.ServerState = new ServerStatus()
+        this.ServerStatus = new ServerStatus()
         
         // Debug variables ===========================================
         this.debug_obj = {
@@ -128,7 +128,7 @@ export class MarblesAppServer {
 
         if (this.streamlinkProcess) return // TODO: Return error
 
-        this.ServerState.enterWaitState()
+        this.ServerStatus.enterWaitState()
 
         if (twitch_channel)
             this.streamlinkCmd[1] = TWITCH_URL + twitch_channel
@@ -172,7 +172,7 @@ export class MarblesAppServer {
         this.streamlinkProcess.on('close', () => {
             console.debug('Streamlink process has closed.')
             this.spinDown()
-            this.ServerState.enterStopState()
+            this.ServerStatus.enterStopState()
         })
         console.debug("Set up streamlink processes")
     }
@@ -208,7 +208,7 @@ export class MarblesAppServer {
             const newFrameBuffer = this.StreamImage.addToBuffer(streamImgBuffer)
             if (newFrameBuffer !== null) {
                 if (this.debug_obj.frame_pacing)
-                    this.ServerState.frame_dl_time[this.StreamImage.imgs_downloaded] = performance.now()
+                    this.ServerStatus.frame_dl_time[this.StreamImage.imgs_downloaded] = performance.now()
                 this.handleImage(newFrameBuffer, this.StreamImage.imgs_downloaded)
             }
         })
@@ -218,7 +218,7 @@ export class MarblesAppServer {
         this.ffmpegProcess.on('close', () => {
             console.debug('FFMpeg process has closed.')
             // NOTE: Ignoring the spinDown server state as both shutdown each other
-            this.ServerState.enterStopState()
+            this.ServerStatus.enterStopState()
         })
 
         console.log("Setup FFMPEG Process")
@@ -258,6 +258,10 @@ export class MarblesAppServer {
         this.shutdownStreamMonitor()
         if (this.OCRManager)
             this.OCRManager.shutdown()
+        if (this.ServerStatus.localListSource) {
+            this.testAgainstList(null, this.ServerStatus.localListSource)
+            this.ServerStatus.localListSource = null
+        }
     }
 
     /**
@@ -267,7 +271,7 @@ export class MarblesAppServer {
      * @param {number} imgId unique id for image
      */
     async handleImage(imageLike, imgId) {
-        if (this.ServerState.notRunning) {
+        if (this.ServerStatus.notRunning) {
             console.debug(`In COMPLETE/STOP state, dropping image.`)
             return
         }
@@ -280,7 +284,7 @@ export class MarblesAppServer {
         if (this.ScreenState.frames_without_names > EMPTY_IMAGE_NUM) {
             console.log(`Found ${EMPTY_IMAGE_NUM} empty frames @ ${imgId};
                 Dumping remaining images and changing to COMPLETE state.`)
-            this.ServerState.enterCompleteState()
+            this.ServerStatus.enterCompleteState()
             this.spinDown()
             return
         }
@@ -294,18 +298,18 @@ export class MarblesAppServer {
      */
     async parseAdvImg(imageLike, imgId) {
 
-        this.ServerState.frame_st_time[imgId] = performance.now()
+        this.ServerStatus.frame_st_time[imgId] = performance.now()
         
         const mng = new UserNameBinarization(imageLike, false)
         // mng.buildBuffer(); // TODO build buffer early?
 
         // TODO: Rework this and also check for obstructions
-        if (this.ServerState.wait) {
+        if (this.ServerStatus.wait) {
             const validMarblesImgBool = await mng.validateMarblesPreRaceScreen()
 
             if (validMarblesImgBool) {
                 console.log(`Found Marbles Pre-Race header, starting read @ ${this.StreamImage.imgs_downloaded}`)
-                this.ServerState.enterReadState()
+                this.ServerStatus.enterReadState()
             } else {
                 return
             }
@@ -542,8 +546,8 @@ export class MarblesAppServer {
             this.ScreenState.knownScreen = true // flip this when screen cannot be seen & top user is unknown
 
         if (this.debug_obj.frame_pacing) {
-            this.ServerState.frame_end_time[imgId] = performance.now()
-            console.log(`${this.ServerState.frameAvg(imgId)} Curr Frame:${this.ServerState.frameTiming(imgId).toFixed(2)}ms`)
+            this.ServerStatus.frame_end_time[imgId] = performance.now()
+            console.log(`${this.ServerStatus.frameAvg(imgId)} Curr Frame:${this.ServerStatus.frameTiming(imgId).toFixed(2)}ms`)
         }
 
         console.log(`-- End Frame_num ${imgId.toString().padStart(5, ' ')} -- Total Users: ${this.usernameTracker.count} `)
@@ -578,7 +582,7 @@ export class MarblesAppServer {
         await this.OCRManager.queueOCR(binBuffer)
         .then( async ({data, info, jobId, time}) => {
 
-            this.ServerState.addUserReconLagTime(time)
+            this.ServerStatus.addUserReconLagTime(time)
             if (data.lines.length == 0) {
                 if (this.debug_obj.user_bin)
                     console.warn(`Got nothing for #${processImgId} @ ${user.index}`)
@@ -732,22 +736,22 @@ export class MarblesAppServer {
 
             retText = "Waiting for names"
         }
-        return {"state": this.ServerState.state, "text": retText}
+        return {"state": this.ServerStatus.state, "text": retText}
     }
 
     stop () {
         let resp_text = "Already Stopped"
 
-        if (!this.ServerState.stopped) {
+        if (!this.ServerStatus.stopped) {
             this.spinDown()
 
             resp_text = "Stopped image parser"
-            this.ServerState.enterStopState()
+            this.ServerStatus.enterStopState()
         }
 
         this.debug_obj.vod_dump = false;
 
-        return {"state": this.ServerState.state, "text": resp_text}
+        return {"state": this.ServerStatus.state, "text": resp_text}
     }
 
     /** 
@@ -757,7 +761,7 @@ export class MarblesAppServer {
     clear () {
         console.log("Clearing server state")
         this.StreamImage.reset()
-        this.ServerState.clear()
+        this.ServerStatus.clear()
         this.usernameTracker.clear()
 
         return "Cleared server state."
@@ -771,21 +775,21 @@ export class MarblesAppServer {
     status (req) {
 
         const curr_dt = Date.now()
-        this.ServerState.allViewers.add(req.ip)
+        this.ServerStatus.allViewers.add(req.ip)
         
-        while (this.ServerState.monitoredViewers.at(0) < curr_dt + 300)
-            this.ServerState.monitoredViewers.shift()
+        while (this.ServerStatus.monitoredViewers.at(0) < curr_dt + 300)
+            this.ServerStatus.monitoredViewers.shift()
 
         if (req.query?.admin != undefined) {
             // TODO: Use a different page + endpoint
         } else {
             // Track viewers
-            this.ServerState.monitoredViewers.push(Date.now() + ServerStatus.DEFAULT_VIEWER_INTERVAL) // TODO: Link client to this value
+            this.ServerStatus.monitoredViewers.push(Date.now() + ServerStatus.DEFAULT_VIEWER_INTERVAL) // TODO: Link client to this value
         }
 
         return {
-            'status': this.ServerState.toJSON(),
-            'streaming': this.ServerState.streamingTime,
+            'status': this.ServerStatus.toJSON(),
+            'streaming': this.ServerStatus.streamingTime,
             'userList': this.usernameTracker.status(),
         }
     }
@@ -822,7 +826,7 @@ export class MarblesAppServer {
                 throw new Error("Invalid folder, folder is empty/DNE")
 
             console.log(`Running test on ${source}`)
-            this.ServerState.enterWaitState()
+            this.ServerStatus.enterWaitState()
             const localTest_sw = new Stopwatch();
             // TODO: Change based on OCR type
             this.OCRManager.warmUp();
@@ -846,14 +850,14 @@ export class MarblesAppServer {
                 await setTimeout(1_000 / MarblesAppServer.FFMPEG_FPS, `Sent ${fileName}`)
             }
             
-            this.ServerState.enterStopState()
+            this.ServerStatus.enterStopState()
             console.log(`Test run took ${localTest_sw.time}`)
         } else {
             // source is video
             // technically this should copy start() and use that flow
             // I have todo manual stuff instead here
             this.clear()
-            this.ServerState.enterWaitState()
+            this.ServerStatus.enterWaitState()
             this.debug_obj.vod_dump = vodDump
             this.startFFMPEGProcess(source)
             // everything runs on server
@@ -876,42 +880,162 @@ export class MarblesAppServer {
 
         console.debug(`Test against name list, len: ${user_list.length}`)
 
-        let totalScore = 0;
-        /** @type {number[]} */
-        const scoreArr = [];
-        /** @type {string[]} */
-        const notFound = [];
+        // ======================================================
 
-        for (const [idx, name] of user_list.entries()) {
-            const list = this.find(name)
-            const bestDistScore = list?.at(0)?.at(0) ?? Infinity
-            scoreArr.push(bestDistScore)
-            totalScore += bestDistScore;
-            if (bestDistScore > 7) {
-                notFound.push(`[${idx.toString().padStart(' ', 4)}] ${name}`)
+        const resultObj = {
+            /** @type {Map<number, number>} Every score:number of scores */
+            scoreMap: new Map(),
+            /** All score count */
+            scoreNum: 0,
+            /** mean of all scores */
+            scoreMean: 0,
+            /** Mean of all scores that are not 0 by leven dist */
+            nonPerfectMean: null,
+            /** @type {Map<number, number>} Match ext_index:actual_index */
+            indexMatchMap: new Map(),
+            /** mean of all index differences */
+            indexMean: 0,
+            indexNum: 0,
+            /** can determine this with sorting but unnecessary */
+            median: null,
+            /** names that are in the index but not OCR */
+            unread_name: 0,
+            /** @type {Map<number, number>} internal_idx:letter_dist of UserObj with VERY different aliases */
+            failAliasIdxMap: new Map(),
+            /** @type {string[]} list of users that were not found */
+            notFound: []
+        }
+
+        const intUserList = this.usernameTracker.usersInOrder; 
+        const visitCache = new Set()
+        const list_pts = []
+        list_pts.push([0,0, []])
+
+        while(list_pts.length > 0) {
+            const [ext_list_pt, int_list_pt, stackArr] = list_pts.shift();
+            if (ext_list_pt >= user_list.length || int_list_pt >= intUserList.length) break
+
+            const uq_str = `${ext_list_pt},${int_list_pt}${JSON.stringify(stackArr)}`
+            if (!visitCache.has(uq_str)) {
+                visitCache.add(uq_str)
+            } else {
+                continue;
+            }
+
+            const ext_user_name = user_list[ext_list_pt]
+            const int_user_obj = intUserList[int_list_pt]
+
+            if (int_user_obj.name == null) {
+                const indexDiff = ext_list_pt - int_list_pt
+                const nStackArr = stackArr.slice()
+                const nStackObj = {indexDiff, ext_list_pt, nullSkip:1, levenDist:100}
+                nStackArr.push(nStackObj)
+                list_pts.push([ext_list_pt+1, int_list_pt+1, nStackArr])
+
+                // visit skipping the null completely, no penalty
+                const skipNullStackArr = stackArr.slice()
+                skipNullStackArr.push({nullSkip:1})
+                list_pts.push([ext_list_pt, int_list_pt+1, skipNullStackArr])
+                continue;
+            }
+
+            const aliasScores = []
+            for (const userAlias of int_user_obj.aliases) {
+                if (userAlias == null) continue;
+                const dist = UsernameSearcher.calcLevenDistance(ext_user_name, userAlias)
+                aliasScores.push(dist)
+            }
+            aliasScores.sort((a,b) => a-b)
+
+            // Compare aliases to ensure that different names are not under the same userObj
+            if (int_user_obj.aliases.size > 1 
+                && resultObj.failAliasIdxMap.get(int_list_pt) == null) {
+                for (const i of iterateN(int_user_obj.aliases.size-1)) {
+                    for (const j of iterateN(int_user_obj.aliases.size, i+1)) {
+                        // since its usually 2-3 names, just calc lt comparison
+                        const ltMap = new Map();
+                        const aliasList = Array.from(int_user_obj.aliases.values()) 
+                        for (const lt of aliasList[i])
+                            ltMap.set(lt, (ltMap.get(lt) ?? 0) + 1)
+                        for (const lt of aliasList[j])
+                            ltMap.set(lt, (ltMap.get(lt) ?? 0) - 1)
+                        
+                        const ltDist = Array.from(ltMap.values()).reduce((a,b) => a+b)
+                        // if levenDist is higher than 3, flag this
+                        if (ltDist > 3)
+                            resultObj.failAliasIdxMap.set(int_list_pt, ltDist)
+                    }
+                }
+            }
+
+            if (aliasScores.at(0) <= UsernameSearcher.SCORING.UNKNOWN) { // found match
+                // collapse the stack to reduce memory
+                for (const stackObj of stackArr) {
+                    if (stackObj == null) continue;
+                    resultObj.unread_name += stackObj.nullSkip ?? 0
+                    if (stackObj.ext_list_pt) {
+                        resultObj.indexMatchMap.set(stackObj.ext_list_pt, stackObj.indexDiff)
+                        resultObj.indexMean += stackObj.indexDiff
+                    } else if (stackObj.notFound) {
+                        resultObj.notFound.push(stackObj.notFound)
+                    }
+                }
+                list_pts.length = 0; // clear this list
+
+                // index score update
+                const indexDiff = Math.abs(ext_list_pt - int_list_pt)
+                resultObj.indexMatchMap.set(ext_list_pt, indexDiff)
+                resultObj.indexMean += indexDiff
+                resultObj.indexNum += 1
+                // score update
+                const score = aliasScores.at(0)
+                resultObj.scoreMap.set(score, (resultObj.scoreMap.get(score) ?? 0) + 1)
+                resultObj.scoreNum += 1
+                resultObj.scoreMean += score
+                // move pointers, match found
+                list_pts.push([ext_list_pt+1, int_list_pt+1, []])
+            } else {
+                // IMO should split both paths until 1 reaches the next match by breadth first
+                const skipNameArr = stackArr.slice()
+                skipNameArr.push({notFound:[ext_list_pt, ext_user_name]})
+                list_pts.push([ext_list_pt+1, int_list_pt, skipNameArr])
+                list_pts.push([ext_list_pt, int_list_pt+1, stackArr.slice()])
             }
         }
 
-        scoreArr.sort();
-        const median = scoreArr[Math.round(scoreArr.length/2)]
+        console.debug("Completed matching")
 
-        const map = new Map();
-        let [nonPerfectAvg, nonPerfectCount] = [0,0];
-        for (const score of scoreArr) {
-            map.set(score, (map.get(score) ?? 0) + 1)
-            if (score > 1) {
-                nonPerfectCount++
-                nonPerfectAvg += score
+        resultObj.indexMean /= resultObj.indexNum
+        resultObj.scoreMean /= resultObj.scoreNum
+        // Ignoring median, kind of not important over about 10-20 counts
+
+        const nonPerfectCount = Array.from(resultObj.scoreMap.keys()).length
+        resultObj.nonPerfectMean = Array.from(resultObj.scoreMap.entries())
+            .reduce((cv, [scoreVal, scoreNum]) => scoreVal*scoreNum + cv, 0) / nonPerfectCount
+
+        // sort index offsets in a well formatted manner
+        const collIdxArr = []
+        for (const [indexID, indexOff] of resultObj.indexMatchMap.entries()) {
+            let arr = collIdxArr.at(-1)
+            if (arr && arr[0] == indexOff) {
+                // do nothing
+            } else {
+                arr = [indexOff, Infinity, -Infinity]
+                collIdxArr.push(arr)
             }
+            arr[1] = Math.min(arr[1], indexID)
+            arr[2] = Math.max(arr[2], indexID)
         }
 
-        const scoreMap = `Score Map: ${Array.from(map.entries()).sort().join('|')}`;
-        const stats = [`Final score: ${totalScore}, mean: ${(totalScore/user_list.length).toFixed(2)}`,
-            `median: ${median}, avg-non-perfect ${(nonPerfectAvg/nonPerfectCount).toFixed(2)}`,
-            `Not found list (${notFound.length}): ${notFound.join(', ')}`,
+        const stats = [
+            `Score Map: ${formatMap(resultObj.scoreMap, ':')};\tScore Mean: ${resultObj.scoreMean.toFixed(2)}`,
+            `Index Map: ${collIdxArr.map( arr => `${arr[1]}->${arr[2]}:${arr[0]}`).join('\n')};\tIndex Mean: ${resultObj.indexMean.toFixed(2)}`,
+            `Median: ${resultObj.median}, Avg-non-perfect ${(resultObj.nonPerfectMean).toFixed(2)}`,
+            `Not found list (${resultObj.notFound.length}): ${resultObj.notFound.join(', ')}`,
+            `Fail Alias List: ${formatMap(resultObj.failAliasIdxMap)}`,
             `Completed test in ${listTest_sw.time}`]
 
-        console.debug(scoreMap, stats.join('\n'))
+        console.debug(stats.join('\n'))
         
     }
 }
