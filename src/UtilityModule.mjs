@@ -14,7 +14,7 @@ export class Stopwatch {
      * Return human readable timestamp
      * @returns {string}
      */
-    get time () {
+    get htime () {
         return Stopwatch.msToHUnits(this.read(), false)
     }
 

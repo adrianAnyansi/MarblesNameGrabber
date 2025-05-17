@@ -1,5 +1,5 @@
 import { Stopwatch, iterateN } from "./UtilityModule.mjs"
-import { VisualUsername } from "./UsernameBinarization.mjs"
+import { VisualUsername } from "./UserModule.mjs"
 import * as Mathy from './Mathy.mjs'
 
 /** Server state enum */

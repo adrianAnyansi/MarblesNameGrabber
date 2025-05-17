@@ -7,6 +7,7 @@ import { ColorSpace } from "../UsernameBinarization.mjs";
 import { iterateN, iterateRN } from "../UtilityModule.mjs";
 import { randInt, rotPoint } from '../Mathy.mjs';
 import { Heap } from '../DataStructureModule.mjs';
+import { UsernameAllTracker } from '../UsernameTrackerClass.mjs';
 
 test("Confirms mathy iterator works", 
     () => {
@@ -69,7 +70,24 @@ test ("Heap test", () => {
         assert.equal(minHeap.pop(), l_val)
 
     const maxHeap = new Heap(list, null, false)
-    const maxList = list.slice().sort()
+    const maxList = list.slice().sort((a,b) => b - a)
     for(const l_val of maxList.values())
         assert.equal(maxHeap.pop(), l_val)
+})
+
+async function longCalc () {
+    const limit = Math.random() * 10_000_000 + 100_000_000;
+    let num = 0;
+    console.log(`Counting to ${limit}`)
+    for (const i of iterateN(limit)) {
+        num += i
+    }
+    console.log(`Finished count to ${limit}`)
+    return limit
+}
+
+test ("Async sync", async () => {
+    // omg worker threads are like JS threads and need a new file... :(
+    let prom1s = [longCalc(), longCalc(), longCalc()]
+    await Promise.all(prom1s)
 })

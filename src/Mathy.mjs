@@ -96,3 +96,11 @@ export function randInt(end, start=0) {
     }
     return Math.trunc(Math.random()*(end-start)+start)
 }
+
+/**
+ * Roll a chance and return a bool
+ * @param chance rand
+ */
+export function randChance(chance=0.5) {
+    return Math.random() <= chance
+}

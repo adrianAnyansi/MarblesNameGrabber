@@ -12,6 +12,7 @@ import { PixelMeasure, Color,
     ImageTemplate, ImageBuffer, Direction2D, SharpImg} from './ImageModule.mjs'
 import {resolve} from 'node:path'
 import fs from 'fs'
+import { TrackedUsername, VisualUsername } from "./UserModule.mjs"
 
 export class ColorSpace {
     /**
@@ -129,6 +130,10 @@ export class ColorSpace {
     static COLORS = {
         // SUB_BLUE: ColorSpace.ImportCube(this.COLORCUBE_JSON.SUB_BLUE),
     }
+
+    toString () {
+        return this.name ?? 'unknown name'
+    }
 }
 
 // NOTE: Could set up this in the ColorSpace & etc 
@@ -196,61 +201,6 @@ class UserNameConstant {
     }
 }
 
-/**
- * Class representing a username that's visually on the screen
- * Stores the visual (onscreen) index and information about the username
- */
-export class VisualUsername {
-
-    constructor(visual_index, appear, length=undefined) {
-        /** @type {number} Visual index on this frame */
-        this.vidx = visual_index
-        /** @type {boolean} did username appear this frame (rightLine detection) */
-        this.appear = appear
-        /** 
-         * @type {number} length this frame (left edge detection) 
-         * if undefined, length was not checked.
-         * if null, length checked but not found.
-         * if negative, valid value.
-        */
-        this.length = length
-
-        /**
-         * Colorspace color detected
-         */
-        this.color = null
-
-        /** debug object for tracking some things */
-        this.debug = {
-            /** length matched  */
-            matchLen: false,
-            /** length checked during unknown length check */
-            unknownLen: false,
-            /** length checked during OCR */
-            ocrLen: false,
-            /** length checked during quickLength phase */
-            qlLen: false,
-        }
-    }
-
-    get validLength () {
-        return this.length != null
-    }
-
-    /**
-     * Was length checked and not found this frame
-     */
-    get lenUnavailable () {
-        return this.length === null
-    }
-
-    /**
-     * Was length checked this frame
-     */
-    get lenUnchecked () {
-        return this.length === undefined
-    }
-}
 
 // CLASS
 /**
@@ -715,9 +665,10 @@ export class UserNameBinarization {
      * Can accept multiple images to overlay.
      * Do not send index 23 into this if possible
      * @param {SharpImg[]} sharpImgs 
+     * @param {TrackedUsername} predictedUser Add predicted user to 
      * @returns {Promise<ImageBuffer>} raw image buffer
      */
-    async binTrackedUserName(sharpImgs) {
+    async binTrackedUserName(sharpImgs, predictedUser) {
 
         // const binMarkName = 'bin-idv-user-start'
         // TODO: Merge multiple images, just using first one rn
@@ -737,7 +688,7 @@ export class UserNameBinarization {
         let currColorSpace = undefined; // note saved 10ms cause it was in for-loop
 
         const USER_Y_BUFFER = 6 // buffer to ignore white outside lines
-        const UN_LEFT_BUFFER = 8 // better to ignore from the left
+        const UN_LEFT_BUFFER = 8 // better to ignore from the left than right
         const UN_RIGHT_BUFFER = 3
 
         // iterate from right to left across the image. Ignore 5 pixels from left
@@ -768,6 +719,10 @@ export class UserNameBinarization {
                 //     imgBuffer.setPixel(x_coord, y_coord, Color.HOT_PINK)
 
             }
+        }
+        
+        if (currColorSpace && predictedUser) {
+            predictedUser.color = currColorSpace
         }
         
         if (this.debug) {   // write buffer when complete
@@ -847,6 +802,7 @@ export class UserNameBinarization {
     // ==============================================================================
     // Template and other image matching
     // ==============================================================================
+
     static START_BUTTON_TEMPLATE = new ImageTemplate(
         'data/start_btn.png',
         {x:1136, y:1030, w:104, h:46},
@@ -976,10 +932,10 @@ export class UserNameBinarization {
      * @param {Object} checkDetails 
      * @param {boolean} [checkDetails.appear=true] check that this user exists (right line)
      * @param {boolean} [checkDetails.length=true] check the length of the user
-     * * @param {boolean} [checkDetails.color=true] check the color of the user
+     * @param {boolean} [checkDetails.color=false] check the color of the user
      * @param {Map<number, number>} [checkDetails.quickLength] check length at x_coord
      * 
-     * @returns {Promise<Map<number,VisualUsername>>} retObj, sparse* array {appear:bool, length:number, quickLen:bool}
+     * @returns {Promise<Map<number, VisualUsername>>} retObj, sparse* array {appear:bool, length:number, quickLen:bool}
      */
     async getUNBoundingBox(usersToCheck=null, {appear=true, length=true, color=false, quickLength=new Map()}) {
 
@@ -1034,7 +990,7 @@ export class UserNameBinarization {
                 
                 visualUser.appear = (right_match > APPEAR_MIN) // update value in userList
                 if (this.debug)
-                    console.log(`Appear detect took #${userIndex} ${user_perf_sw.time}`)
+                    console.log(`Appear detect took #${userIndex} ${user_perf_sw.htime}`)
                 // <0.05ms
             }
 
@@ -1076,7 +1032,7 @@ export class UserNameBinarization {
                 }
                 
                 if (this.debug)
-                    console.log(`Quick left-line detect took #${userIndex} ${user_perf_sw.time}`)
+                    console.log(`Quick left-line detect took #${userIndex} ${user_perf_sw.htime}`)
             }
 
             if (length && visualUser.lenUnchecked) {
@@ -1086,7 +1042,7 @@ export class UserNameBinarization {
                     UN_RIGHT_X-20, user_y_start, imgBuffer, Direction2D.LEFT, Direction2D.DOWN);
 
                 if (this.debug) // can take anywhere to 0.15ms to 0.5ms
-                    console.log(`Line follow detect took #${userIndex} ${user_perf_sw.time}`)
+                    console.log(`Line follow detect took #${userIndex} ${user_perf_sw.htime}`)
 
                 const [X_RIGHT_START, X_LEFT_END] = [-2, -9];
                 const min_t = !IsUserIndex23 ? 10 : 6;
@@ -1105,7 +1061,7 @@ export class UserNameBinarization {
                     }
                     if (matchesThisLine > min_t) {
                         if (this.debug)
-                            console.log(`Pass Left edge detect took #${userIndex} ${user_perf_sw.time}`)
+                            console.log(`Pass Left edge detect took #${userIndex} ${user_perf_sw.htime}`)
                         
                         if (this.debug)
                             imgBuffer.setPixel(x_line, user_y_start+21, Color.LIME)
@@ -1139,7 +1095,7 @@ export class UserNameBinarization {
                             }
                         }
                         if (this.debug)
-                            console.log(`Finish corner detect #${userIndex} took ${user_perf_sw.time}`)
+                            console.log(`Finish corner detect #${userIndex} took ${user_perf_sw.htime}`)
                         
                         if (Math.abs(foundCorners[0] - foundCorners[1]) <= 2) {
                             visualUser.length = x_line - UN_RIGHT_X
@@ -1149,15 +1105,15 @@ export class UserNameBinarization {
                         break
                     }
                     if (this.debug)
-                        console.log(`Miss Left box detect took #${userIndex} ${user_perf_sw.time}`)
+                        console.log(`Miss Left box detect took #${userIndex} ${user_perf_sw.htime}`)
                 }
                 if (!visualUser.length)
                     visualUser.length = null
                 if (this.debug)
-                    console.log(`Length detect took #${userIndex} ${user_perf_sw.time}`)
+                    console.log(`Length detect took #${userIndex} ${user_perf_sw.htime}`)
             } // userbox if-length check
 
-            if (color && visualUser.appear && !visualUser.color) {
+            if (color && !visualUser.color) { // NOTE: Disabled 
                 // pick an arbitary spot/letter to check
                 const user_y_range = [64,64+28] // 16 is the width of the underscore + kerning, 64 is arbitary sample spot
                 const sample_y = 26; // 26 pixels covers the low = underscore & high = Most capitals
@@ -1168,6 +1124,7 @@ export class UserNameBinarization {
                 const colorSpaceResult = new Map()
                 const MATCH_LIMIT = 12;
                 const resultArr = []
+                const validColors = [ColorSpace.COLORS.UNSUB_WHITE, ColorSpace.COLORS.SUB_BLUE]
 
                 outer: for (const ux of iterateN(...user_y_range)) {
                     for (const uy of iterateN(...user_x_range)) {
@@ -1175,7 +1132,7 @@ export class UserNameBinarization {
                         const testPoint = [UN_RIGHT_X - ux, user_y_start+uy]
                         const px_rgb = imgBuffer.getPixel(...testPoint)
 
-                        for (const colorSpace of Object.values(ColorSpace.COLORS)) {
+                        for (const colorSpace of validColors) {
                             if (colorSpace.check(px_rgb, 1.3)) {
                                 const num = colorSpaceResult.get(colorSpace) ?? 0
                                 if (num >= MATCH_LIMIT) {
@@ -1200,17 +1157,17 @@ export class UserNameBinarization {
                 }
 
                 if (this.debug)
-                    console.log(`User color check #${userIndex} = ${visualUser.color?.name} took ${user_perf_sw.time}`)
+                    console.log(`User color check #${userIndex} = ${visualUser.color?.name} took ${user_perf_sw.htime}`)
 
             } // userbox color-check
 
             if (this.debug)
-                console.log(`All User check #${userIndex} took ${user_perf_sw.time}`)
+                console.log(`All User check #${userIndex} took ${user_perf_sw.htime}`)
         } // per user check
 
         // 13ms
         if (this.debug) {
-            console.log(`Finished UN box detection in ${un_bound_box.time}`)
+            console.log(`Finished UN box detection in ${un_bound_box.htime}`)
             this.sharpImg.toSharp({toPNG:true}).toFile("testing/line_testing.png")
         }
 

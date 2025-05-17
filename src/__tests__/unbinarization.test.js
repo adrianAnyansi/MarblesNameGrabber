@@ -1,23 +1,27 @@
 // Jest unittest for binarization
 
+// This 
+
 import {it, test} from 'node:test'
 import assert from 'node:assert/strict'
 
-import { ColorSpace, UserNameBinarization, VisualUsername } from "../UsernameBinarization.mjs";
+import { ColorSpace, UserNameBinarization } from "../UsernameBinarization.mjs";
 import sharp from 'sharp'
 import { Color, Direction2D, SharpImg } from '../ImageModule.mjs';
 import { Stopwatch, iterateN } from '../UtilityModule.mjs';
 import { LambdaOCRManager, NativeTesseractOCRManager, TestTesseractOCRManager } from '../OCRModule.mjs';
-import { TrackedUsername, UsernameAllTracker } from '../UsernameTrackerClass.mjs';
+import { UsernameAllTracker } from '../UsernameTrackerClass.mjs';
+import { TrackedUsername, VisualUsername } from '../UserModule.mjs';
+import { randChance, randInt } from '../Mathy.mjs';
 
 const testingFolder = String.raw`testing\\`;
 const curatedFolder = String.raw`testing\curated\\`;
 const chatTestingFolder = String.raw`testing\chat_testing\\`;
-const vodTestingFolder = String.raw`testing\\vod_dump\\%s.jpg`
+const vodDumpFolder = String.raw`testing\\vod_dump\\%s.jpg`
 const ocrTestingFolder = String.raw`testing/ocr_test/`
 
 const page = 303;
-const vodTestFilename = getFilename(vodTestingFolder, page)
+const vodTestFilename = getFilename(vodDumpFolder, page)
 
 function getFilename(folder, page) {
     return folder.replace('%s', page)
@@ -62,7 +66,7 @@ test("Test userbox appear & length check",
             const users = await mng.getUNBoundingBox(null, {appear:true, length:true, color:false});
             
             all_user_sw.stop()
-            console.log(`Took ${(all_user_sw.time)} for appear+len`)
+            console.log(`Took ${(all_user_sw.htime)} for appear+len`)
 
             console.log("Users List", Array.from(users.entries()).map(([idx, val]) => [idx, {A:val.appear, L:val.length}]))
             const validLens = 24
@@ -74,7 +78,7 @@ test("Test userbox appear & length check",
 
 test("Test 1 userbox appear/length",
     async () => {
-        const filename = getFilename(vodTestingFolder, 258)
+        const filename = getFilename(vodDumpFolder, 258)
         
         const userIdx = 12;
         // const filename = chatTestingFolder + 'chat_clean.png'
@@ -92,7 +96,7 @@ test("Test 1 userbox appear/length",
 
 test("Test userbox quick length check",
     async () => {
-        const filename = getFilename(vodTestingFolder, 882)
+        const filename = getFilename(vodDumpFolder, 882)
 
         const buffer = await new SharpImg(filename).sharpImg.toBuffer()
         const mng = new UserNameBinarization(buffer, true);
@@ -107,7 +111,7 @@ test("Test userbox quick length check",
             quickLength:testQLMap});
         
         all_user_sw.stop()
-        console.log(`Took ${(all_user_sw.time)} for appear+len`)
+        console.log(`Took ${(all_user_sw.htime)} for appear+len`)
         // console.log("Users List", users.entries())
         for (const [uidx, ulen] of testusers) {
             assert.equal(users.get(uidx).length, ulen)
@@ -143,13 +147,14 @@ test("Test userbox quick length fail before actual length",
         }
         
         all_user_sw.stop()
-        console.log(`Took ${(all_user_sw.time)} for appear+len`)
+        console.log(`Took ${(all_user_sw.htime)} for appear+len`)
     }
 );
 
 test("Test color checking", async () => {
     // const filename = curatedFolder + 'chat_clean.png'
-    const filename = curatedFolder + 'chat_super_bitrate.png'
+    // const filename = curatedFolder + 'chat_super_bitrate.png'
+    const filename = getFilename(vodDumpFolder, 4500)
 
     const mng = new UserNameBinarization(filename, true)
 
@@ -164,7 +169,7 @@ test("Test color checking", async () => {
 test ("Test Crop user image and binarize", async () => {
     
     // const filename = curatedFolder+'chat_clean.png'
-    const filename = getFilename(vodTestingFolder, 4503)
+    const filename = getFilename(vodDumpFolder, 4503)
     const userIdx = 20; // 4
 
     const mng = new UserNameBinarization(filename, true);
@@ -199,7 +204,7 @@ test ("Test Crop user image and binarize", async () => {
 */
 test ("Test sharp crop to buffer time", async () => {
 
-    const filename = getFilename(vodTestingFolder, page)
+    const filename = getFilename(vodDumpFolder, page)
     const iters = 200
     
     const s1 = new Stopwatch()
@@ -228,7 +233,7 @@ test("Test userbox pure timing",
     // for (const test of Mathy.iterateN(10)) {
         await mng.getUNBoundingBox(null, {appear:false, length:true});
     // }
-    console.log(`Took ${st_sw.time} for all`)
+    console.log(`Took ${st_sw.htime} for all`)
 
     // individual mark is faster- by about 5-7ms... why though
     // also around 48-87 -> 55.49ms
@@ -239,7 +244,7 @@ test("Test userbox pure timing",
             await mng2.getUNBoundingBox(new Map([[i, null]]), {appear:false, length:true})
         }
     // }
-    console.log(`Took ${st_sw2.time} for all`)
+    console.log(`Took ${st_sw2.htime} for all`)
 }
 );
 
@@ -259,7 +264,7 @@ test("Test chat detection", async () => {
 })
 
 test ("Test old binarization", {skip: "Old logic is broken"}, async () => {
-    const filename = getFilename(vodTestingFolder, page)
+    const filename = getFilename(vodDumpFolder, page)
 
     const imageLike = await sharp(filename).ensureAlpha().png().toBuffer()
     const mng = new UserNameBinarization(imageLike, true);
@@ -268,7 +273,7 @@ test ("Test old binarization", {skip: "Old logic is broken"}, async () => {
     const sw = new Stopwatch()
     await mng.isolateUserNames()
 
-    console.log(`Old bin Took ${sw.time}`)
+    console.log(`Old bin Took ${sw.htime}`)
 })
 
 test ("Test ImageBuffer logic", 
@@ -301,7 +306,7 @@ test ("Test user count test", async () => {
     const sw = new Stopwatch()
     // let output = await mas.nativeTesseractProcess(ocrBuffer)
     const output = await ocr.performOCR(ocrBuffer)
-    console.log(`Detect took ${sw.time}, Ouput: ${output.data.lines[0].text}`)
+    console.log(`Detect took ${sw.htime}, Ouput: ${output.data.lines[0].text}`)
     console.log(output.data)
 })
 
@@ -346,20 +351,6 @@ test ("Test validate pre-race screen", async () => {
     assert.equal(await mng.validateMarblesPreRaceScreen(), true)
 })
 
-// NOTE: This should have a check making sure the order is consistent
-//      However thats a very annoying check, I can visually determine that
-//      the concurrency works and the queue is limited by output instead
-test ("Test OCR Promise Queue", {skip: "Long promise queue test"}, async () => {
-    const ocrm = new TestTesseractOCRManager(15, true, true);
-    NativeTesseractOCRManager.PROMISE_DEBUG = true
-    const list = []
-
-    for (let i=0; i<100; i++) {
-        await new Promise((r,j) => setTimeout( _ => r(), Math.random() * 100))
-        list.push(ocrm.queueOCR())
-    }
-    await Promise.all(list)
-})
 
 test ("Test Send image for OCR Lamba", async () => {
     
@@ -381,133 +372,3 @@ test ("Test Send image for OCR Lamba", async () => {
     console.log(JSON.stringify(lambdaRet))
 })
 
-
-test ("Test user tracker length", async () => {
-    const userList = [
-        new TrackedUsername(),
-        new TrackedUsername(),
-        new TrackedUsername(),
-        new TrackedUsername(),
-        new TrackedUsername(),
-        new TrackedUsername(),
-        new TrackedUsername(),
-        new TrackedUsername()
-    ]
-
-    userList[0].setLen(-70)
-    userList[1].setLen(-168)
-    userList[2].setLen(-123)
-    userList[3].setLen(-126)
-    userList[4].setLen(-30)
-    userList[5].setLen(-84)
-    // userList[6].setLen(-30)
-    userList[7].setLen(-132)
-
-    const listResult = UsernameAllTracker.genLengthChecks(userList)
-    
-    console.log("Heap: ", listResult)
-
-    assert.equal(listResult[0][1], 4) // 4 is the highest score because of biggest length diff
-    assert.equal(listResult.at(-1)[1], 7) // then 7 as its isolated
-    assert.equal(listResult.at(-2)[1], 2) // then 2 as its a duplicate and less diff from others
-    assert.equal(listResult.find( ([score, idx]) => idx == 6), undefined) // 6 should be removed as it's not considered
-
-    const vUsers = new Map([
-        [0, new VisualUsername()],
-        [1, new VisualUsername()],
-        [2, new VisualUsername()],
-        [3, new VisualUsername()],
-        [4, new VisualUsername()],
-        [5, new VisualUsername()]
-    ])
-
-    const reset = () => {
-        for (const [idx, user] of vUsers)
-            user.length = undefined
-    }
-
-    // test a regular match 0
-    vUsers.get(1).length = -168
-    vUsers.get(4).length = -30
-
-    let offsetResult = UsernameAllTracker.findVisualOffset(userList, vUsers)
-    assert.equal(offsetResult.offsetMatch, 0)
-    assert.equal(offsetResult.goodMatch, true)
-
-    // shift back 1
-    reset()
-    vUsers.get(0).length = -168
-    vUsers.get(3).length = -30
-
-    offsetResult = UsernameAllTracker.findVisualOffset(userList, vUsers)
-    assert.equal(offsetResult.offsetMatch, 1)
-    assert.equal(offsetResult.goodMatch, true)
-
-    // shift forward 1
-    reset()
-    vUsers.get(2).length = -168
-    vUsers.get(5).length = -30
-
-    offsetResult = UsernameAllTracker.findVisualOffset(userList, vUsers)
-    assert.equal(offsetResult.offsetMatch, -1)
-    assert.equal(offsetResult.goodMatch, true)
-
-    // undetermined, but known offset
-    reset()
-    vUsers.get(2).length = -168
-
-    offsetResult = UsernameAllTracker.findVisualOffset(userList, vUsers)
-    assert.equal(offsetResult.offsetMatch, -1)
-    assert.equal(offsetResult.goodMatch, false)
-
-    // no offset found
-    reset()
-    vUsers.get(3).length = -321
-    vUsers.get(4).length = -125;
-
-    offsetResult = UsernameAllTracker.findVisualOffset(userList, vUsers);
-    assert.equal(offsetResult.offsetMatch, null)
-    assert.equal(offsetResult.goodMatch, false)
-
-})
-
-test ("Test duplicate user tracker offsets", async () => {
-
-    const lens = [-70, -168, -123, -123, -30, -84, undefined, -202]
-
-    const predUsers = lens.map(
-        len => {const n = new TrackedUsername(); n.setLen(len); return n})
-
-    const vislUsers = new Map(lens.map((_, idx) => [idx, new VisualUsername()]));
-
-    const reset = () => {
-        for (const [idx, user] of vislUsers)
-            user.length = undefined
-    }
-        
-    // find offset when 1st index is a duplicate AND offset is positive
-    reset()
-    vislUsers.get(3).length = -123
-    vislUsers.get(5).length = -30;
-
-    let offsetResult = UsernameAllTracker.findVisualOffset(predUsers, vislUsers);
-    assert.equal(offsetResult.offsetMatch, -1)
-    assert.equal(offsetResult.goodMatch, true)
-
-    // find offset when 1st index is duplicate
-    reset()
-    vislUsers.get(3).length = -123
-    vislUsers.get(4).length = -30;
-
-    offsetResult = UsernameAllTracker.findVisualOffset(predUsers, vislUsers);
-    assert.equal(offsetResult.offsetMatch, 0)
-    assert.equal(offsetResult.goodMatch, true)
-
-    // duplicate check order
-    reset()
-    vislUsers.get(3).length = -123
-
-    offsetResult = UsernameAllTracker.findVisualOffset(predUsers, vislUsers);
-    assert.equal(offsetResult.offsetMatch, 0)
-    assert.equal(offsetResult.goodMatch, false)
-})

@@ -6,14 +6,15 @@ import axios from 'axios'
 import fs from 'fs/promises'
 import fsAll from 'fs'
 
-import { UserNameBinarization, VisualUsername } from './UsernameBinarization.mjs'
-import {UsernameAllTracker, TrackedUsername, UsernameSearcher} from './UsernameTrackerClass.mjs'
+import { VisualUsername, TrackedUsername } from './UserModule.mjs'
+import { UserNameBinarization } from './UsernameBinarization.mjs'
+import {UsernameAllTracker, UsernameSearcher} from './UsernameTrackerClass.mjs'
 
 import { setTimeout } from 'node:timers/promises'
 import { SharpImg } from './ImageModule.mjs'
 import { StreamingImageBuffer, ServerStatus, StreamImageTracking, ScreenState } from './ServerClassModule.mjs'
 import { NativeTesseractOCRManager, OCRManager, LambdaOCRManager } from './OCRModule.mjs'
-import { formatMap, iterateN, Stopwatch } from './UtilityModule.mjs'
+import { formatMap, iterateN, iterateRN, Stopwatch } from './UtilityModule.mjs'
 
 const TWITCH_URL = 'https://www.twitch.tv/'
 const LIVE_URL = 'https://www.twitch.tv/barbarousking'
@@ -356,14 +357,15 @@ export class MarblesAppServer {
             offset_ql: 0,
             offset: 0,
             post_match: 0,
-            pre_ocr: 0
+            pre_ocr: 0,
+            color: 0
         }
         
         // Reconcile offset by checking the prediction
         // =======================================================================
 
         // First, get the best length to check
-        const lenScoreMap = UsernameAllTracker.genLengthChecks(predictedUsers)
+        const lenScoreMap = UsernameAllTracker.getVIdxToCheckByLen(predictedUsers)
         let goodMatch = false; 
         /** Determine offset from length matching */
         let offsetMatch = 0;
@@ -371,7 +373,6 @@ export class MarblesAppServer {
         const trackQLTest = []
         // loop lengths, trying to find at least 2 matches
         for (const [score, pidx] of lenScoreMap) {
-            if (score == 0) break;
             
             let testIdx = pidx
             // TODO
@@ -403,6 +404,36 @@ export class MarblesAppServer {
                 predictedUsers, screenVisibleUsers
             ))
             if (goodMatch) break
+        }
+
+        if (!goodMatch && lenScoreMap.length > 0) {
+            // attempt color verification
+            // const colorScoreMap = UsernameAllTracker.getVIdxToCheckByColor(predictedUsers)
+            const color_sw = new Stopwatch()
+            const LIMIT = 28;
+            // for (const [score, pidx] of colorScoreMap) {
+            colorLoop: for (const pidx of iterateRN(18, 8)) {
+                let testIdx = pidx
+                // do {
+                    const tvUser = screenUsersMap.get(testIdx)
+                    
+                    await mng.getUNBoundingBox(new Map([[testIdx, tvUser]]),
+                        {appear:false, length:false, color:true}
+                    )
+                    len_check_count.color += 1
+
+                    if (len_check_count.color++ > LIMIT ) break colorLoop;
+                    // if (tvUser.color && tvUser.color == predictedUsers[pidx].color) break;
+
+                // } while ((--testIdx) - offsetMatch >= 0);
+            }
+
+            console.debug(`Color match took ${color_sw.htime}`); // load baring 
+
+            ({goodMatch, offsetMatch} = UsernameAllTracker.findColorOffset(
+                predictedUsers, screenUsersMap
+            ));
+
         }
 
         if (lenScoreMap.length > 0 && !goodMatch) {   // set to fail-back offset
@@ -488,17 +519,12 @@ export class MarblesAppServer {
             } else if (!pUser.hasImageAvailable && vidx != 23 && vidx >= lastVisibleIdx) {
                 // Get ANY image to make sure I have something
                 this.captureBasicImage(pUser, vidx, mng, processImgId)
+                // get a color sig if possible
+                await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:false, color:true})
             } else {
                 continue // skip length & ocr
             }
 
-            // TODO: Need to save image even if no length for posterity
-            
-            // if (vUser.lenUnchecked) { // TODO: Do multiple checks at once
-            //     await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:true})
-            //     len_check_count.post_match++
-            //     vUser.debug.unknownLen = true // debug info
-            // }
             pUser.setLen(vUser.length)
             if (pUser.length && ocrAvailable && pUser.readyForOCR) {
                 pUser.ocr_processing = true;
@@ -572,9 +598,9 @@ export class MarblesAppServer {
             return
         }
 
-        const binUserImg = await mng.binTrackedUserName([sharpBuffer])
+        const binUserImg = await mng.binTrackedUserName([sharpBuffer], user)
         if (this.debug_obj.user_bin)
-            console.log(`bin #${processImgId} @ ${visibleIdx} took ${binPerf.time}`)
+            console.log(`bin #${processImgId} @ ${visibleIdx} took ${binPerf.htime}`)
 
         const binSharp = SharpImg.FromRawBuffer(binUserImg).toSharp({toJPG:true, scaleForOCR:true})
         const binBuffer = await binSharp.toBuffer()
@@ -851,7 +877,7 @@ export class MarblesAppServer {
             }
             
             this.ServerStatus.enterStopState()
-            console.log(`Test run took ${localTest_sw.time}`)
+            console.log(`Test run took ${localTest_sw.htime}`)
         } else {
             // source is video
             // technically this should copy start() and use that flow
@@ -1033,7 +1059,7 @@ export class MarblesAppServer {
             `Median: ${resultObj.median}, Avg-non-perfect ${(resultObj.nonPerfectMean).toFixed(2)}`,
             `Not found list (${resultObj.notFound.length}): ${resultObj.notFound.join(', ')}`,
             `Fail Alias List: ${formatMap(resultObj.failAliasIdxMap)}`,
-            `Completed test in ${listTest_sw.time}`]
+            `Completed test in ${listTest_sw.htime}`]
 
         console.debug(stats.join('\n'))
         

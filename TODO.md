@@ -60,19 +60,28 @@ The goal is every single name should be tracked even if I can't read it or get a
     - Just use old check, time-based after first name read
 
 # Current Thoughts
-So testing is in and the name prediction is not reliable enough, and again the main concern is tracking the timing especially in low name cases.
-I'm thinking about this in terms of perfection again- the fact is at ANY point the names can be obscured; how MUCH accuracy can I get? What am I working towards?
 
-Currently its 96% accurate, could be 98% if I fix the discontinuity problem.
-If I use blue/white tracking, I could maybe get temporal working. But temporal also needs bit-rate checking, which needs overlap detection, which needs-
+So color is too slow on startup, maybe if it occurs after a lot of OCR but it took 50 pages to pull down the count.
+For the sake of not having to look at that code again, I'm still ignoring that and assuming I can catch up.
 
+I need to fix the logic where I detect how many edges have been crossed for how reliable the check is
+if there are 2 offsets with equal edges, then it's not a match- and I can early out on this
+
+I also now how a way to make this faster- do edge detection and then calculate a section with high edges that can still be detected based on old colors
+i.e take 5 names in the middle of the list- if offset is 5, i know the remaining colors so I can verify what the names are
+God I don't want to mess with that algorithm again, I hate it; why is subset matching so dumb
+
+---
+
+- Do edge detection in separate code (utility)
+- confirm the goodMatch detection code with testing
+- put in the code and test it, if it works and doesn't have huge time costs I'm locking that in as final 2.0 code
+
+---
 Also need to make a config separate from code so prod isn't editing code for changes/testing
 
-Consider active multi-threading of username box testing to save more time
 
 ## Priorities
-- Blue/White tracking - this will capture the bit-rate edge cases
-- Need to split the code for prediction, its very long
 - Discontinuity tracking
 
 ## Discontinuity/Stitching
