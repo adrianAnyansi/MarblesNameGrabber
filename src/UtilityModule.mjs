@@ -20,10 +20,11 @@ export class Stopwatch {
 
     /**
      * Return time difference in ms. If not stopped, return from performance.now
+     * @param {number} from_time measure from this time first
      * @returns {number} milliseconds since start
      */
-    read() {
-        const end_time = this.stop_ts ?? performance.now()
+    read(from_time=null) {
+        const end_time = from_time ?? (this.stop_ts ?? performance.now())
         return end_time - this.start_ts
     }
 
@@ -77,6 +78,29 @@ export class Stopwatch {
     }
 }
 
+export class Statistic {
+
+    constructor (keepAllNums=false) {
+        this.keepAllNums = keepAllNums;
+        this.total = this.keepAllNums ? [] : null;
+
+        this.count = 0;
+        this.amount = 0;
+    }
+
+    add(num) {
+        this.amount += num;
+        this.count += 1;
+    }
+
+    get mean() {
+        if (this.count == 0) return NaN
+        return this.amount / this.count;
+    }
+
+    // TODO: Medians and etc
+}
+
 /** Helper function to get an iterator of N length
  * Basically Javascript equivalent of Python iterators
  * @param {number} endAt int to stop at (not inclusive)
@@ -124,4 +148,11 @@ export function formatMap(map, key_value_sep=',', entry_sep='|', sort_func=(a,b)
     if (sort_func)
         keyValueStrs.sort(sort_func)
     return keyValueStrs.join(entry_sep)
+}
+
+export function trimObject(object) {
+    for (const objName in object) {
+        if (object[objName] == 0)
+            delete object[objName]
+    }
 }

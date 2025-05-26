@@ -61,30 +61,57 @@ The goal is every single name should be tracked even if I can't read it or get a
 
 # Current Thoughts
 
-So color is too slow on startup, maybe if it occurs after a lot of OCR but it took 50 pages to pull down the count.
-For the sake of not having to look at that code again, I'm still ignoring that and assuming I can catch up.
+Debugging an offset error-
+The error is such a weird edge case:
+1. Bitrate causing better lengths to be unreadable
+2. Inconsistent username length by 1px causing an invalid match
+3. Multiple -294px (max length) allowing an invalid offset to match
 
-I need to fix the logic where I detect how many edges have been crossed for how reliable the check is
-if there are 2 offsets with equal edges, then it's not a match- and I can early out on this
+It's hard for me to consider this because 99% of the time this works fine.
+In nearly 6000 frames it happens twice, and it only happens because of multiple compoounding failures and luck. 
 
-I also now how a way to make this faster- do edge detection and then calculate a section with high edges that can still be detected based on old colors
-i.e take 5 names in the middle of the list- if offset is 5, i know the remaining colors so I can verify what the names are
-God I don't want to mess with that algorithm again, I hate it; why is subset matching so dumb
+Lets consider some solutions:
+1. Making length more stringent
+    This is sort of impossible because of the 1 pixel issue will always happen. Normally this doesn't matter, judging by how frequently only 2 qls are used.
+    But it happens often enough that offset_ql > 2, need to look at this
+    Also timing this? I still don't know my averages off-head
+2. Use some heuristic to trigger color matching
+    Probably >25 ql fails, depends on the testing. Color matching is immune to this problem but it takes too long to be the best option as opposed to brute forcing QL
+3. De-dup length by treating each length ±1
+    This could cause as many issues as it solves; first of all every QL check gets x3 cost.
+    Second there's no guarantee this is the root problem or that pixel offsets are THAT common. It's very possible that most cases this doesn't occur, also this only delays the problem to hopfully get solved by another check.
 
----
+Idea is going to be beefing up the logging to track QL checks.
+If there's a way to determine when to use color check based on bit-rate this would be helpful, but I don't know if its feasible.
+If QL check can trigger color, this isn't a problem.
 
-- Do edge detection in separate code (utility)
-- confirm the goodMatch detection code with testing
-- put in the code and test it, if it works and doesn't have huge time costs I'm locking that in as final 2.0 code
+Also write a timing function so I know what the average rates of things are
+
+-------------
+I think there's a pretty big info gap when it comes to how offset is determined
+both in terms of accuracy and speed.
+Focus is going to be tha, accuracy over speed though
+
+------------------------------------------------------------
+Remove the 
+
+
+# Focus today
+- Change server config to external
+- Change logging to get updated
+- Check if names hit the threshold of long name (around -290) and change the cropping logic
+- Use logging to debug namnes & color
+- If eveything looks good, start working on the new stuff
+
+- Pull the old code for bin and try and detect behind chat 
+    (or use expanded box + etc), but track when player
+
 
 ---
 Also need to make a config separate from code so prod isn't editing code for changes/testing
 
-
-## Priorities
-- Discontinuity tracking
-
-## Discontinuity/Stitching
+# Longer thoughts
+## Discontinuity/Stitching (DEPRIORITIZED)
 Here's how this works;
 1. When no offset can be found BUT a length can be found, create an discontinuity tracker at that position, then shift the entire screen down.
 2. As the screen continues to get filled*, server tries to stitch the disconnect back together but only if length matches, not trying to fill gaps of null.
@@ -92,23 +119,6 @@ Here's how this works;
 3. If a match is found, remove disconunity marker and add the results of the predictedUsers together
 4. Otherwise, once the entire 2nd screen is populated (a stitch cannot be made), discontinue trying to stitch.
 
-## Blue/White tracking
-Summarizing this
-If I can track the blue/white names (particularly white), I can track offset despite bit-rate issues.
-This has to be done during length check; and will only activate as a QL backup.
-
-## Average Length
-NOTE: Need to check if this is even possible- 
-If I can determine the average length of a bit-crushed name, this is a better tracker than Blue/White.
-However this is only better when very few names are visible because the Blue/White will always work over a lot of names due to randomness.
-
-
-# Focus today
-- ~Lambda checking~ (already did it, the code works but I'd have to change things later)
-- Check if names hit the threshold of long name (around -290) and change the cropping logic
-
-- Pull the old code for bin and try and detect behind chat
-- Change server config to external
 
 
 ## Bugs

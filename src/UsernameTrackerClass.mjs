@@ -359,7 +359,7 @@ export class UsernameAllTracker {
             return [null] // no match between offsets
         })?.at(0) ?? null
 
-        const goodMatch = (offsetList.length > 1) && (offsetMatch != null)
+        const goodMatch = (offsetList.length > 2) && (offsetMatch != null)
         return {offsetMatch, goodMatch}
     }
 

@@ -7,7 +7,7 @@ Removes canvas elements and uses sharp instead
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
 import { randInt, rotPoint, toPct } from './Mathy.mjs'
-import { iterateN, Stopwatch } from "./UtilityModule.mjs"
+import { iterateN, Statistic, Stopwatch } from "./UtilityModule.mjs"
 import { PixelMeasure, Color,
     ImageTemplate, ImageBuffer, Direction2D, SharpImg} from './ImageModule.mjs'
 import {resolve} from 'node:path'
@@ -209,6 +209,9 @@ class UserNameConstant {
 export class UserNameBinarization {
 
     static LINE_DEBUG = false
+    static COLOR_SW_STAT = new Statistic()
+    static QL_SW_STAT = new Statistic()
+    static LEN_SW_STAT = new Statistic()
 
     /** @type {import('./ImageModule.mjs').RectObj} rectangle for cropped usernames */
     static NAME_CROP_RECT = {
@@ -940,6 +943,7 @@ export class UserNameBinarization {
     async getUNBoundingBox(usersToCheck=null, {appear=true, length=true, color=false, quickLength=new Map()}) {
 
         const un_bound_box = this.debug ? new Stopwatch() : null;
+        // const un_bound_box = new Stopwatch();
         
         const imgBuffer = await this.sharpImg.buildBuffer();
         
@@ -966,7 +970,7 @@ export class UserNameBinarization {
             /** @type {number} y_coord relative to the top of the user box */
             const user_y_start = UN_TOP_Y + UN_BOX_HEIGHT * userIndex
 
-            const user_perf_sw = new Stopwatch()
+            const user_perf_sw = new Stopwatch() // TODO: Reuse this stopwatch
             /** @type {boolean | undefined} is user enabled for quickLength check */
             const userQLCheck = quickLength && quickLength.get(userIndex)
             const IsUserIndex23 = userIndex == 23
@@ -977,13 +981,13 @@ export class UserNameBinarization {
                 // TODO: during exitingState, this can trigger on the A of Play (edge-case)
                 // detect the top/bottom lines to verify this as well
                 let right_match = 0
-                for (let d=UN_BOX_HEIGHT/4; d < UN_BOX_HEIGHT * 3/4; d++) {
-                    if (IsUserIndex23 && user_y_start+d >= imgBuffer.height) break
+                for (const y_check=UN_BOX_HEIGHT/4; y_check < UN_BOX_HEIGHT * 3/4; y_check++) {
+                    if (IsUserIndex23 && user_y_start+y_check >= imgBuffer.height) break
                     
-                    const rightLine = this.checkLineThres(UN_RIGHT_X, user_y_start+d, imgBuffer, 1, Direction2D.LEFT)
+                    const rightLine = this.checkLineThres(UN_RIGHT_X, user_y_start+y_check, imgBuffer, 1, Direction2D.LEFT)
                     if (rightLine) {
                         right_match++
-                        if (this.debug) imgBuffer.setPixel(UN_RIGHT_X, user_y_start+d, Color.RED)    
+                        if (this.debug) imgBuffer.setPixel(UN_RIGHT_X, user_y_start+y_check, Color.RED)    
                         if (right_match > APPEAR_MIN) break;
                     }
                 }
@@ -997,6 +1001,7 @@ export class UserNameBinarization {
             // Check length at this specific position only.
             // If the length check fails, length will remain on its previous value
             if (userQLCheck) {
+                const ql_SW = user_perf_sw.read()
                 const MATCH_MIN = !IsUserIndex23 ? 15 : 7;
                 const x_px_to_check = userQLCheck + UN_RIGHT_X
                 let left_match_pixels = 0;
@@ -1030,13 +1035,14 @@ export class UserNameBinarization {
                         }
                     }
                 }
-                
+                UserNameBinarization.QL_SW_STAT.add(user_perf_sw.read(ql_SW))
                 if (this.debug)
                     console.log(`Quick left-line detect took #${userIndex} ${user_perf_sw.htime}`)
             }
 
             if (length && visualUser.lenUnchecked) {
 
+                const len_SW_time = user_perf_sw.read()
                 // NOTE: Could bin-search this but could be inaccurate if there's a line somewhere else
                 const [lx, _ly] = this.followUsernameLine(
                     UN_RIGHT_X-20, user_y_start, imgBuffer, Direction2D.LEFT, Direction2D.DOWN);
@@ -1109,11 +1115,13 @@ export class UserNameBinarization {
                 }
                 if (!visualUser.length)
                     visualUser.length = null
+                UserNameBinarization.LEN_SW_STAT.add(user_perf_sw.read(len_SW_time))
                 if (this.debug)
                     console.log(`Length detect took #${userIndex} ${user_perf_sw.htime}`)
             } // userbox if-length check
 
-            if (color && !visualUser.color) { // NOTE: Disabled 
+            if (color && !visualUser.color) { // NOTE: Disabled if color already exists
+                const color_sw = user_perf_sw.read()
                 // pick an arbitary spot/letter to check
                 const user_y_range = [64,64+28] // 16 is the width of the underscore + kerning, 64 is arbitary sample spot
                 const sample_y = 26; // 26 pixels covers the low = underscore & high = Most capitals
@@ -1155,6 +1163,8 @@ export class UserNameBinarization {
                 } else {
                     visualUser.color = resultArr[0]
                 }
+                
+                UserNameBinarization.COLOR_SW_STAT.add(user_perf_sw.read(color_sw))
 
                 if (this.debug)
                     console.log(`User color check #${userIndex} = ${visualUser.color?.name} took ${user_perf_sw.htime}`)

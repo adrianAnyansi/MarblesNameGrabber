@@ -485,6 +485,31 @@ export class ServerStatus {
     
 }
 
+/**
+ * @typedef LenObject Object keeping track of length & bin checks
+ * @property {number} offset_ql quicklength checks
+ * @prop {number} offset offset checks
+ * @prop {number} post_match checks done after offset to determine length
+ * @prop {number} pre_ocr checks done before ocr but length is known
+ * @prop {number} color checks done for color match
+ * 
+ */
+
+/**
+ * @typedef FrameObject
+ * @property {string} log all non frame logging
+ * @property {number} frame_num frames read from the system
+ * @property {number} process_id frame id that have been processed
+ * @property {number} offset offset determined during iteration
+ * @property {LenObject} len_obj len object for this frame
+ * @property {Object} [len_ofst] offset determined by length checks
+ * @property {Object} [color_ofst] offset determined by color match 
+ */
+
+/**
+ * Contains values/states concerning the visibility of the screen & names.
+ * Note that if the screen was skipped, there will be no output here
+ */
 export class ScreenState {
     constructor () {
         /** @type {boolean} bool if previous screen was visible, trust timing for this screen */
@@ -505,9 +530,13 @@ export class ScreenState {
         this.predictedFrame = []
         // to track - 1. seen 2. had length 3. had OCR
 
+        // /** @type {number[]} verified offset per frame */
+        // this.offsetMatchFrame = []
 
-        /** @type {number[]} verified offset per frame */
-        this.offsetMatchFrame = []
+        /** @type {FrameObject[]} keep track of all objects relevant for this frame */
+        this.frameObj = []
+
+        this.ignoredFrames = []
     }
 
     /**
@@ -589,7 +618,7 @@ export class ScreenState {
             this.visibleScreenFrame.at(-1) != this.visibleScreenFrame.at(-2)
         ) return true;
         
-        if (this.offsetMatchFrame.at(-1) != 0) return true
+        if (this.frameObj.at(-1).offset != 0) return true
         if (this.predictedFrame.at(-1) != this.predictedFrame.at(-2))
             return true;
 

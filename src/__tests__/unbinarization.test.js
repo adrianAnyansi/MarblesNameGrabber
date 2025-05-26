@@ -46,14 +46,14 @@ test("Test userbox appear & length check",
         // const filename = chatTestingFolder + 'chat_clean.png'
         // TODO: Also get the length of users and check against each
         const fileList = [
-            curatedFolder + 'chat_clean.png',
+            // curatedFolder + 'chat_clean.png',
             // curatedFolder + 'chat_bitrate.png',
             
             // curatedFolder + 'chat_bitrate_recover.png',
             
             // curatedFolder + 'chat_name_bg2.png',
             // curatedFolder + 'chat_clean_black.png'
-            // getFilename(vodTestingFolder, 875)
+            getFilename(vodDumpFolder, 1024)
             // I only have 1 full example cause he's always left-side :(
             // curatedFolder + 
         ]
@@ -78,9 +78,9 @@ test("Test userbox appear & length check",
 
 test("Test 1 userbox appear/length",
     async () => {
-        const filename = getFilename(vodDumpFolder, 258)
+        const filename = getFilename(vodDumpFolder, 1027)
         
-        const userIdx = 12;
+        const userIdx = 8;
         // const filename = chatTestingFolder + 'chat_clean.png'
 
         const mng = new UserNameBinarization(filename, true);
@@ -96,13 +96,14 @@ test("Test 1 userbox appear/length",
 
 test("Test userbox quick length check",
     async () => {
-        const filename = getFilename(vodDumpFolder, 882)
+        const filename = getFilename(vodDumpFolder, 1027)
 
         const buffer = await new SharpImg(filename).sharpImg.toBuffer()
         const mng = new UserNameBinarization(buffer, true);
         const all_user_sw = new Stopwatch()
 
-        const testusers = [[17, -163]];
+
+        const testusers = [[8, -258], [14, -294], [16, -294]];
 
         const testIdxMap = new Map(testusers.map(p => [p[0]]))
         const testQLMap = new Map(testusers)
@@ -372,3 +373,47 @@ test ("Test Send image for OCR Lamba", async () => {
     console.log(JSON.stringify(lambdaRet))
 })
 
+test("Manual test of vod image for debug",
+    async () => {
+
+        const page = 881;
+
+        const testObj = {
+            userIdx: 16,
+            // ql_test: -126,
+            appear: true,
+            length: true,
+            color: true
+        }
+
+        const mng = new UserNameBinarization( getFilename(vodDumpFolder, page), true);
+        const all_user_sw = new Stopwatch()
+        UserNameBinarization.LINE_DEBUG = true
+
+        // test Map
+        let testMap = null
+        if (testObj.userIdx)
+            testMap = new Map([[testObj.userIdx]])
+        
+        const testOpts = {
+            appear: testObj?.appear ?? false,
+            length: testObj?.length ?? false,
+            color: testObj?.color ?? false,
+            quickLength: testObj.ql_test ? new Map([[testObj.userIdx, testObj.ql_test]]) : null
+        }
+
+        const users = await mng.getUNBoundingBox(testMap, testOpts);
+        
+        all_user_sw.stop()
+        // const v_out = users
+        console.log(`Visual Username out ${ Array.from(users.entries()
+            .map(([idx,user]) => [idx, JSON.stringify({
+                color: user.color.name,
+                length: user.length,
+                appear: user.appear,
+                
+            })])).join('\n') }`)
+
+        // TODO: Add OCR
+    }
+);

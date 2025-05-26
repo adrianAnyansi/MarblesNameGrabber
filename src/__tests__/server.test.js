@@ -272,11 +272,16 @@ test ("Appserver local test", async () => {
     appserver.ServerStatus.localListSource = marble_list_fn
     
     appserver.localTest(
-        "testing/video_clips/vod_2436099273.ts",
+        // "testing/video_clips/vod_2436099273.ts",
+        "testing/vod_dump/",
         null,
         null,
-        null
+        400 // actually starts around 510
     )
+
+    // setTimeout( () => {
+    //     appserver.stop()
+    // }, 10_000)
 
     // appserver.testAgainstList(null, marble_list_fn)
 })
