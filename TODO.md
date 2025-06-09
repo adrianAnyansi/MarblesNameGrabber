@@ -61,54 +61,36 @@ The goal is every single name should be tracked even if I can't read it or get a
 
 # Current Thoughts
 
-Debugging an offset error-
-The error is such a weird edge case:
-1. Bitrate causing better lengths to be unreadable
-2. Inconsistent username length by 1px causing an invalid match
-3. Multiple -294px (max length) allowing an invalid offset to match
+offset error is fixed. QL worked as expected for the test.
 
-It's hard for me to consider this because 99% of the time this works fine.
-In nearly 6000 frames it happens twice, and it only happens because of multiple compoounding failures and luck. 
+Will leave this problem for later
+2. On low bitrate, the color gradient means a low confidence on the pixels.
+    so likely multiple overlays might not help.
+    I should increase the colorspace instead.
 
-Lets consider some solutions:
-1. Making length more stringent
-    This is sort of impossible because of the 1 pixel issue will always happen. Normally this doesn't matter, judging by how frequently only 2 qls are used.
-    But it happens often enough that offset_ql > 2, need to look at this
-    Also timing this? I still don't know my averages off-head
-2. Use some heuristic to trigger color matching
-    Probably >25 ql fails, depends on the testing. Color matching is immune to this problem but it takes too long to be the best option as opposed to brute forcing QL
-3. De-dup length by treating each length ±1
-    This could cause as many issues as it solves; first of all every QL check gets x3 cost.
-    Second there's no guarantee this is the root problem or that pixel offsets are THAT common. It's very possible that most cases this doesn't occur, also this only delays the problem to hopfully get solved by another check.
-
-Idea is going to be beefing up the logging to track QL checks.
-If there's a way to determine when to use color check based on bit-rate this would be helpful, but I don't know if its feasible.
-If QL check can trigger color, this isn't a problem.
-
-Also write a timing function so I know what the average rates of things are
-
--------------
-I think there's a pretty big info gap when it comes to how offset is determined
-both in terms of accuracy and speed.
-Focus is going to be tha, accuracy over speed though
 
 ------------------------------------------------------------
-Remove the 
+From 1 minute test
+Color Avg: 0.40ms
+Quick length Avg: 0.06ms 
+Length Avg: 0.39ms
 
+From full 5 min test
+Color Avg: 0.51ms
+Quick length Avg: 0.06ms 
+Length Avg: 0.39ms
 
 # Focus today
 - Change server config to external
-- Change logging to get updated
 - Check if names hit the threshold of long name (around -290) and change the cropping logic
-- Use logging to debug namnes & color
+    - Since the play button shrinks, the right side binarization has to account for this
 - If eveything looks good, start working on the new stuff
 
+## New stuff
+- draw up new website
+- start on "unverified" code and assignment
 - Pull the old code for bin and try and detect behind chat 
     (or use expanded box + etc), but track when player
-
-
----
-Also need to make a config separate from code so prod isn't editing code for changes/testing
 
 # Longer thoughts
 ## Discontinuity/Stitching (DEPRIORITIZED)

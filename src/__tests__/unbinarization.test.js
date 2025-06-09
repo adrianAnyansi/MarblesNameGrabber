@@ -42,26 +42,25 @@ test("Single pixel line test check",
 
 test("Test userbox appear & length check",
     async () => {
-
-        // const filename = chatTestingFolder + 'chat_clean.png'
         // TODO: Also get the length of users and check against each
         const fileList = [
-            // curatedFolder + 'chat_clean.png',
+            curatedFolder + 'chat_clean.png',
             // curatedFolder + 'chat_bitrate.png',
-            
             // curatedFolder + 'chat_bitrate_recover.png',
-            
             // curatedFolder + 'chat_name_bg2.png',
             // curatedFolder + 'chat_clean_black.png'
-            getFilename(vodDumpFolder, 1024)
-            // I only have 1 full example cause he's always left-side :(
-            // curatedFolder + 
         ]
 
-        // UserNameBinarization.LINE_DEBUG = true
+        const userLenList = [
+            [-152, -163, -232, -222, -234, -294, -280, -214, -235, -144, -294, -253, -215, -189, -222,
+                -294, -294, -219, -294, -273, -172, -258, -294, -276]
+        ]
 
-        for (const filename of fileList) {
+        for (const [idx, filename] of fileList.entries()) {
             const mng = new UserNameBinarization(filename, true);
+
+            // await mng.sharpImg.buildBuffer()
+            // mng.drawBinNumber(100, 600, 1234567890, mng.sharpImg.imgBuffer)
             const all_user_sw = new Stopwatch()
             const users = await mng.getUNBoundingBox(null, {appear:true, length:true, color:false});
             
@@ -69,19 +68,29 @@ test("Test userbox appear & length check",
             console.log(`Took ${(all_user_sw.htime)} for appear+len`)
 
             console.log("Users List", Array.from(users.entries()).map(([idx, val]) => [idx, {A:val.appear, L:val.length}]))
-            const validLens = 24
-            for (const index of iterateN(validLens))
-                assert.equal(users.get(index).validLength, true)
+            // const validLens = 24
+            const compareCheck = userLenList[idx]
+            for (const [uidx, user] of users) {
+                assert.equal(user.appear, true)
+                assert.equal(user.validLength, true)
+                assert.equal(user.length, compareCheck[uidx])
+            }
+
         }
+        
+
+        // console.log(UserNameBinarization.LEN_SW_STAT)
+        // console.log(UserNameBinarization.LEN_SW_STAT.mean)
     }
 );
 
 test("Test 1 userbox appear/length",
     async () => {
-        const filename = getFilename(vodDumpFolder, 1027)
         
-        const userIdx = 8;
-        // const filename = chatTestingFolder + 'chat_clean.png'
+        const userIdx = 19;
+        const filename = chatTestingFolder + 'chat_clean.png'
+
+        const expectedLen = -273
 
         const mng = new UserNameBinarization(filename, true);
         const all_user_sw = new Stopwatch()
@@ -89,6 +98,8 @@ test("Test 1 userbox appear/length",
         const users = await mng.getUNBoundingBox(new Map([[userIdx]]), {appear:true, length:true});
         
         all_user_sw.stop()
+        assert.equal(users.get(userIdx).appear, true)
+        assert.equal(users.get(userIdx).length, expectedLen)
         console.log(`Len is ${users.get(userIdx).length}`)
         // OCR since I want to get the name here
     }
@@ -96,32 +107,27 @@ test("Test 1 userbox appear/length",
 
 test("Test userbox quick length check",
     async () => {
-        const filename = getFilename(vodDumpFolder, 1027)
+        // const filename = getFilename(vodDumpFolder, 1027)
+        const filename = chatTestingFolder + 'chat_clean.png'
 
         const buffer = await new SharpImg(filename).sharpImg.toBuffer()
         const mng = new UserNameBinarization(buffer, true);
         const all_user_sw = new Stopwatch()
 
+        const testQLMap = new Map([[8, -235], [9,-144], [14, -294], [16, -294]]);
 
-        const testusers = [[8, -258], [14, -294], [16, -294]];
-
-        const testIdxMap = new Map(testusers.map(p => [p[0]]))
-        const testQLMap = new Map(testusers)
+        const testIdxMap = new Map(Array.from(testQLMap.keys().map(key => [key])))
         const users = await mng.getUNBoundingBox(testIdxMap,
-            {appear:true, length:false, 
-            quickLength:testQLMap});
+            {appear:true, length:false, quickLength:testQLMap});
         
         all_user_sw.stop()
         console.log(`Took ${(all_user_sw.htime)} for appear+len`)
-        // console.log("Users List", users.entries())
-        for (const [uidx, ulen] of testusers) {
-            assert.equal(users.get(uidx).length, ulen)
-        }
-        // assert.equal(users.get(1).length, -200)
-        // assert.equal(users.get(2).length, -239)
-        // assert.equal(users.get(3).length, undefined)
-        // assert.equal(users.get(3).lenUnavailable, false)
-        // assert.equal(users.get(12).length, -177)
+
+        assert.equal(users.get(8).length, testQLMap.get(8))
+        assert.equal(users.get(9).length, testQLMap.get(9))
+        assert.equal(users.get(14).length, undefined)
+        assert.equal(users.get(14).lenUnavailable, false)
+        assert.equal(users.get(16).length, testQLMap.get(16))
     }
 );
 
@@ -352,10 +358,9 @@ test ("Test validate pre-race screen", async () => {
     assert.equal(await mng.validateMarblesPreRaceScreen(), true)
 })
 
-
 test ("Test Send image for OCR Lamba", async () => {
     
-    const filename = "testing/singleLineText.png"
+    const filename = "testing/curated/singleLineText.png"
 
     const lambdaOCRM = new LambdaOCRManager(10, true)
     const sharpImg = new SharpImg(filename)
@@ -366,11 +371,51 @@ test ("Test Send image for OCR Lamba", async () => {
     await Promise.all(promWait)
     const jpgBuffer = (await promWait[0])
     // const jpgSharpImg = new SharpImg(jpgBuffer)
-    const imgMetadata = {w:1920, h:1080}
+    const imgMetadata = {w:1920, h:1080} // original image size
     // const info = {w: }
     
     const lambdaRet = await lambdaOCRM.sendImgToLambda(jpgBuffer, imgMetadata, null, "unittest-job", true)
     console.log(JSON.stringify(lambdaRet))
+    assert.equal(lambdaRet.data.lines[0].text, 'Tomnookster\n')
+})
+
+test ("Binarization OCR quality", async () => {
+    const pagename = 'chat_overlay_all.png' //'chat_transition_read2.png' //'chat_name_bg2.png'
+    const filename = curatedFolder + pagename; 
+    const userIdx = 1
+
+    // 4-9, 10-13
+    // 4-9
+    // 4-15
+    // for -294, need to track position
+
+    const mng = new UserNameBinarization(filename, true);
+    const users = await mng.getUNBoundingBox(new Map([[userIdx]]), {appear:true, length:true})
+    const userObj = users.get(userIdx)
+
+    userObj.length = -200
+    const pLen = userObj.length
+
+    for (const lenOffset of iterateN(1)) {
+        userObj.length = pLen + lenOffset
+        console.log(`Length at ${userObj.length} @ + ${lenOffset}`)
+        const userCropImg = await mng.cropTrackedUserName(userObj.vidx, userObj.length)
+        userCropImg.toSharp({toPNG:true}).toFile(`testing/indv_user_crop.png`)
+
+        UserNameBinarization.BIN_FALL_OFF.base = 2
+        UserNameBinarization.BIN_FALL_OFF.match = 0
+        UserNameBinarization.BIN_FALL_OFF.unmatch = 0.5
+
+        const binUserImg = await mng.binTrackedUserName([userCropImg], null, 6, ColorSpace.COLORS.UNSUB_WHITE)
+        const ocrSharp = new SharpImg(null, binUserImg).toSharp({toJPG:true, scaleForOCR:false})
+        ocrSharp.toFile(`testing/indv_user_bin.png`)
+
+        const ocr = new NativeTesseractOCRManager(1, false, true)
+        const sw = new Stopwatch()
+        const output = await ocr.performOCR(await ocrSharp.toBuffer())
+        console.log(`OCR took ${sw.htime}, Output: ${output.data.lines[0].text}, conf: ${output.data.lines[0].confidence}`)
+        // console.log(output.data)
+    }
 })
 
 test("Manual test of vod image for debug",
@@ -378,6 +423,7 @@ test("Manual test of vod image for debug",
 
         const page = 881;
 
+        // TODO: Allow multiple checks
         const testObj = {
             userIdx: 16,
             // ql_test: -126,

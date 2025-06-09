@@ -271,6 +271,11 @@ export class MarblesAppServer {
     async writeRunToFile () {
 
         if (this.debug_obj.write_screen_state_to_file) {
+            
+            const fileStrBuffer = []
+            
+            fileStrBuffer.push(`Start: Header ${Date.now()}`) // TODO: Improve this to show marbles start/end
+
             const outString = this.ScreenState.visibleScreenFrame.map(
                 (val, idx) => {
                     const frameObj = this.ScreenState.frameObj[idx]
@@ -283,7 +288,24 @@ export class MarblesAppServer {
                              `------ end frame: ${imgId} | ${frame_time} -------`].join('\n') 
                 }
             ).join('\n')
-            await fs.writeFile(LOG_OUTPUT_FILE, outString, {flag: 'w'})
+            fileStrBuffer.push(outString)
+
+            const userListString = JSON.stringify(
+                this.usernameTracker.getReadableList(),
+                null,
+                4
+            )
+            fileStrBuffer.push(userListString)
+
+            const frameTimeString = 
+            [`Color Avg: ${UserNameBinarization.COLOR_SW_STAT.mean.toFixed(2)}ms`,
+            `Quick length Avg: ${UserNameBinarization.QL_SW_STAT.mean.toFixed(2)}ms `,
+            `Length Avg: ${UserNameBinarization.LEN_SW_STAT.mean.toFixed(2)}ms`].join('\n')
+
+            fileStrBuffer.push(frameTimeString)
+            
+            await fs.writeFile(LOG_OUTPUT_FILE, fileStrBuffer.join('\n'), {flag: 'w'})
+            console.log("Wrote all output to vod out file")
         }
     }
 
@@ -402,26 +424,29 @@ export class MarblesAppServer {
         for (const [score, pidx] of lenScoreMap) {
             
             let testIdx = pidx
-            do {
+            qlloop: do {
                 const offsetTestIdx = Math.max(0, testIdx - offsetMatch)
                 const tvUser = screenVisibleUsers.get(offsetTestIdx)
                 if (!tvUser || tvUser.validLength) continue // not visible or known len
 
-                await mng.getUNBoundingBox(new Map([[offsetTestIdx, tvUser]]), 
-                    {appear:false, length:false,
-                        quickLength:new Map([[offsetTestIdx, predictedUsers[pidx].length]])})
-                len_check_count.offset_ql += 1
+                for (const lenOffset of iterateRN(-1, 1)) { // Iterate 1 pixel for length
+                    const pTestLen = predictedUsers[pidx].length+lenOffset
+                    await mng.getUNBoundingBox(new Map([[offsetTestIdx, tvUser]]), 
+                        {appear:false, length:false,
+                            quickLength:new Map([[offsetTestIdx, pTestLen]])})
+                    len_check_count.offset_ql += 1
 
-                trackQLTest.push({ // debug logging
-                    vidx:pidx, 
-                    testIdx:offsetTestIdx, 
-                    ql:tvUser.validLength, 
-                    testql:predictedUsers[pidx].length
-                })
+                    trackQLTest.push({ // debug logging
+                        vidx:pidx, 
+                        testIdx:offsetTestIdx, 
+                        ql:tvUser.validLength, 
+                        testql:pTestLen
+                    })
 
-                if (tvUser.validLength) {
-                    tvUser.debug.qlLen = true
-                    break
+                    if (tvUser.validLength) {
+                        tvUser.debug.qlLen = true
+                        break qlloop
+                    }
                 }
             } while ((--testIdx) - offsetMatch >= 0); // load-bearing ;
 
@@ -862,7 +887,7 @@ export class MarblesAppServer {
             this.OCRManager.warmUp();
 
             const filePromiseList = []
-            const waitTime = 1_000/4
+            const waitTime = 1_000
             for (const fileName of fileList) {
                 if (fileName.endsWith('txt')) {
                     continue // NOTE: Going to provide this separately probably

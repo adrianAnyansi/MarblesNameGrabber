@@ -104,3 +104,12 @@ export function randInt(end, start=0) {
 export function randChance(chance=0.5) {
     return Math.random() <= chance
 }
+
+/**
+ * Return either 1 or 0 based on boolean value
+ * @param {Boolean} boolean boolean value to pivot on
+ * @param {number} [falseValue=0] value returned when false. typically 0 or -1
+ */
+export function ternaryBinary(boolean, falseValue=0) {
+    return boolean ? 1 : falseValue
+}

@@ -7,7 +7,7 @@ Removes canvas elements and uses sharp instead
 import sharp from 'sharp'
 import { Buffer } from 'node:buffer'
 import { randInt, rotPoint, toPct } from './Mathy.mjs'
-import { iterateN, Statistic, Stopwatch } from "./UtilityModule.mjs"
+import { iterateN, iterateRN, Statistic, Stopwatch } from "./UtilityModule.mjs"
 import { PixelMeasure, Color,
     ImageTemplate, ImageBuffer, Direction2D, SharpImg} from './ImageModule.mjs'
 import {resolve} from 'node:path'
@@ -209,9 +209,9 @@ class UserNameConstant {
 export class UserNameBinarization {
 
     static LINE_DEBUG = false
-    static COLOR_SW_STAT = new Statistic()
-    static QL_SW_STAT = new Statistic()
-    static LEN_SW_STAT = new Statistic()
+    static COLOR_SW_STAT = new Statistic(true)
+    static QL_SW_STAT = new Statistic(true)
+    static LEN_SW_STAT = new Statistic(true)
 
     /** @type {import('./ImageModule.mjs').RectObj} rectangle for cropped usernames */
     static NAME_CROP_RECT = {
@@ -657,8 +657,17 @@ export class UserNameBinarization {
             h: UserNameConstant.HEIGHT,
             w: -1*negativeLen - UN_ENTRY_PADDING,
         }
+
+        // Confidence increases if there's less white-space at the beginning
+        const FORWARD_CROP = 4;
+        if (cropRect.w < 294) {
+            cropRect.w -= FORWARD_CROP;
+            cropRect.x += FORWARD_CROP;
+        }
+
         if (cropRect.w < 0)
             throw Error("Why is cropRect negative here")
+
         return this.sharpImg.crop(cropRect)
     }
 
@@ -668,10 +677,11 @@ export class UserNameBinarization {
      * Can accept multiple images to overlay.
      * Do not send index 23 into this if possible
      * @param {SharpImg[]} sharpImgs 
-     * @param {TrackedUsername} predictedUser Add predicted user to 
+     * @param {TrackedUsername} predictedUser Add predicted user to update color
+     * @param {number} [scaleFactor=1] Scale colorspace checks when required
      * @returns {Promise<ImageBuffer>} raw image buffer
      */
-    async binTrackedUserName(sharpImgs, predictedUser) {
+    async binTrackedUserName(sharpImgs, predictedUser, scaleFactor=1, forcedColorspace) {
 
         // const binMarkName = 'bin-idv-user-start'
         // TODO: Merge multiple images, just using first one rn
@@ -688,26 +698,27 @@ export class UserNameBinarization {
         const COLOR_TEST = Object.values(ColorSpace.COLORS);
 
         /** @type {ColorSpace} Detected colorspace for current username */
-        let currColorSpace = undefined; // note saved 10ms cause it was in for-loop
+        let currColorSpace = forcedColorspace ?? undefined; // note saved 10ms cause it was in for-loop
 
-        const USER_Y_BUFFER = 6 // buffer to ignore white outside lines
+        const USER_Y_BUFFER = 6 // buffer to ignore white horizontal lines
         const UN_LEFT_BUFFER = 8 // better to ignore from the left than right
         const UN_RIGHT_BUFFER = 3
 
         // iterate from right to left across the image. Ignore 5 pixels from left
         for (let x_coord=imgBuffer.width-UN_RIGHT_BUFFER; 
                 x_coord > UN_LEFT_BUFFER; x_coord--) {
-            for (let y_coord = USER_Y_BUFFER; y_coord < imgBuffer.height-USER_Y_BUFFER; y_coord++ ) {
+            // for (let y_coord = USER_Y_BUFFER; y_coord < imgBuffer.height-USER_Y_BUFFER; y_coord++ ) {
+            for (const y_coord of iterateRN(USER_Y_BUFFER, imgBuffer.height-USER_Y_BUFFER)) {
 
-                if (pxVisitMap.get(UserNameConstant.hashCoord(x_coord,y_coord)) !== undefined) continue;
+                if (pxVisitMap.get(UserNameConstant.hashCoord(x_coord, y_coord)) !== undefined) continue;
                 const px_rgb = imgBuffer.getPixel(x_coord, y_coord)
 
                 // check if any colors match
                 let colorMatch = false;
                 if (currColorSpace) {   // test against this color
-                    colorMatch = currColorSpace.check(px_rgb)
+                    colorMatch = currColorSpace.check(px_rgb, scaleFactor)
                 } else {    // test against all colors
-                    currColorSpace = COLOR_TEST.find(cs => cs.check(px_rgb))
+                    currColorSpace = COLOR_TEST.find(cs => cs.check(px_rgb, scaleFactor))
                     if (currColorSpace) colorMatch = true
                 }
 
@@ -715,7 +726,7 @@ export class UserNameBinarization {
                 if (colorMatch) {
                     this.floodFillTracked(x_coord, y_coord,
                         imgBuffer, binBuffer, currColorSpace,
-                        pxVisitMap
+                        pxVisitMap, scaleFactor
                     )
                 } 
                 // else if (this.debug) // set color if pixel checked but no match
@@ -737,6 +748,14 @@ export class UserNameBinarization {
         return binBuffer
     }
 
+    static BIN_FALL_OFF = {
+        base: 2,
+        match: 0,
+        unmatch: 0.5,
+        // NOTE: Could change the range based on the colorspace cube
+        offset: (point, cs) => ColorSpace.sqDist(point) / ColorSpace.distMax
+    }
+
     /**
      * Flood-fill an color from the TrackedUsername image
      * @param {number} x x coordinate
@@ -745,9 +764,10 @@ export class UserNameBinarization {
      * @param {ImageBuffer} binBuffer Buffer containing the B&W result
      * @param {ColorSpace} colorSpace Matching colorSpace to check against
      * @param {Map<number, number>} pxVisitMap Map to track visited pixels
+     * @param {number} scaleFactor increasing cube for color matching
      * @param {number} expand Continue N pixels past a successful match
      */
-    floodFillTracked(x,y, imgBuffer, binBuffer, colorSpace, pxVisitMap, expand=3) {
+    floodFillTracked(x,y, imgBuffer, binBuffer, colorSpace, pxVisitMap, scaleFactor=1, expand=3) {
         let px_visited = 0
 
         /** @type {Array[number[]]} */
@@ -773,12 +793,18 @@ export class UserNameBinarization {
             px_visited += 1;
 
             const px_rgb = imgBuffer.getPixel(cx, cy)
-            const matchColorSpaceBool = colorSpace.check(px_rgb);
+            const matchColorSpaceBool = colorSpace.check(px_rgb, scaleFactor);
             
             // calculate the fall-off based on range
-            const chOffset = 1 - (ColorSpace.sqDist(colorSpace.getPoint(px_rgb)) / ColorSpace.distMax);
-            const EXP_FALLOFF = 3 + (matchColorSpaceBool ? 1 : 3)
+            // const chOffset = 1 - (ColorSpace.sqDist(colorSpace.getPoint(px_rgb)) / ColorSpace.distMax);
+            // const EXP_FALLOFF = 3 + (matchColorSpaceBool ? 1 : 3)
+            // const avgRatio = (chOffset ** EXP_FALLOFF)
+
+            const chOffset = 1 - (UserNameBinarization.BIN_FALL_OFF.offset(colorSpace.getPoint(px_rgb), colorSpace) / scaleFactor)
+            const EXP_FALLOFF = UserNameBinarization.BIN_FALL_OFF.base 
+                + (matchColorSpaceBool ? UserNameBinarization.BIN_FALL_OFF.match : UserNameBinarization.BIN_FALL_OFF.unmatch)
             const avgRatio = (chOffset ** EXP_FALLOFF)
+
             const avgCh = Math.round((1-avgRatio) * 0xFF) // invert cause BLACK is 0
             const bw_rgb = [avgCh, avgCh, avgCh];
 
@@ -964,16 +990,22 @@ export class UserNameBinarization {
                 if (!vUser) usersToCheck.set(idx, new VisualUsername(idx));
             }
         }
+        
+        const user_perf_sw = new Stopwatch() // TODO: Reuse this stopwatch
 
         for (const [userIndex, visualUser] of usersToCheck.entries()) {
 
             /** @type {number} y_coord relative to the top of the user box */
             const user_y_start = UN_TOP_Y + UN_BOX_HEIGHT * userIndex
 
-            const user_perf_sw = new Stopwatch() // TODO: Reuse this stopwatch
-            /** @type {boolean | undefined} is user enabled for quickLength check */
-            const userQLCheck = quickLength && quickLength.get(userIndex)
+            user_perf_sw.restart() // restart stopwatch
+            /** @type {number | undefined} is user enabled for quickLength check */
+            const userQLCheck = (quickLength && quickLength.get(userIndex) ) ?? undefined
             const IsUserIndex23 = userIndex == 23
+
+            if (this.debug) {
+                UserNameBinarization.drawBinNumber(UN_RIGHT_X + 25, user_y_start+UN_BOX_HEIGHT/2, userIndex, this.sharpImg.imgBuffer)
+            }
 
             // check the right side wall
             if (appear) {
@@ -981,7 +1013,7 @@ export class UserNameBinarization {
                 // TODO: during exitingState, this can trigger on the A of Play (edge-case)
                 // detect the top/bottom lines to verify this as well
                 let right_match = 0
-                for (const y_check=UN_BOX_HEIGHT/4; y_check < UN_BOX_HEIGHT * 3/4; y_check++) {
+                for (const y_check of iterateRN(UN_BOX_HEIGHT*1/4, UN_BOX_HEIGHT*3/4)) {
                     if (IsUserIndex23 && user_y_start+y_check >= imgBuffer.height) break
                     
                     const rightLine = this.checkLineThres(UN_RIGHT_X, user_y_start+y_check, imgBuffer, 1, Direction2D.LEFT)
@@ -1030,8 +1062,6 @@ export class UserNameBinarization {
                                 }
                             }
 
-                            // visualUser.length = x_px_to_check - UN_RIGHT_X; // set early and quit
-                            // break;
                         }
                     }
                 }
@@ -1365,6 +1395,54 @@ export class UserNameBinarization {
             }
         }
         return Color.sumColor(checkPx)/3 < cleanMin;
+   }
+
+   // by u/Udzu on reddit, thanks!
+   // https://www.reddit.com/r/PixelArt/comments/ppcd19/smallest_legible_pixel_fonts/
+   static PixelNumber3_5 = {
+    [0]: [0b111, 0b101, 0b101, 0b111],
+    [1]: [0b011, 0b001, 0b001, 0b001],
+    [2]: [0b111, 0b001, 0b110, 0b111],
+    [3]: [0b111, 0b011, 0b001, 0b111],
+    [4]: [0b101, 0b101, 0b111, 0b001],
+    [5]: [0b111, 0b110, 0b001, 0b111],
+    [6]: [0b111, 0b100, 0b111, 0b111],
+    [7]: [0b111, 0b001, 0b001, 0b001],
+    [8]: [0b111, 0b111, 0b101, 0b111],
+    [9]: [0b111, 0b111, 0b001, 0b111],
+   }
+
+    /**
+     * Draw a pixel number
+     */
+    static drawBinNumber(p_x, p_y, number, imgBuffer) {
+
+        const defaultWidth = 10;
+        const space = defaultWidth / 5;
+        const indvDigits = []
+
+        while (number >= 10) {
+            indvDigits.unshift(Math.trunc(number % 10))
+            number /= 10
+        }
+        
+        indvDigits.unshift(Math.trunc(number % 10))
+        const lineSplit = [0b100, 0b010, 0b001]
+
+        
+
+        for (const [d_idx, digit] of indvDigits.entries()) {
+            const st_px = p_x + 4 *d_idx
+            const pxDigit = UserNameBinarization.PixelNumber3_5[digit]
+            // parse binary to list of digits
+            for (const [y_idx, binLine] of pxDigit.entries()) {
+                for (const [x_idx, lineGuide] of lineSplit.entries()) {
+                    if ((binLine & lineGuide) != 0)
+                        imgBuffer.setPixel(st_px+x_idx, p_y+y_idx, Color.RED)
+                }
+            }
+        }
+
     }
 
 }

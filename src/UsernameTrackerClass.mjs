@@ -300,6 +300,8 @@ export class UsernameAllTracker {
         return {offset:bestOffsetIdx, goodMatch: (bestPctMatch > MIN_MATCH)}
     }
 
+    static VISUAL_MATCH_MIN = 2;
+
     /**
      * Return true if two significant matches are made, but get 
      * @param {TrackedUsername[]} predictedUsers 
@@ -359,7 +361,7 @@ export class UsernameAllTracker {
             return [null] // no match between offsets
         })?.at(0) ?? null
 
-        const goodMatch = (offsetList.length > 2) && (offsetMatch != null)
+        const goodMatch = (offsetList.length >= UsernameAllTracker.VISUAL_MATCH_MIN) && (offsetMatch != null)
         return {offsetMatch, goodMatch}
     }
 
@@ -448,6 +450,8 @@ export class UsernameAllTracker {
         return retVal
     }
 
+    static LENGTH_RANGE = 1;
+
     /**
      * Given a list of predictedUsers, compare the lengths against each other
      * @param {TrackedUsername[]} predictedUsers 
@@ -465,9 +469,12 @@ export class UsernameAllTracker {
                 continue
             }
 
-            const lenArr = duplIndexMap.get(pUser.length) ?? []
-            if (lenArr.push(pidx) > 1) duplKeys.add(pUser.length)
-            duplIndexMap.set(pUser.length, lenArr)
+            // NOTE: Range lengths by +1 for inaccuracy
+            for (const pLen of iterateN(pUser.length-1, pUser.length+1)) {
+                const lenArr = duplIndexMap.get(pLen) ?? []
+                if (lenArr.push(pidx) == 1) duplKeys.add(pLen)
+                duplIndexMap.set(pLen, lenArr)
+            }
             
             const leftVal = Math.abs(pUser.length - 
                 (predictedUsers[pidx - 1]?.length ?? pUser.length))

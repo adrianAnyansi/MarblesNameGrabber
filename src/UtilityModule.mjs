@@ -7,7 +7,7 @@ export class Stopwatch {
 
     constructor(name=null) {
         this.name = name
-        this.start()
+        this._start()
     }
 
     /**
@@ -20,20 +20,27 @@ export class Stopwatch {
 
     /**
      * Return time difference in ms. If not stopped, return from performance.now
-     * @param {number} from_time measure from this time first
+     * @param {number} from_time measure from this time as start time
      * @returns {number} milliseconds since start
      */
     read(from_time=null) {
-        const end_time = from_time ?? (this.stop_ts ?? performance.now())
-        return end_time - this.start_ts
+        const end_time = this.stop_ts ?? performance.now()
+        return end_time - (this.start_ts - (from_time ?? 0))
     }
 
     /**
      * Start stopwatch. This will overwrite any previous values
      */
-    start () {
+    _start () {
         this.start_ts = performance.now()
         this.stop_ts = null
+    }
+
+    /**
+     * Starts stopwatch by resetting the start time
+     */
+    restart () {
+        this._start()
     }
 
     /**
@@ -42,6 +49,13 @@ export class Stopwatch {
     stop () {
         this.stop_ts = performance.now()
         return this.read()
+    }
+
+    /**
+     * Continue the stopwatch without changing the start time
+     */
+    continue () {
+        this.stop_ts = null
     }
 
     static TIME_SEQUENCE = new Map(Object.entries({
@@ -80,15 +94,17 @@ export class Stopwatch {
 
 export class Statistic {
 
-    constructor (keepAllNums=false) {
-        this.keepAllNums = keepAllNums;
-        this.total = this.keepAllNums ? [] : null;
+    constructor (storeNums=false) {
+        this.storeNums = storeNums;
+        this.numArr = this.storeNums ? [] : null;
 
         this.count = 0;
         this.amount = 0;
     }
 
     add(num) {
+        if (this.storeNums)
+            this.numArr.push(num)
         this.amount += num;
         this.count += 1;
     }
@@ -155,4 +171,10 @@ export function trimObject(object) {
         if (object[objName] == 0)
             delete object[objName]
     }
+}
+
+export async function delay(ms) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
 }

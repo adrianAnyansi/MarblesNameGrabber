@@ -9,7 +9,9 @@ import {MarblesAppServer} from "../MarblesAppServer.mjs"
 
 import { Stopwatch, iterateN } from '../UtilityModule.mjs';
 import { UsernameAllTracker } from '../UsernameTrackerClass.mjs';
-import { TrackedUsername } from '../UserModule.mjs';
+import { TrackedUsername, VisualUsername } from '../UserModule.mjs';
+import { randChance, randInt } from '../Mathy.mjs';
+import { SharpImg } from '../ImageModule.mjs';
 
 test("Username comparisons", async () => {
     const app_server = new MarblesAppServer()
@@ -276,12 +278,13 @@ test ("Appserver local test", async () => {
         "testing/vod_dump/",
         null,
         null,
-        400 // actually starts around 510
+        400 // actually starts around 541
     )
 
+    // const waitTime = 60 * 1_000;
     // setTimeout( () => {
     //     appserver.stop()
-    // }, 10_000)
+    // }, waitTime)
 
     // appserver.testAgainstList(null, marble_list_fn)
 })

@@ -4,7 +4,7 @@ import {test} from 'node:test'
 import assert from 'node:assert/strict'
 
 import { ColorSpace } from "../UsernameBinarization.mjs";
-import { iterateN, iterateRN } from "../UtilityModule.mjs";
+import { delay, iterateN, iterateRN, Statistic, Stopwatch } from "../UtilityModule.mjs";
 import { randInt, rotPoint } from '../Mathy.mjs';
 import { Heap } from '../DataStructureModule.mjs';
 import { UsernameAllTracker } from '../UsernameTrackerClass.mjs';
@@ -34,7 +34,7 @@ test("Confirm colorspace rotation",
             [-1,0,0]
         ]
         const rotdPoint = rotPoint(matrix, point2)
-        const expPoint = new Float32Array([0, 0, 100]) // rotate into the Z axis
+        const expPoint = [0, 0, 100] // rotate into the Z axis
         assert.deepEqual(rotdPoint, expPoint)
     }
 )
@@ -90,4 +90,46 @@ test ("Async sync", async () => {
     // omg worker threads are like JS threads and need a new file... :(
     let prom1s = [longCalc(), longCalc(), longCalc()]
     await Promise.all(prom1s)
+})
+
+test ("Statistic class", async () => {
+    const stat = new Statistic()
+
+    const test = [1,2,3,4,5,6,7,8,9] // sum to 20
+    for (const num of test)
+        stat.add(num)
+    
+    assert.equal(stat.count, test.length)
+    assert.equal(stat.amount, test.reduce( (a,b) => a+b))
+    assert.equal(stat.mean, test.reduce( (a,b) => a+b) / test.length)
+})
+
+test ("Test Stopwatch class", async () => {
+    const sw = new Stopwatch()
+    sw.stop()
+
+    const time = sw.read()
+    assert.equal(Math.round(time), 0)
+    const [timeWait, timeFrom] = [1_000, 200]
+
+    sw.continue()
+    delay(timeWait);
+    sw.stop()
+    // await new Promise (res => setTimeout (res, timeWait))
+
+    assert.equal(Math.round(sw.read()), Math.round(performance.now()-sw.start_ts))
+    assert.equal(Math.round(sw.read(timeFrom)), Math.round(performance.now() - (sw.start_ts - timeFrom)))
+
+    const fromNow = sw.read()
+    const randWaitTime = Math.random() * 1000 + 100
+
+    sw.continue()
+    await new Promise (res => setTimeout ( res, randWaitTime))
+    sw.stop()
+
+    assert.equal(Math.round(sw.read(fromNow) * 0.1) , Math.round(randWaitTime * 0.1) )
+    assert.equal(Math.round(sw.read()), Math.round(performance.now()-sw.start_ts))
+    assert.equal(Math.round(sw.read(fromNow)), Math.round(performance.now()-(sw.start_ts - fromNow)))
+    // console.log("waitTime", randWaitTime, "fromNow", fromNow, "start_time", sw.start_ts, "perf", performance.now())
+
 })

@@ -559,7 +559,7 @@ export class SharpImg {
         if (!bufferPromise) throw Error("Trying to build buffer when both objects are NULL")
 
         if (scaleForOCR) {
-            bufferPromise = bufferPromise.resize({width:500, kernel:'mitchell'})
+            bufferPromise = bufferPromise.resize({width:400, kernel:'mitchell'})
                 .blur(1)
                 .withMetadata({density: 300})
         }
