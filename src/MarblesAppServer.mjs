@@ -29,6 +29,7 @@ const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id f
 const TWITCH_CRED_FILE = 'twitch_creds.json'
 
 const LOG_OUTPUT_FILE = 'testing/vod_out.txt'
+const USR_OUTPUT_FILE = 'testing/usr_out.txt'
 
 export class MarblesAppServer {
 
@@ -288,7 +289,9 @@ export class MarblesAppServer {
                              `------ end frame: ${imgId} | ${frame_time} -------`].join('\n') 
                 }
             ).join('\n')
-            fileStrBuffer.push(outString)
+            // fileStrBuffer.push(outString)
+            await fs.writeFile(USR_OUTPUT_FILE, outString, {flag: 'w'})
+            console.log("Wrote all output to user out file")
 
             const userListString = JSON.stringify(
                 this.usernameTracker.getReadableList(),
@@ -322,7 +325,10 @@ export class MarblesAppServer {
         }
 
         if (this.debug_obj.vod_dump) {
-            fs.writeFile(`${VOD_DUMP_LOC}${imgId}.${this.streamImgFormat[0]}`, imageLike)
+            const temp_process_id = this.StreamImage.imgs_processed == 0 
+                ? this.StreamImage.imgs_processed
+                : ''
+            fs.writeFile(`${VOD_DUMP_LOC}${temp_process_id}_${imgId}.${this.streamImgFormat[0]}`, imageLike)
         }
 
         const EMPTY_IMAGE_NUM = MarblesAppServer.EMPTY_PAGE_COMPLETE
@@ -406,7 +412,8 @@ export class MarblesAppServer {
             offset: 0,
             post_match: 0,
             pre_ocr: 0,
-            color: 0
+            color: 0,
+            basic_col: 0
         }
         frameObj.len_obj = len_check_count
         
@@ -571,6 +578,7 @@ export class MarblesAppServer {
             } else if (!pUser.hasImageAvailable && vidx != 23 && vidx >= lastVisibleIdx) {
                 // Get ANY image to make sure I have something
                 this.captureBasicImage(pUser, vidx, mng, processImgId)
+                len_check_count.basic_col++
                 // get a color sig if possible
                 await mng.getUNBoundingBox(new Map([[vidx, vUser]]), {appear:false, length:false, color:true})
             } else {
@@ -578,6 +586,7 @@ export class MarblesAppServer {
             }
 
             pUser.setLen(vUser.length)
+            pUser.setColor(vUser.color)
             if (pUser.length && ocrAvailable && pUser.readyForOCR) {
                 pUser.ocr_processing = true;
                 this.queueIndividualOCR(pUser, vidx, mng, processImgId)

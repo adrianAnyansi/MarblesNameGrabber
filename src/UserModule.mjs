@@ -687,6 +687,13 @@ export class TrackedUsername {
         this.length = inputLen
     }
 
+    setColor(color) {
+        if (color == null || color == undefined)
+            return
+
+        this.color = color
+    }
+
     get lengthUnknown () {
         return this.length === null
     }

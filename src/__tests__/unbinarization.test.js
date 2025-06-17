@@ -421,18 +421,17 @@ test ("Binarization OCR quality", async () => {
 test("Manual test of vod image for debug",
     async () => {
 
-        const page = 881;
-
         // TODO: Allow multiple checks
         const testObj = {
-            userIdx: 16,
+            page: 6612,
+            // userIdx: 16,
             // ql_test: -126,
             appear: true,
             length: true,
             color: true
         }
 
-        const mng = new UserNameBinarization( getFilename(vodDumpFolder, page), true);
+        const mng = new UserNameBinarization( getFilename(vodDumpFolder, testObj.page), true);
         const all_user_sw = new Stopwatch()
         UserNameBinarization.LINE_DEBUG = true
 
@@ -454,7 +453,7 @@ test("Manual test of vod image for debug",
         // const v_out = users
         console.log(`Visual Username out ${ Array.from(users.entries()
             .map(([idx,user]) => [idx, JSON.stringify({
-                color: user.color.name,
+                color: user.color?.name,
                 length: user.length,
                 appear: user.appear,
                 
