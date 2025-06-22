@@ -20,6 +20,23 @@ export const OCRTypeEnum = {
 }
 
 /**
+ * @param {string} ocr_enum 
+ * @returns {OCRManager}
+ */
+export function getOCRModule (ocr_enum, {concurrency, hocr, debug}) {
+    switch(ocr_enum) {
+        case OCRTypeEnum.LAMBDA:
+            return new LambdaOCRManager(concurrency, debug, hocr)
+        case OCRTypeEnum.NODE_WORKER:
+            return new NodeOCRManager(concurrency, debug)
+        default:
+            console.warn("incorrect enum, defaulting to NATIVE")
+        case OCRTypeEnum.NATIVE:
+            return new NativeTesseractOCRManager(concurrency, debug, hocr)
+    }
+}
+
+/**
  * OCR class to surface OCR methods and hiding implementation
  */
 export class OCRManager {
@@ -317,7 +334,7 @@ export class NativeTesseractOCRManager extends OCRManager {
 
 
 /**
- * Test functionality that ensures that 
+ * Test functionality that ensures that promise chaining occur directly
  */
 export class TestTesseractOCRManager extends NativeTesseractOCRManager {
 
@@ -350,7 +367,6 @@ export class LambdaOCRManager extends OCRManager {
 
     static NAME = "LambdaTesseract"
     static AWS_LAMBDA_CONFIG = { region: 'us-east-1'}
-    // static USE_LAMBDA = true
     static NUM_LAMBDA_WORKERS = 12 // Num Lambda workers
 
     constructor (expectedWorkers=LambdaOCRManager.DEFAULT_WORKERS, 
@@ -475,8 +491,8 @@ export class NodeOCRManager extends OCRManager {
     static NAME = "NodeOCRManager"
     static NUM_LIVE_WORKERS = 12 // Num Tesseract workers
     static WORKER_RECOGNIZE_PARAMS = {
-    blocks:true, hocr:false, text:false, tsv:false
-}
+        blocks:true, hocr:false, text:false, tsv:false
+    }
 
     /**
      * Setup schedulers & workers for OCR reading

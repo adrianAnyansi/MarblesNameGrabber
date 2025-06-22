@@ -13,42 +13,39 @@ import {UsernameAllTracker, UsernameSearcher} from './UsernameTrackerClass.mjs'
 import { setTimeout } from 'node:timers/promises'
 import { SharpImg } from './ImageModule.mjs'
 import { StreamingImageBuffer, ServerStatus, StreamImageTracking, ScreenState } from './ServerClassModule.mjs'
-import { NativeTesseractOCRManager, OCRManager, LambdaOCRManager } from './OCRModule.mjs'
+import { OCRManager, OCRTypeEnum, getOCRModule } from './OCRModule.mjs'
 import { formatMap, iterateN, iterateRN, Stopwatch, trimObject } from './UtilityModule.mjs'
 
-const TWITCH_URL = 'https://www.twitch.tv/'
-const LIVE_URL = 'https://www.twitch.tv/barbarousking'
-
-const VOD_DUMP_LOC = "testing/vod_dump/"
 
 let TWITCH_ACCESS_TOKEN_BODY = null
+const TWITCH_URL = 'https://www.twitch.tv/'
 const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
 const TWITCH_CHANNEL_INFO_URL = "https://api.twitch.tv/helix/channels"
 const TWITCH_DEFAULT_BROADCASTER = "barbarousking" // Default twitch channel
 const TWITCH_DEFAULT_BROADCASTER_ID = "56865374" // This is the broadcaster_id for barbarousking
 const TWITCH_CRED_FILE = 'twitch_creds.json'
 
+const VOD_DUMP_LOC = "testing/vod_dump/"
 const LOG_OUTPUT_FILE = 'testing/vod_out.txt'
 const USR_OUTPUT_FILE = 'testing/usr_out.txt'
 
 export class MarblesAppServer {
-
-    /** Determines some programs/settings */
-    static ENV = 'dev' // set from router
     
-    // Needs to handle both linux for prod and windows for dev
+    /** ffmpeg location */
     static FFMPEG_LOC = String.raw`C:\Program Files\Streamlink\ffmpeg\ffmpeg.exe` // NOTE: should work on all streamlink installations
+    /** streamlink location */
     static STREAMLINK_LOC = 'streamlink' // on PATH
 
     /** FPS to view stream */
     static FFMPEG_FPS = 30
-    /** number of frames/seconds without any valid names on them */
-    static EMPTY_PAGE_COMPLETE = 5 * MarblesAppServer.FFMPEG_FPS
-    
-    static DEFAULT_STEAM_URL = LIVE_URL
+    /** number of seconds without any valid names on them */
+    static EMPTY_PAGE_COMPLETE = 5
+    /** default  */
+    static DEFAULT_STREAM_URL = `${TWITCH_URL}${TWITCH_DEFAULT_BROADCASTER}`
 
     constructor () {
         // Server state objects
+        // ===============================================
 
         /** Format to output images to ffmpeg */
         this.streamImgFormat = StreamingImageBuffer.JPG_FORMAT
@@ -62,31 +59,22 @@ export class MarblesAppServer {
         
         // Debug variables ===========================================
         this.debug_obj = {
-            native_tesseract: false,
-            tesseract: true,
-            process: false,
-            lambda: false,
-            vod_dump: false,
-            screen_state_log: true,
-            write_screen_state_to_file: true,
-            user_bin: false, // show logs for username binarization & no log
-            ocr_output: false,
+            // native_tesseract: false,
+            // tesseract: true,
+            process: false, // debug ffmpeg/streamlink processes
+            // lambda: false,  // 
+            vod_dump: false, // dump images to folder
+            screen_state_log: true, // output the 
+            write_screen_state_to_file: true, // write run to file
+            user_bin: false, // show logs for username binarization & empty failed ocr
+            ocr_debug_flag: true, // turn on OCR class debug flag
+            ocr_output: false, // add log for failed ocr checks
             disable_ocr: false, // disable OCR checking
             disable_ocr_len: false, // disable pre OCR length check
             frame_pacing: false // track & output fps
         }
 
-        // Processors & Commands
-        // ================================
-        /** Streamlink command-line */
-        this.streamlinkCmd = [MarblesAppServer.STREAMLINK_LOC, MarblesAppServer.DEFAULT_STEAM_URL, 'best', '--stdout']
-        
-        /** ffmpeg command-line */
-        this.ffmpegCmd = [MarblesAppServer.FFMPEG_LOC, '-re', '-i','pipe:0', '-f','image2pipe', 
-                            '-c:v', ...this.streamImgFormat[1],
-                            '-vf', `fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
-
-        // Processors
+        // Processes for ffmpeg & streamlink
         // ========================================================
         /** @type {ChildProcess} Node process for streamlink */
         this.streamlinkProcess = null
@@ -95,26 +83,61 @@ export class MarblesAppServer {
         
         // Twitch tokens & vars
         // ==============================================
-        /** enable twitch monitoring */
-        this.enableTwitchMonitor = false;
-        this.twitch_access_token = null
-        this.game_type_monitor_interval = null
-        this.broadcaster_id = TWITCH_DEFAULT_BROADCASTER_ID
-        this.last_game_name = null
+        /** Twitch monitoring */
+        this.twitch_monitor = {
+            enable: false,
+            last_game_name: null,
+            broadcaster_id: TWITCH_DEFAULT_BROADCASTER_ID,
+            access_token: null,
+        }
 
         // Start up the Twitch game monitor
-        if (this.enableTwitchMonitor)
+        if (this.twitch_monitor.enable)
             this.setupTwitchMonitor()
 
-        // Tesseract variables
-        // ======================================================
         /** @type {OCRManager} OCR to manage */
-        this.OCRManager = new NativeTesseractOCRManager(3, 
-            this.debug_obj.native_tesseract, true)
+        this.OCRManager = getOCRModule(OCRTypeEnum.NATIVE, {concurrency:6, debug: this.debug_obj.ocr_debug_flag})
 
         /** @type {UsernameAllTracker} Userlist but better */
-        this.usernameTracker = new UsernameAllTracker()
+        this.usernameTracker = new UsernameAllTracker();
+    }
 
+    /**
+     * Setup server config from file.
+     */
+    setConfig(config_json) {
+        // Set config level variables from file
+        MarblesAppServer.FFMPEG_LOC = config_json.commands?.ffmpeg ?? MarblesAppServer.FFMPEG_LOC
+        MarblesAppServer.STREAMLINK_LOC = config_json.commands?.streamlink ?? MarblesAppServer.STREAMLINK_LOC
+
+        // Set core attributes
+        // Need a better way to reset these attributes instead of coding here
+        MarblesAppServer.FFMPEG_FPS = config_json.core?.fps ?? MarblesAppServer.FFMPEG_FPS
+        this.debug_obj.ocr_debug_flag = config_json.debug?.ocr_debug_flag ?? this.debug_obj.ocr_debug_flag
+        if (config_json?.core?.ocr) {
+            this.OCRManager = getOCRModule(config_json.core.ocr, {concurrency:6, debug: this.debug_obj.ocr_debug_flag})
+        }
+        
+        this.twitch_monitor.enable = config_json.core?.enable_twitch_monitor ?? this.twitch_monitor.enable
+        if (this.twitch_monitor.enable)
+            this.setupTwitchMonitor()
+        
+        // NOTE: The stream image format setting is linked to the streamingImage and likely will not be supported
+        // JPG is a huge performance increase and it's unnecessary to support PNG anymore.
+
+        // debug objs, all runtime variables
+        this.debug_obj.process                      = config_json.debug?.process ?? this.debug_obj.process                    
+        this.debug_obj.vod_dump                     = config_json.debug?.vod_dump ?? this.debug_obj.vod_dump                   
+        this.debug_obj.screen_state_log             = config_json.debug?.screen_state_log ?? this.debug_obj.screen_state_log           
+        this.debug_obj.frame_pacing                 = config_json.debug?.frame_pacing ?? this.debug_obj.frame_pacing               
+        this.debug_obj.write_screen_state_to_file   = config_json.debug?.write_screen_state_to_file ?? this.debug_obj.write_screen_state_to_file 
+        this.debug_obj.user_bin                     = config_json.debug?.user_bin ?? this.debug_obj.user_bin                   
+        
+        this.debug_obj.ocr_output                   = config_json.debug?.ocr_output ?? this.debug_obj.ocr_output                 
+        this.debug_obj.disable_ocr                  = config_json.debug?.disable_ocr ?? this.debug_obj.disable_ocr                
+        this.debug_obj.disable_ocr_len              = config_json.debug?.disable_ocr_len ?? this.debug_obj.disable_ocr_len            
+
+        console.log("Completed server config setup.")
     }
 
     // -------------------------
@@ -125,7 +148,6 @@ export class MarblesAppServer {
      * starts streamlink -> ffmpeg processing
      * Note this also setups variables assuming a state changing going to START
      * @param {String} twitch_channel 
-     * @returns 
      */
     startStreamMonitor(twitch_channel=null) {
         // Start process for stream url
@@ -134,19 +156,18 @@ export class MarblesAppServer {
 
         this.ServerStatus.enterWaitState()
 
-        if (twitch_channel)
-            this.streamlinkCmd[1] = TWITCH_URL + twitch_channel
-        else
-            this.streamlinkCmd[1] = MarblesAppServer.DEFAULT_STEAM_URL
+        const streamlinkARGS = [
+            twitch_channel ? TWITCH_URL + twitch_channel : MarblesAppServer.DEFAULT_STREAM_URL, 
+            'best', '--stdout'];
 
         console.debug(`Starting monitor in directory: ${process.cwd()}\n`+
-                        `Watching stream url: ${this.streamlinkCmd[1]}`)
+                        `Watching stream url: ${streamlinkARGS[0]}`)
         if (this.debug_obj.vod_dump) {
             console.debug(`Stream is dumped to location ${VOD_DUMP_LOC}`)
             fs.mkdir(`${VOD_DUMP_LOC}`, {recursive: true})
         }
 
-        this.streamlinkProcess = spawn(this.streamlinkCmd[0], this.streamlinkCmd.slice(1), {
+        this.streamlinkProcess = spawn(MarblesAppServer.STREAMLINK_LOC, streamlinkARGS, {
             stdio: ['inherit', 'pipe', 'pipe']
         })
         this.startFFMPEGProcess()
@@ -188,11 +209,15 @@ export class MarblesAppServer {
     startFFMPEGProcess(videoSource=null) {
         console.log("Starting ffmpeg process")
 
-        const ffmpegCMD = this.ffmpegCmd.slice() // copy array
-        if (videoSource)
-            ffmpegCMD[3] = videoSource
+        const ffmpegARGS = ['-re', '-i','pipe:0', '-f','image2pipe', 
+                            '-c:v', ...this.streamImgFormat[1],
+                            '-vf', `fps=${MarblesAppServer.FFMPEG_FPS}`, 'pipe:1']
 
-        this.ffmpegProcess = spawn(ffmpegCMD[0], ffmpegCMD.slice(1), {
+        if (videoSource)
+            ffmpegARGS[2] = videoSource
+
+        console.debug(`Starting ffmpeg process with args ${this.streamImgFormat[1]} & FPS: ${MarblesAppServer.FFMPEG_FPS}`)
+        this.ffmpegProcess = spawn(MarblesAppServer.FFMPEG_LOC, ffmpegARGS, {
             stdio: ['pipe', 'pipe', 'pipe']
         })
 
@@ -331,7 +356,7 @@ export class MarblesAppServer {
             fs.writeFile(`${VOD_DUMP_LOC}${temp_process_id}_${imgId}.${this.streamImgFormat[0]}`, imageLike)
         }
 
-        const EMPTY_IMAGE_NUM = MarblesAppServer.EMPTY_PAGE_COMPLETE
+        const EMPTY_IMAGE_NUM = MarblesAppServer.EMPTY_PAGE_COMPLETE * MarblesAppServer.FFMPEG_FPS
         if (this.ScreenState.frames_without_names > EMPTY_IMAGE_NUM) {
             console.log(`Found ${EMPTY_IMAGE_NUM} empty frames @ ${imgId};
                 Dumping remaining images and changing to COMPLETE state.`)
@@ -699,7 +724,7 @@ export class MarblesAppServer {
      */
     async getTwitchToken() {
 
-        if (this.twitch_access_token) return this.twitch_access_token
+        if (this.twitch_monitor.access_token) return this.twitch_monitor.access_token
 
         // Retrieve twitch JSON info
         if (!TWITCH_ACCESS_TOKEN_BODY) {
@@ -719,16 +744,16 @@ export class MarblesAppServer {
         )
         .then( res => {
             // save token
-            this.twitch_access_token = res.data['access_token']
+            this.twitch_monitor.access_token = res.data['access_token']
             
             // Set auth headers
             this.twitch_auth_headers = {
-                "Authorization": `Bearer ${this.twitch_access_token}`,
+                "Authorization": `Bearer ${this.twitch_monitor.access_token}`,
                 "Client-Id": `${TWITCH_ACCESS_TOKEN_BODY.client_id}`
             }
             
             console.log("Retrieved Twitch Access Token")
-            return this.twitch_access_token
+            return this.twitch_monitor.access_token
         })
         .catch( err => {
             console.error(`Something went wrong...? Can't setup Twitch token. ${err}`)
@@ -741,12 +766,12 @@ export class MarblesAppServer {
     async setupTwitchMonitor () {
         const MARBLES_ON_STREAM_GAME_ID = 509511
 
-        if (!this.game_type_monitor_interval) {
+        if (!this.twitch_monitor.monitor_interval) {
             await this.getTwitchToken()
 
             let firstReq = true
-            this.game_type_monitor_interval = setInterval( () => {
-                axios.get(`${TWITCH_CHANNEL_INFO_URL}?broadcaster_id=${this.broadcaster_id}`,
+            this.twitch_monitor.monitor_interval = setInterval( () => {
+                axios.get(`${TWITCH_CHANNEL_INFO_URL}?broadcaster_id=${this.twitch_monitor.broadcaster_id}`,
                     { headers: this.twitch_auth_headers }
                 )
                 .then( resp => {
@@ -759,18 +784,18 @@ export class MarblesAppServer {
                     const new_game_name = resp.data.data[0]['game_name']
                     const new_game_id = parseInt(resp.data.data[0]['game_id'])
                     if ((new_game_id == MARBLES_ON_STREAM_GAME_ID || new_game_name.toLowerCase() == 'marbles on stream') &&
-                        this.last_game_name != new_game_name) {
+                        this.twitch_monitor.last_game_name != new_game_name) {
                             // Start up the streamMonitor
                             console.log(`Switched Game to ${new_game_name}; clearing & starting streamMonitor`)
                             this.start(TWITCH_DEFAULT_BROADCASTER)
                         }
 
-                    this.last_game_name = new_game_name
+                    this.twitch_monitor.last_game_name = new_game_name
                 }).catch( err => {
                     console.warn(`Failed to get Twitch-Monitor ${err}`)
                     if (err.response) {
                         if (err.response.status == 401) {
-                            this.twitch_access_token = null
+                            this.twitch_monitor.access_token = null
                             console.log("Refreshing Twitch Access Token")
                             this.getTwitchToken()
                         }

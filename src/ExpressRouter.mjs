@@ -4,6 +4,7 @@
 
 import express from 'express'
 import { MarblesAppServer } from './MarblesAppServer.mjs';
+import fsAll from 'fs';
 // import HyperExpress from 'hyper-express'
 import helmet from "helmet";
 import path from 'path'
@@ -13,6 +14,7 @@ const PORT = 4000;
 const HOST = 'localhost'
 
 const env = process.env.NODE_ENV || 'development';
+const SERVER_CONFIG_FILE = 'server_config.json'
 
 const app_server = new MarblesAppServer()
 
@@ -159,16 +161,17 @@ server.post('/user_list_test', async (req, res) => {
 server.listen(PORT, (socket) => {
     let server_env = (env == 'development') ? 'DEV' : 'PROD'
     console.log(`Server[${server_env}] running at ${HOST}:${PORT}`)
-    
-    if (env != 'development') {
-        app_server.uselambda = true
-        console.log("[PROD] server, default to lambda functions")
-        app_server.enableMonitor = true
-        if (!app_server.game_type_monitor_interval) {
-            app_server.setupTwitchMonitor()
+
+    try {
+        const server_config_file = fsAll.readFileSync(SERVER_CONFIG_FILE, {encoding:'utf-8'})
+        const server_json = JSON.parse(server_config_file)
+        app_server.setConfig(server_json)
+    } catch (error) {
+        if (error.code == "ENOENT") {
+            // do nothing, file doesn't exist
+        } else {
+            console.warn("Error occurred during config setup", error)
         }
-        console.log("[PROD] server, default to twitch monitor on")
-        app_server.ffmpegCmd[0] = 'ffmpeg'
-        console.log("[PROD] server, change to installed FFMPEG")
     }
+    
 })
