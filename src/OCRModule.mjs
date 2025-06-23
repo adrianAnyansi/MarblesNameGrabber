@@ -69,9 +69,11 @@ export class OCRManager {
     /**
      * Queue an OCR request
      * @param {Buffer} buffer of valid image format
+     * @param {Object} options to be used by queuing method
+     * 
      * @returns {Promise<OCRResponse>} OCR response
      */
-    async queueOCR (buffer) {
+    async queueOCR (buffer, options={}) {
 
     }
 
@@ -202,7 +204,7 @@ export class NativeTesseractOCRManager extends OCRManager {
      * Queue an OCR Request
      * @param {Buffer} input_buffer validImgBuffer
      */
-    queueOCR (input_buffer) {
+    queueOCR (input_buffer, options={}) {
 
         let retPromise = null
         this.queueNum++
@@ -375,11 +377,11 @@ export class LambdaOCRManager extends OCRManager {
         super(null, debug)
 
         this.expectedWorkers = expectedWorkers
-        // this.lambdaQueue = 0
         if (this.debug)
             LambdaOCRManager.AWS_LAMBDA_CONFIG["logger"] = console
         this.lambdaClient = new LambdaClient(LambdaOCRManager.AWS_LAMBDA_CONFIG)
         this.lambdaQueueNum = 0
+        this.jobId = 0
 
         this.hocr = hocr
     }
@@ -426,9 +428,11 @@ export class LambdaOCRManager extends OCRManager {
     }
 
     
-    queueOCR (input_buffer, jobId) {
+    queueOCR (input_buffer, options={}) {
         this.lambdaQueueNum++
-        const prom = this.sendImgToLambda(input_buffer)
+        const jobId = options.jobId
+        // const prom = this.sendImgToLambda(input_buffer)
+        const prom = this.sendImgToLambda(input_buffer, {w:1920, h:1080}, null, jobId, true)
         prom.finally(_ => this.lambdaQueueNum--)
         return prom
     }

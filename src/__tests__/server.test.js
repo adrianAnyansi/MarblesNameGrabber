@@ -266,6 +266,13 @@ test ("Test user color detection", async () => {
 
 // -------- full server tests ------------------
 
+test ("Appserver remote test", async () => {
+    const appserver = new MarblesAppServer();
+    const url = 'videos/2483071413?t=5h0m30s'
+
+    appserver.start(url)
+})
+
 test ("Appserver local test", async () => {
     const appserver = new MarblesAppServer();
     const vod_num = 2436099273

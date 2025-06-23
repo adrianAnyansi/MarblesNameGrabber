@@ -5,7 +5,7 @@
 import {it, test} from 'node:test'
 import assert from 'node:assert/strict'
 
-import { ColorSpace, UserNameBinarization } from "../UsernameBinarization.mjs";
+import { ColorSpace, UserNameBinarization } from "../UserNameBinarization.mjs";
 import sharp from 'sharp'
 import { Color, Direction2D, SharpImg } from '../ImageModule.mjs';
 import { Stopwatch, iterateN } from '../UtilityModule.mjs';
@@ -358,9 +358,9 @@ test ("Test validate pre-race screen", async () => {
     assert.equal(await mng.validateMarblesPreRaceScreen(), true)
 })
 
-test ("Test Send image for OCR Lamba", async () => {
+test ("Test Send image for OCR Lambda", async () => {
     
-    const filename = "testing/curated/singleLineText.png"
+    const filename = "testing/ocr_test/singleLineText.png"
 
     const lambdaOCRM = new LambdaOCRManager(10, true)
     const sharpImg = new SharpImg(filename)

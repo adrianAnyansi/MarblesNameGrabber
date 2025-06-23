@@ -7,7 +7,7 @@ import fs from 'fs/promises'
 import fsAll from 'fs'
 
 import { VisualUsername, TrackedUsername } from './UserModule.mjs'
-import { UserNameBinarization } from './UsernameBinarization.mjs'
+import { UserNameBinarization } from './UserNameBinarization.mjs'
 import {UsernameAllTracker, UsernameSearcher} from './UsernameTrackerClass.mjs'
 
 import { setTimeout } from 'node:timers/promises'
@@ -59,15 +59,12 @@ export class MarblesAppServer {
         
         // Debug variables ===========================================
         this.debug_obj = {
-            // native_tesseract: false,
-            // tesseract: true,
             process: false, // debug ffmpeg/streamlink processes
-            // lambda: false,  // 
             vod_dump: false, // dump images to folder
             screen_state_log: true, // output the 
             write_screen_state_to_file: true, // write run to file
             user_bin: false, // show logs for username binarization & empty failed ocr
-            ocr_debug_flag: true, // turn on OCR class debug flag
+            ocr_debug_flag: false, // turn on OCR class debug flag
             ocr_output: false, // add log for failed ocr checks
             disable_ocr: false, // disable OCR checking
             disable_ocr_len: false, // disable pre OCR length check
@@ -96,7 +93,8 @@ export class MarblesAppServer {
             this.setupTwitchMonitor()
 
         /** @type {OCRManager} OCR to manage */
-        this.OCRManager = getOCRModule(OCRTypeEnum.NATIVE, {concurrency:6, debug: this.debug_obj.ocr_debug_flag})
+        this.OCRManager = getOCRModule(OCRTypeEnum.LAMBDA, 
+            {concurrency:6, debug: this.debug_obj.ocr_debug_flag})
 
         /** @type {UsernameAllTracker} Userlist but better */
         this.usernameTracker = new UsernameAllTracker();
@@ -668,7 +666,7 @@ export class MarblesAppServer {
         const binSharp = SharpImg.FromRawBuffer(binUserImg).toSharp({toJPG:true, scaleForOCR:true})
         const binBuffer = await binSharp.toBuffer()
 
-        await this.OCRManager.queueOCR(binBuffer)
+        await this.OCRManager.queueOCR(binBuffer, {jobId:`VI:${visibleIdx}-PI:${processImgId}`})
         .then( async ({data, info, jobId, time}) => {
 
             this.ServerStatus.addUserReconLagTime(time)

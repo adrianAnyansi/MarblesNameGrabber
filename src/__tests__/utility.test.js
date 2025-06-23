@@ -3,7 +3,7 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 
-import { ColorSpace } from "../UsernameBinarization.mjs";
+import { ColorSpace } from "../UserNameBinarization.mjs";
 import { delay, iterateN, iterateRN, Statistic, Stopwatch } from "../UtilityModule.mjs";
 import { randInt, rotPoint } from '../Mathy.mjs';
 import { Heap } from '../DataStructureModule.mjs';
