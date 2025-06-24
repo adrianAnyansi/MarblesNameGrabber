@@ -268,6 +268,9 @@ test ("Test user color detection", async () => {
 
 test ("Appserver remote test", async () => {
     const appserver = new MarblesAppServer();
+    MarblesAppServer.FFMPEG_FPS = 60;
+    appserver.debug_obj.frame_pacing = true;
+    appserver.debug_obj.screen_state_log = false;
     const url = 'videos/2483071413?t=5h0m30s'
 
     appserver.start(url)

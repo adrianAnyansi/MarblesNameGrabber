@@ -22,8 +22,24 @@ body {
     width: 100%;
     container-type: inline-size;
     container-name: page;
-    padding: 0 2.5%;
+    padding: 1% 2.5% 0 2.5%;
     /*! min-height: 90vh; */
+}
+
+.aboutPage.page {
+    background-color: #ff00181a;
+}
+
+.statusPage.page {
+    background-color: #202466Aa;
+}
+
+.verifyPage.page {
+    background-color: #69c63f1c;
+}
+.trackingPage.page {
+    padding: 0;
+    /*! height: 90vh; */
 }
 
 .big-title#streamerName {
@@ -75,6 +91,7 @@ body {
         font-size: 4vb;
     }
 }
+
 
 
 
@@ -134,15 +151,12 @@ body {
     flex-direction: row;
     justify-content: space-between;
     padding: 0 1vb;
+    font-size: 2.0vb;
+    text-align: center;
 }
 
 #userImg {
     width: 100%;
-}
-
-#username_output_box {
-    font-size: 2.0vb;
-    text-align: center;
 }
 
 #username_simple_out {
@@ -166,6 +180,7 @@ body {
     background-color: #953232;
 }
 
+/* ======================================================== */
 
 .hidden {
     display: none
@@ -180,35 +195,6 @@ body {
         display: inherit
     }
 }
-
-
-
-#serverStatusIcon {
-    color: white;
-    background-color: white;
-    clip-path: circle(45%);
-    width: 1em;
-    height: 1em;
-    display: inline-block;
-}
-#serverStatusIcon.stopped {
-    color: red;
-    background-color: red;
-}
-#serverStatusIcon.complete {
-    color: blue;
-    background-color: blue
-}
-#serverStatusIcon.reading {
-    color: greenyellow;
-    background-color: greenyellow;
-}
-#serverStatusIcon.waiting {
-    color: yellow;
-    background-color: yellow;
-}
-
-
 .easter_egg {
     position: absolute;
     left: 0;
@@ -224,17 +210,118 @@ body {
     /*! z-index: -1; */
 }
 
-.aboutPage.page {
-    background-color: #ff00181a;
+/* ======================================================== */
+
+.circle_icon {
+    --var-color: white;
+    color: var(--var-color);
+    /* --var-background: var(--var-color); */
+    background-color: var(--var-color);
+    /* background: var(--var-background); */
+    clip-path: circle(45%);
+    --var-size: 1.1em;
+    width: var(--var-size);
+    height: var(--var-size);
+    position: relative;
+    bottom: calc(var(--var-size)/-5);
+    display: inline-block;
 }
 
-.verifyPage.page {
-    background-color: #69c63f1c;
+.circle_icon.seen, .circle_icon.complete, .seen {
+    --var-color: blue;
 }
-.trackingPage.page {
+.circle_icon.processing, .processing {
+    --var-color: green;
+}
+.circle_icon.named, .named {
+    --var-color: purple;
+}
+.circle_icon.blocked, .blocked {
+    --var-color: black;
+}
+.circle_icon.reading {
+    --var-color: greenyellow;
+}
+.circle_icon.waiting {
+    --var-color: yellow;
+}
+.circle_icon.stopped {
+    --var-color: red;
+}
+#screen_demo .name.dashed_bg, .dashed_bg {
+    --var-lsize: 0.6em;
+    --var-background: repeating-linear-gradient(
+        45deg,
+        var(--var-color) calc(var(--var-lsize)*1), 
+        var(--var-color) calc(var(--var-lsize)*1), 
+        transparent calc(var(--var-lsize)*1), /* transparent */
+        transparent calc(var(--var-lsize)*2), /* transparent */
+        var(--var-color) calc(var(--var-lsize)*2), 
+        var(--var-color) calc(var(--var-lsize)*3));
+}
+#dashed_legend {
+    width: 6em; 
+    height:1em; 
+    display:inline-block;
+    --var-lsize: 0.3em;
+    --var-color: gray;
+    background: var(--var-background);
+    position: relative;
+    bottom: calc(var(--var-size)/-5);
+}
+
+/* ======================================================== */
+
+/* Status  */
+#screen_legend p {
+    margin: 0;
     padding: 0;
-    /*! height: 90vh; */
 }
+#status_bar {
+    display:flex;
+    flex-direction: row;
+}
+#status_bar * {
+    flex-grow: 1;
+}
+#screen_demo {
+    flex-grow: 3;
+    border: 2px snow solid;
+    border-left: 2px snow dashed;
+    width: auto;
+    padding: 1em 0.5em 0 2em;
+    margin: 1em 1em 1em 0;
+    margin-left: 0;
+    display:flex;
+    flex-direction: column;
+    align-items: end;
+    height: 14em;
+    background-color: #00000077;
+    min-width: 4em;
+}
+#screen_demo .name {
+    border: 1px snow solid;
+    margin: 0px 1px;
+    /* --var-color: transparent; */
+    --var-background: var(--var-color);
+    background: var(--var-background);
+    width: 100%;
+}
+#screen_demo .disclaimer {
+    display: none
+}
+#screen_demo.none .name {
+    display: none
+}
+#screen_demo.none .disclaimer {
+    display: block
+}
+
+#ServerStatusDetails {
+    margin: 0 0 1em 1em;
+}
+
+/* ======================================================== */
 
 .aboutPage .aboutQuestion {
     font-size: 1.3em;
@@ -257,4 +344,9 @@ body {
 #admin.show, #debug.show,
 #Admin_header.show {
     display: inherit
+}
+
+
+.subtitle {
+    color: #c2bdd5;
 }

@@ -2,7 +2,7 @@
 // const serverURL = 'http://localhost:4000'
 const serverURL = ''
 
-let UsernameHash = new Map()
+const UsernameHash = new Map()
 const userNext = 1_000 * 10;
 const userOffset = 1_000 * 4;
 const EMPTY_IMG = "data:,"
@@ -14,21 +14,26 @@ let userInputQueueBool = false
 let userCheckingStatusInterval = null
 
 const UsernameInputEl = document.getElementById('username_input')
-const UsernameOutputEl = document.getElementById('username_simple_out')
-const UsernameGeneral = document.getElementById('username_general')
+const UsernameOutputEl = document.getElementById('username_feedback')
+// const UsernameGeneral = document.getElementById('username_general')
 const UsernameRecheck = document.getElementById('username_recheck')
 const UsernamePlaceholder = document.getElementById('username_placeholder')
 const UserImgEl = document.getElementById('userImg')
 
 const ServerStatusEl = document.getElementById('server_status')
 const ServerUsersEl = document.getElementById('user_tracked')
+const ServerStatusIcon = document.getElementById('serverStatusIcon')
+const ServerStatusDetails = document.getElementById('ServerStatusDetails')
 const WebsiteUsersEl = document.getElementById('viewers_visiting')
 const LagTimeEl = document.getElementById('lag_time')
+
+const Screen_Feedback = document.getElementById('screen_demo')
 
 const trackedUserNums = [0, 0]
 const visitingUserNums = [0, 0]
 
-let adminEl = document.getElementById('Admin_header')
+// page and admin setup
+const adminEl = document.getElementById('Admin_header')
 const queryParams = new URLSearchParams(window.location.search)
 document.getElementById('force_btn').addEventListener('click', sendForceCmd)
 document.getElementById('stop_btn').addEventListener('click', () => {
@@ -46,28 +51,30 @@ if (location.host.includes('localhost') || location.host.includes('127.0.0.1')) 
 }
 
 // ==================
-
+const OFFLINE_STATUS_MS =  1_000 * 15;
+const DEFAULT_STATUS_MS = 1_000 * 6;
 function fetchServerStatus () {
     const adminString = queryParams.has("admin") ? "?admin" : ""
     fetch(`${serverURL}/status${adminString}`)
     .catch( resp => {
         // ◗
         ServerStatusEl.textContent = `Offline.`
-        setTimeout(fetchServerStatus, 1_000 * 15) // retry
+        ServerStatusIcon.classList = "circle_icon"
+        setTimeout(fetchServerStatus, OFFLINE_STATUS_MS) // retry
         return Promise.reject('offline server, try again much later')
     })
     .then(resp => resp.json())
     .then( serverJSON => {
         handleServerStatus(serverJSON)
-        let nextInterval = 1_000 * 6
+        let nextInterval = DEFAULT_STATUS_MS
         if (queryParams.has('admin'))
             nextInterval = 200;
         else
-            nextInterval ??= serverJSON['status']['interval']
+            nextInterval = serverJSON['status']['interval'] ?? nextInterval 
         setTimeout(fetchServerStatus, nextInterval) // retry
     })
     .catch( err => {
-        console.log("Error occurred, return")
+        console.log("Error occurred, return", err)
         return
     })
 }
@@ -87,7 +94,7 @@ function fetchUserList () {
 }
 
 const USER_INPUT_DELAY = 1_000 * 6;
-const USER_FIRST_INPUT_DELAY = 1_000 * 1.5;
+const USER_FIRST_INPUT_DELAY = 1_000 * 1.5; // delay to search after letter
 let handleInputTimeout = null;
 let delayTimeout = null;
 
@@ -109,8 +116,6 @@ function sendForceCmd() {
 /** Queue input after 2 seconds of no input */
 function queueInput(inputEvent) {
 
-    
-    
     if (UsernameInputEl.value.trim() == "") {
         UsernameOutputEl.textContent = ""
         clearInterval(userCheckingStatusInterval) // clear user check
@@ -219,16 +224,45 @@ function handleInput (inputEvent) {
 function handleServerStatus(serverJSON) {
     // Assume serverJSON is valid
     ServerStatusEl.textContent = `${serverJSON['status']['state']}`
-    document.querySelector('#serverStatusIcon').classList = serverJSON['status']['state'].toLowerCase()
-    // ServerUsersEl.textContent = `${serverJSON['userList']['user_list']} possible user(s)`
-    WebsiteUsersEl.textContent = `${serverJSON['status']['viewers']} site viewer(s)` // TODO: Finish
-    LagTimeEl.textContent = `-${serverJSON['status']['lag_time']} from LIVE`
+    ServerStatusIcon.classList = [serverJSON['status']['state'].toLowerCase(), 'circle_icon'].join(' ')
+    WebsiteUsersEl.textContent = `${serverJSON['status']['viewers']} viewer(s)` // TODO: Finish
+    ServerStatusDetails.textContent = `${serverJSON['status']['state_desc']}`
+
+    if (serverJSON['status']['lag_time'])
+        LagTimeEl.textContent = `Name recognition: +${(serverJSON['status']['lag_time'] / 1000).toFixed(2)}s from LIVE`
+
+    if (serverJSON['screen_state'])
+        handleScreenState(serverJSON['screen_state'], 
+            serverJSON['appear_state'],
+            serverJSON['visible_lens'])
     
     let dialingTracked = trackedUserNums[0] != trackedUserNums[1] // tracked is being moved already
-    trackedUserNums[1] = serverJSON['userList']['user_list']
+    trackedUserNums[1] = serverJSON['userList']['user_count']
     if (!dialingTracked)
-        dialNumber(trackedUserNums, ServerUsersEl, '# possible user(s)')
+        dialNumber(trackedUserNums, ServerUsersEl, '# tracked user(s)')
     
+}
+
+const ScreenStateDisplay = document.getElementById("screen_demo")
+const ScreenStateNames = ScreenStateDisplay.querySelectorAll('.name')
+const NAME_LEGEND = {
+    'S': 'seen',
+    'L': 'seen',
+    'O': 'processing',
+    'N': 'named',
+    '*': 'unknown'
+}
+const maxUNWidth = -294;
+const UNScale = 0.2;
+function handleScreenState(screenState, appearState, userLens) {
+    ScreenStateDisplay.classList = '' // remove none class
+    for (const [idx, nameEl] of ScreenStateNames.entries()) {
+        nameEl.classList = `name ${NAME_LEGEND[screenState[idx]]}`
+        if (appearState)
+            nameEl.classList.toggle('dashed_bg', appearState[idx] == '?')
+        if (userLens)
+            nameEl.style.width = `${100 * (userLens[idx] ?? maxUNWidth) /maxUNWidth}%`
+    }
 }
 
 /**

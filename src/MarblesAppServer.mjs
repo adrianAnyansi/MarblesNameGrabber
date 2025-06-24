@@ -205,7 +205,6 @@ export class MarblesAppServer {
      * @param {string} [videoSource=null] if null, use pipe:0 (stdin)
      */
     startFFMPEGProcess(videoSource=null) {
-        console.log("Starting ffmpeg process")
 
         const ffmpegARGS = ['-re', '-i','pipe:0', '-f','image2pipe', 
                             '-c:v', ...this.streamImgFormat[1],
@@ -398,10 +397,10 @@ export class MarblesAppServer {
             process_id: processImgId,
             offset: null,
         }
-        const frameLog = (log, level) => { // TODO: Add level code
-            console.log(log)
-            frameObj.log += log
-        }
+        // const frameLog = (log, level) => { // TODO: Add level code
+        //     console.log(log)
+        //     frameObj.log += log
+        // }
         
         /** All on-screen users with their appearance checked */
         const screenUsersMap = await mng.getUNBoundingBox(null, {appear:true, length:false})
@@ -874,9 +873,15 @@ export class MarblesAppServer {
             this.ServerStatus.monitoredViewers.push(Date.now() + ServerStatus.DEFAULT_VIEWER_INTERVAL) // TODO: Link client to this value
         }
 
+        // TODO: CACHE status per frame
+        // cache the averages as well
+
         return {
-            'status': this.ServerStatus.toJSON(),
+            'status': this.ServerStatus.status(),
             'streaming': this.ServerStatus.streamingTime,
+            'screen_state': this.ScreenState.predictedFrame.at(-1),
+            'appear_state': this.ScreenState.visibleScreenFrame.at(-1),
+            'visible_lens': this.usernameTracker.usersInOrder.slice(-24).map(user => user.length),
             'userList': this.usernameTracker.status(),
         }
     }

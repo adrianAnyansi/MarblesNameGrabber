@@ -19,43 +19,80 @@
             <h2 class="big-title" id="streamerName">BarbarousKing's</h2>
             <div id="last_title">
                 <h2 class="big-title">Marbles?</h2>
-                <div id="serverBox">
-                    <div>
-                        <span id="serverStatusIcon" class="unknown"></span>
-                        <span id="server_status">Getting server status</span>
-                    </div>
-                    <span id="viewers_visiting">Website viewers</span>
-                    <span id="lag_time"></span>
-                </div>
+                    <span id="viewers_visiting">viewers</span>
             </div>
 
             <br/>
-            <br/>
-            <br/>
+            
+            <p style="font-size: 1em;" class="subtitle">Username Image will be displayed below</p>
+            <div style="position:relative">
+                <img id="userImg" class="hidden" src="">
+            </div>
             <div id="username_input_box">
                 <input id="username_input" placeholder=" ">
                 <p id="username_placeholder">Enter username</p>
                 <!-- <p id="username_placeholder2">Enter username</p> -->
             </div>
+
             <div id="username_output_box">
-                <p id="username_simple_out"></p> 
+                <p id="username_feedback"></p> 
                 <p id="username_recheck"></p>
                 <p id="user_tracked">possible user(s)</p>
             </div>
             <br/>
-
-            <p style="display:none" id="username_general"></p>
-
-            <div style="position:relative">
-                <!-- <p style="position:absolute">Image will be displayed here</p> -->
-                <img id="userImg" class="hidden" src="">
-            </div>
-
-            <br/>
-            <br/>
             <p>
-                This website is not affliated with BarbarousKing or MarblesOnStream, it's a project by a viewer.
+                This website is maintained by @MiloticMaster. Please don't ask BarbarousKing or Marbles On Stream for details/troubleshooting.
+                <span class="subtitle">Version 0.3.1</span>
             </p>
+        </div>
+
+        <div class="page statusPage">
+            <h2 class="small-title">Status</h2>
+            <div id="status_bar" >
+                <div id="screen_demo" class="none">
+                    <!-- 24 names are listed here -->
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name seen"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name named dashed_bg"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="name"></div>
+                    <div class="disclaimer">screen not available</div>
+                </div>
+                <div>
+                    <div style="margin-bottom: 0.2em;">
+                        <p style="margin-bottom: 0.2em; font-weight: bold;">Server Status: <span id="serverStatusIcon" class="circle_icon unknown"></span> <span id="server_status">Unknown</span></p>
+                        <p id="ServerStatusDetails">Getting server status</p>
+                        <p><span id="lag_time"></span></p>
+                        <p id="ServerStartTime"></p>
+                    </div>
+                    <div id="screen_legend">
+                        <p style="font-weight: bold;">Screen legend</p>
+                        <p><span class="circle_icon seen"></span> Name was seen once</p>
+                        <p><span class="circle_icon processing"></span> Text is sent for recognition</p>
+                        <p><span class="circle_icon named"></span> Name saved</p>
+                        <p><span id="dashed_legend" class="name dashed_bg"></span> Name not visible</p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="page aboutPage">

@@ -14,6 +14,13 @@ export const SERVER_STATE_ENUM = {
     COMPLETE: 'COMPLETE'
 }
 
+const SERVER_STATE_DESC = {
+    [SERVER_STATE_ENUM.STOPPED]: "Marbles has not started and server is disabled.",
+    [SERVER_STATE_ENUM.WAITING]: "Marbles has started, waiting for the Pre-Race screen",
+    [SERVER_STATE_ENUM.READING]: "Marbles has started, reading on-screen names.",
+    [SERVER_STATE_ENUM.COMPLETE]: "Server has read all available names and has stopped."
+}
+
 /** Contains all the image format info for this program */
 export class ImageFormatConstants {
     /** JPG start of image */
@@ -323,7 +330,7 @@ export class StreamImageTracking {
 
 export class ServerStatus {
 
-    static DEFAULT_VIEWER_INTERVAL = 1_000 * 3;
+    static DEFAULT_VIEWER_INTERVAL = 1_000 * 0.2;
     static LAG_TIME_MAX = 20;
 
     constructor () {
@@ -450,7 +457,7 @@ export class ServerStatus {
                 ).filter(val => !isNaN(val))
         )
 
-        return `Frame Time:${avg.toFixed(2)}ms, SD:${stdDev.toFixed(2)}ms; DL_avg:${dl_avg.toFixed(2)}ms`
+        return `Frame Avg:${avg.toFixed(2)}ms, SD:${stdDev.toFixed(2)}ms; DL_avg:${dl_avg.toFixed(2)}ms`
     }
 
     /**
@@ -475,11 +482,15 @@ export class ServerStatus {
         }
     }
 
-    toJSON () {
+    status () {
         return {
             'viewers': this.currentViewers,
             'total_viewers': this.allViewers.size,
-            'marbles_date': this.started_game_ts
+            'marbles_date': this.started_game_ts,
+            'state': this.state,
+            'state_desc': SERVER_STATE_DESC[this.state],
+            'lag_time': this.lagTimeArray.at(-1),
+            'interval': ServerStatus.DEFAULT_VIEWER_INTERVAL // TODO: Change based on number of viewers that can be handled
         }
     }
     
