@@ -418,6 +418,26 @@ test ("Binarization OCR quality", async () => {
     }
 })
 
+test ("Crop for viewing", async () => {
+    const pagename = 'chat_overlay_all.png'
+    const filename = curatedFolder + pagename; 
+    const userIdx = 8
+
+    const mng = new UserNameBinarization(filename, true);
+    const users = await mng.getUNBoundingBox(new Map([[userIdx]]), {appear:true, length:true})
+    const userObj = users.get(userIdx)
+
+    // userObj.length = -200
+    const pLen = userObj.length
+
+    for (const lenOffset of iterateN(1)) {
+        userObj.length = pLen + lenOffset
+        console.log(`Length at ${userObj.length} @ + ${lenOffset}`)
+        const userCropImg = await mng.cropTrackedUserName(userObj.vidx, userObj.length, true)
+        userCropImg.toSharp({toJPG:true}).toFile(`testing/indv_user_crop.png`)
+    }
+})
+
 test("Manual test of vod image for debug",
     async () => {
 

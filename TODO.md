@@ -120,7 +120,21 @@ I can put new logic that ignores 1 random length match.
 Ok bed bed bye.
 
 # Focus today
-- Change server config to external
-- Test production (somehow without breaking the system)
-- Sketch new website
+- Finishing up website
 
+- sketch out the way user looks, and feedback
+- think about user ret object
+- there's no image since most accurate user_name is the img_key
+- debug to show all user names for an index?
+
+- figure out a userAlias data structure
+- verify code
+    - yes/no for username search
+    - create a mode that allows verifying + adding new names
+
+- show date for when username started
+- change interval based on server status
+
+- for user find, save the last searched userObj and results to cache
+    - also remove aliases otherwise it fills up the thingy
+- Need a box for OCR cause Barb hair is blocking 90%

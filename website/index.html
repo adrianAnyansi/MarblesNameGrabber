@@ -24,9 +24,11 @@
 
             <br/>
             
-            <p style="font-size: 1em;" class="subtitle">Username Image will be displayed below</p>
-            <div style="position:relative">
+            <div id="userImgDiv">
+                <p style="font-size: 1em;" class="subtitle userImgBG">
+                    Username Image will be displayed here</p>
                 <img id="userImg" class="hidden" src="">
+                <span id="simUsers" class="subtitle hidden">Similar names: </span>
             </div>
             <div id="username_input_box">
                 <input id="username_input" placeholder=" ">
@@ -40,7 +42,7 @@
                 <p id="user_tracked">possible user(s)</p>
             </div>
             <br/>
-            <p>
+            <p style="font-size: 0.9em;">
                 This website is maintained by @MiloticMaster. Please don't ask BarbarousKing or Marbles On Stream for details/troubleshooting.
                 <span class="subtitle">Version 0.3.1</span>
             </p>
@@ -98,41 +100,37 @@
         <div class="page aboutPage">
             <h2 class="small-title">About</h2>
 
-            <p class="aboutQuestion"><span>Q: </span>Wait, so what is this site?</p>
+            <p class="aboutQuestion"><span>Q: </span>What is this site?</p>
 
             <p>
-                This is a fan site made to track entrants in Twitch.tv streamer BarbarousKing Marbles-On-Stream event.
+                This is a fan site made to track entrants at <a style="color:red" href="http://twitch.tv/barbarousking">BarbarousKing</a> Marbles-On-Stream event.
             </p>
 
             <p class="aboutQuestion"><span>Q: </span> Hmm.. how does it work?</p>
 
             <p>
-                Marbles-On-Stream doesn't have an API to find people in races, so this site does that.
-                Short answer is that it's <b>watching the stream</b>, removes as much of the background as it can, 
-                then sends the image to text recognition to extract the usernames.
+                To make a long story short, the server is reading the usernames on screen. It's not perfect, but it does a lot.
             </p>
-            <p><i>So Barb please don't obscure names during the initial scroll</i></p>
             <p>
-                Both the background extract & text recognition are not perfect, so the site is not completely accurate.
-                It uses binarization and OCR to do this.
+                To make a short story long, there's no API and there's a lot of code to scrape and track usernames behind chat and around face-cams.
+                Streamlink gets the stream, my code binarizes and tracks the usernames and Tesseract OCR gets the text (best it can.)
             </p>
 
             <p class="aboutQuestion"><span>Q: </span> Ok but how accurate? Am I in or not?</p>
-
             <p>
-                Testing shows it's about ~98% accurate and ~2.3s behind live. 
+                It's hard to say because every Marbles is different, 
+                but generally it's 98% accurate and misses ~20 names through edge cases.
             </p>
             <p>
-                The exact amount can vary depending on obscured names, bitrate, certain letters, etc.
-                There's no way to know 100% because there can be situations where names are unreadable:
-                i.e 
+                Here are the one's I know & am trying to resolve.
             </p>
-            <!-- <ul>
-                <li>Twitch chat not being moved early</li>
-                <li>Marble names in world overlaping Username list</li>
-                <li>Bitrate making names unreadable</li>
-                <li>Other oversights in code</li>
-            </ul> -->
+            <ul>
+                <li>Early Names hidden by an alert <i style="color:gray">Not resolvable</i></li>
+                <li>Bitrate making names unreadable </li>
+                <li>Names with many underscores i.e <i>Near_________</i> are sometimes missed by OCR</li>
+                <li>Barcode names i.e <i>Il1lI1l</i> are unreadable to the OCR</li>
+                <li>Any overlay that obscures a name while it's on screen </li>
+            </ul>
 
             <p class="aboutQuestion"><span>Q: </span>So with all this work; you must know the secret of getting into marbles?</p>
 
@@ -151,39 +149,35 @@
                 but when I have no clue <b>when</b> if it's based on lag to the streamer, ordered, random, etc. 
             </p>
 
-            
-
-            <p class="aboutQuestion"><span>Q: </span>Wait a secon- why not just read Barb's chat on screen then?</p>
+            <p class="aboutQuestion"><span>Q: </span>I'm not in, so the website must be bugged. Who do I talk to?</p>
 
             <p>
-                <ul>
-                    <li> Have you seen how tiny that is? Smaller letters will make it even more inaccurate.</li>
-                    <li> Stream chat either gets removed/or moved to a random spot on screen </li>
-                    <li> That chat scrolls so fast that even the computer will miss people. </li>
-                </ul>
-            </p>
-            <p>
-                Also I can't use Twitch chat as my order is different from Barb's.
-            </p>
-
-            <p class="aboutQuestion"><span>Q: </span>Alright so I found a bug. Who do I snitch to?</p>
-
-            <p>
-                Just say something on discord or in the #rats-nest. @MiloticMaster
+                Just ping @MiloticMaster in Barb's discord or in the #rats-nest. 
             </p>
             <p>
                 Thanks for using this! barbLove
             </p>
-            <p>
-                Improvements: Number of users is more accurate (now ±30 users)
-                Fixed placeholder for user input.
-                Username search is slightly more accurate.
+            <ul>
+            <p> Improvements 0.3.1: 
+                <li>Increased check FPS from 10 to 30.</li>
+                <li>Username movement is now tracked, so server can smartly check unknown usernames 
+                    and keep track of ALL users even if only 4 are visible. (double alert + facecam block)</li>
+                <li>Added tracker for near-real time username recognition.</li>
+                <li>Many back-end improvments.</li>
             </p>
             <p>
-                Improvements 0.2.2: Fixed bug with username search
-                Increased avg accuracy to 98%
-                Added lag from LIVE
+                Improvements 0.2.2: 
+                <li>Fixed bug with username search.</li>
+                <li>Increased avg accuracy to 98%.</li>
+                <li>Added lag from LIVE.</li>
             </p>
+            <p>
+                Improvements:
+                <li> Number of users is more accurate (now ±30 users).</li>
+                <li>Fixed placeholder for user input.</li>
+                <li>Username search is slightly more accurate.</li>
+            </p>
+            </ul>
         </div>
 
         

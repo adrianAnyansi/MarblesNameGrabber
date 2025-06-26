@@ -754,7 +754,8 @@ export class TrackedUsername {
             enterTime: this.enterFrameTime,
             // exitingTime: this?.debugexitFrame
             debugExitTime: this.debugExitFrame,
-            timeOnScreen: (this.debugExitFrame ?? Infinity) - this.enterFrameTime
+            timeOnScreen: (this.debugExitFrame ?? Infinity) - this.enterFrameTime,
+            img_files: this.partialImgList.length
         }
     }
 }

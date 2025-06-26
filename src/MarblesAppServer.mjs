@@ -15,6 +15,7 @@ import { SharpImg } from './ImageModule.mjs'
 import { StreamingImageBuffer, ServerStatus, StreamImageTracking, ScreenState } from './ServerClassModule.mjs'
 import { OCRManager, OCRTypeEnum, getOCRModule } from './OCRModule.mjs'
 import { formatMap, iterateN, iterateRN, Stopwatch, trimObject } from './UtilityModule.mjs'
+import {average} from './Mathy.mjs' 
 
 
 let TWITCH_ACCESS_TOKEN_BODY = null
@@ -46,6 +47,8 @@ export class MarblesAppServer {
     constructor () {
         // Server state objects
         // ===============================================
+
+        this.cached_status = null;
 
         /** Format to output images to ffmpeg */
         this.streamImgFormat = StreamingImageBuffer.JPG_FORMAT
@@ -638,6 +641,8 @@ export class MarblesAppServer {
         // TODO: Put frame timing down here
         console.log(`-- End Frame_num ${imgId.toString().padStart(5, ' ')} -- Total Users: ${this.usernameTracker.count} `)
 
+        this.save_status_to_cache();
+
     }
 
     /**
@@ -672,16 +677,22 @@ export class MarblesAppServer {
             if (data.lines.length == 0) {
                 if (this.debug_obj.user_bin)
                     console.warn(`Got nothing for #${processImgId} @ ${user.index}`)
+                // Save image anyways
+                const saveImg = await (await mng.cropTrackedUserName(visibleIdx, user.length, false))
+                    .toSharp({toJPG:true}).toBuffer();
+                user.addImage(saveImg, text, line.confidence);
                 return
             }
             for (const line of data.lines) {
                 if (line.text.length < 4) continue; // Twitch limits
                 const text = line.text.trim()
-                const saveImg = await sharpBuffer.toSharp({toJPG:true}).toBuffer()
+                // const saveImg = await sharpBuffer.toSharp({toJPG:true}).toBuffer()
+                const saveImg = await (await mng.cropTrackedUserName(visibleIdx, user.length, false))
+                    .toSharp({toJPG:true}).toBuffer();
                 user.addImage(saveImg, text, line.confidence);
                 user.ocr_time = time
                 this.usernameTracker.updateHash(text, user)
-                // TODO: NOTE this will double if multiple lines get detected somehow
+                break; // TODO: Should handle multiple lines properly, but this never comes up
             }
             
             if (this.debug_obj.ocr_output)
@@ -821,6 +832,7 @@ export class MarblesAppServer {
             this.startStreamMonitor(channel)
 
             retText = "Waiting for names"
+            this.save_status_to_cache()
         }
         return {"state": this.ServerStatus.state, "text": retText}
     }
@@ -866,24 +878,35 @@ export class MarblesAppServer {
         while (this.ServerStatus.monitoredViewers.at(0) < curr_dt + 300)
             this.ServerStatus.monitoredViewers.shift()
 
+        const ret_status = this.cached_status ?? this.save_status_to_cache()
+        ret_status.status = this.ServerStatus.status() // change this based on 
+
         if (req.query?.admin != undefined) {
             // TODO: Use a different page + endpoint
         } else {
             // Track viewers
-            this.ServerStatus.monitoredViewers.push(Date.now() + ServerStatus.DEFAULT_VIEWER_INTERVAL) // TODO: Link client to this value
+            this.ServerStatus.monitoredViewers.push(Date.now() + ret_status.status?.interval) // TODO: Link client to this value
         }
 
-        // TODO: CACHE status per frame
-        // cache the averages as well
+        return ret_status
+    }
 
-        return {
-            'status': this.ServerStatus.status(),
-            'streaming': this.ServerStatus.streamingTime,
+    save_status_to_cache () {
+        this.cache_status = {
+            // status is going to be dynamic
+            // 'status': this.ServerStatus.status(), 
+            'lag_time': average(this.ServerStatus.lagTimeArray),
             'screen_state': this.ScreenState.predictedFrame.at(-1),
             'appear_state': this.ScreenState.visibleScreenFrame.at(-1),
             'visible_lens': this.usernameTracker.usersInOrder.slice(-24).map(user => user.length),
-            'userList': this.usernameTracker.status(),
+            // 'userList': this.usernameTracker.status(),
+            'users': {
+                'namedCount': this.usernameTracker.knownCount,
+                'count': this.usernameTracker.count
+            }
+            
         }
+        return this.cache_status
     }
 
     find (reqUsername) {
@@ -892,6 +915,13 @@ export class MarblesAppServer {
 
     getImage (reqUsername) {
         return this.usernameTracker.getImage(reqUsername)
+    }
+
+    getImageByIndex(user_index, pic_index=-1) {
+        const user = this.usernameTracker.usersInOrder.at(user_index)
+        if (pic_index == -1)
+            return user.bestImg
+        return user.partialImgList[pic_index]
     }
 
     list () {

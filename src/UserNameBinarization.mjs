@@ -641,18 +641,24 @@ export class UserNameBinarization {
      * Helper function that crops out a username image for later use
      * @param {number} idx [0-23] index currently on screen
      * @param {number} negativeLen negative int showing the length from 
+     * @param {boolean} binBool if true, crop the image. if false, include the username bounding box
      * @returns {Promise<SharpImg>} cropped username
      */
-    async cropTrackedUserName(idx, negativeLen) {
+    async cropTrackedUserName(idx, negativeLen, binBool=true) {
         // const newSharp = new SharpImg(this.imageLike)
         // There are race conditions if I reuse this.sharpImg with extract, instead 
         // I'll just recreate the sharp (since buffer is not needed) and leave a comment
 
-        const UN_ENTRY_PADDING = UserNameConstant.RIGHT_EDGE_X - UserNameConstant.PX_BEFORE_PLAY_X;
+        const UN_ENTRY_PADDING = binBool 
+            ? UserNameConstant.RIGHT_EDGE_X - UserNameConstant.PX_BEFORE_PLAY_X
+            : -7;
+        const UN_X = binBool
+            ? UserNameConstant.RIGHT_EDGE_X + negativeLen
+            : UserNameConstant.RIGHT_EDGE_X + negativeLen - 5;
         const UN_Y = UserNameConstant.FIRST_TOP_Y + idx * UserNameConstant.HEIGHT
-
+            
         const cropRect = {
-            x: UserNameConstant.RIGHT_EDGE_X + negativeLen,
+            x: UN_X,
             y: UN_Y,
             h: UserNameConstant.HEIGHT,
             w: -1*negativeLen - UN_ENTRY_PADDING,

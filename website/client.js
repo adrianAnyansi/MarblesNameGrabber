@@ -18,7 +18,10 @@ const UsernameOutputEl = document.getElementById('username_feedback')
 // const UsernameGeneral = document.getElementById('username_general')
 const UsernameRecheck = document.getElementById('username_recheck')
 const UsernamePlaceholder = document.getElementById('username_placeholder')
+
 const UserImgEl = document.getElementById('userImg')
+const UserImgDivEl = document.getElementById('userImgDiv')
+const UserImgSimUsers = document.getElementById('simUsers')
 
 const ServerStatusEl = document.getElementById('server_status')
 const ServerUsersEl = document.getElementById('user_tracked')
@@ -68,7 +71,7 @@ function fetchServerStatus () {
         handleServerStatus(serverJSON)
         let nextInterval = DEFAULT_STATUS_MS
         if (queryParams.has('admin'))
-            nextInterval = 200;
+            nextInterval = 50;
         else
             nextInterval = serverJSON['status']['interval'] ?? nextInterval 
         setTimeout(fetchServerStatus, nextInterval) // retry
@@ -169,24 +172,26 @@ function handleInput (inputEvent) {
             userInputQueueBool = false
         }
         
-        fetch(`${serverURL}/user_find/${username}`)
+        fetch(`${serverURL}/find/${username}`)
         .then( res => res.json() )
         .then( userFindJSON => {
             
             clearInterval(userCheckingStatusInterval)
             userCheckingStatusInterval = null
-            UsernameOutputEl.textContent = MATCH_RET[userFindJSON['match']] ?? MATCH_RET.at(-1)
-            if (MATCH_RET[userFindJSON['match']]) {
-                UsernameOutputEl.className = `_${userFindJSON['match']}`
-            }
+            const [matchMark, userObj] = userFindJSON[0]
+            UsernameOutputEl.textContent = `Found: [${userObj['name']}]`
             
-            if (userFindJSON['userObj']) {
-                // UsernameOutputEl.textContent += `\nFound ${userFindJSON['userObj']['name']}`
+            if (userObj) {
                 
                 // if (UserImgEl.src == EMPTY_IMG) {
-                UserImgEl.src = `${serverURL}/fullImg/${userFindJSON['userObj']['fullImgIdxList'][0]}`
+                // UserImgEl.src = `${serverURL}/img/${userObj['name']}`
+                UserImgEl.src = `${serverURL}/idx_img/${userObj['index']}/-1`
                 UserImgEl.classList.remove('hidden')
-                FoundUsername = userFindJSON['userObj']['name']
+                UserImgSimUsers.classList.remove('hidden')
+                UserImgDivEl.classList.add('visible')
+                console.log(userFindJSON)
+                UserImgSimUsers.textContent = `Similar names: ${userFindJSON.slice(1).map(u => u[1]['name']).join('|')}`
+                FoundUsername = userObj['name']
                 // }
             }
         })
@@ -228,8 +233,8 @@ function handleServerStatus(serverJSON) {
     WebsiteUsersEl.textContent = `${serverJSON['status']['viewers']} viewer(s)` // TODO: Finish
     ServerStatusDetails.textContent = `${serverJSON['status']['state_desc']}`
 
-    if (serverJSON['status']['lag_time'])
-        LagTimeEl.textContent = `Name recognition: +${(serverJSON['status']['lag_time'] / 1000).toFixed(2)}s from LIVE`
+    if (serverJSON['lag_time'])
+        LagTimeEl.textContent = `Name recognition: +${(serverJSON['lag_time'] / 1000).toFixed(2)}s from LIVE`
 
     if (serverJSON['screen_state'])
         handleScreenState(serverJSON['screen_state'], 
@@ -237,7 +242,7 @@ function handleServerStatus(serverJSON) {
             serverJSON['visible_lens'])
     
     let dialingTracked = trackedUserNums[0] != trackedUserNums[1] // tracked is being moved already
-    trackedUserNums[1] = serverJSON['userList']['user_count']
+    trackedUserNums[1] = serverJSON['users']['namedCount']
     if (!dialingTracked)
         dialNumber(trackedUserNums, ServerUsersEl, '# tracked user(s)')
     

@@ -101,7 +101,7 @@ server.get('/find/:userName', (req, res) => {
 /**
  * Return image to request, or 404 if not found
  */
-server.get(['/img/:userName', '/fullimg/:id'], (req, res) => {
+server.get(['/img/:userName', '/idx_img/:id', '/idx_img/:id/:pic'], (req, res) => {
 
     let userImage = null
     if (req.path.startsWith('/img')) {
@@ -109,11 +109,12 @@ server.get(['/img/:userName', '/fullimg/:id'], (req, res) => {
         console.debug(`Returning user image ${reqUsername}`)
         userImage = app_server.getImage(reqUsername)
     }
-    // } else {
-    //     const reqId = req.params.id
-    //     console.debug(`Returning image num: ${reqId}`)
-    //     userImage = app_server.getFullImg(reqId)
-    // }
+    else {
+        const reqId = req.params.id
+        const pIdx = req.params.pic ?? -1
+        console.debug(`Returning image idx: ${reqId}`)
+        userImage = app_server.getImageByIndex(reqId, pIdx)
+    }
 
     // return image if exists
     if (userImage) {

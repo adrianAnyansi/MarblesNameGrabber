@@ -631,6 +631,10 @@ export class UsernameAllTracker {
         return namedUsers
     }
 
+    get unverifiedIndexes() {
+        return this.usersInOrder.filter(user => user.name == null || user.confidence < 0.5)
+    }
+
     status () {
         return {
             'user_count': this.count,

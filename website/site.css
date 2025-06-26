@@ -155,8 +155,23 @@ body {
     text-align: center;
 }
 
+#userImgDiv {
+    padding: 0em 1em; 
+    display:flex; 
+    flex-direction: row;
+    align-content: center;
+}
+
+#simUsers {
+    padding: 0em 1em;
+}
+
+#userImgDiv.visible p {
+    display: none
+}
+
 #userImg {
-    width: 100%;
+    /* width: 30%; */
 }
 
 #username_simple_out {

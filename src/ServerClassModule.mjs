@@ -485,11 +485,13 @@ export class ServerStatus {
     status () {
         return {
             'viewers': this.currentViewers,
-            'total_viewers': this.allViewers.size,
-            'marbles_date': this.started_game_ts,
+            'unique_viewers': this.allViewers.size,
+            'streaming_time': this.streamingTime,
+            'marbles_start_ts': this.started_race_ts,
+            'marbles_end_ts': this.ended_read_ts,
             'state': this.state,
             'state_desc': SERVER_STATE_DESC[this.state],
-            'lag_time': this.lagTimeArray.at(-1),
+            // also change this based on type of server and server state
             'interval': ServerStatus.DEFAULT_VIEWER_INTERVAL // TODO: Change based on number of viewers that can be handled
         }
     }
