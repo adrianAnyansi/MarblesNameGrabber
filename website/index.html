@@ -49,42 +49,47 @@
         </div>
 
         <div class="page statusPage">
-            <h2 class="small-title">Status</h2>
-            <div id="status_bar" >
-                <div id="screen_demo" class="none">
-                    <!-- 24 names are listed here -->
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name seen"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name named dashed_bg"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="name"></div>
-                    <div class="disclaimer">screen not available</div>
+            <div id="status_bar">
+                <div style="flex-grow: 3;">
+                    <h2 class="small-title">Status</h2>
+                    <div id="screen_demo" class="none">
+                        <!-- 24 names are listed here -->
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name seen"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name named dashed_bg"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="name"></div>
+                        <div class="disclaimer">screen not available</div>
+                    </div>
                 </div>
                 <div>
                     <div style="margin-bottom: 0.2em;">
                         <p style="margin-bottom: 0.2em; font-weight: bold;">Server Status: <span id="serverStatusIcon" class="circle_icon unknown"></span> <span id="server_status">Unknown</span></p>
-                        <p id="ServerStatusDetails">Getting server status</p>
+                        <p id="ServerStatusDetails" class="subtitle">Getting server status</p>
                         <p><span id="lag_time"></span></p>
-                        <p id="ServerStartTime"></p>
+                        <p>
+                            <div id="ServerStartTime"></div>
+                            <div id="ServerEndTime"></div>
+                        </p>
                     </div>
                     <div id="screen_legend">
                         <p style="font-weight: bold;">Screen legend</p>
@@ -119,14 +124,14 @@
             <p class="aboutQuestion"><span>Q: </span> Ok but how accurate? Am I in or not?</p>
             <p>
                 It's hard to say because every Marbles is different, 
-                but generally it's 98% accurate and misses ~20 names through edge cases.
+                but generally it's 98% accurate (match to closest username, not per letter) and misses ~20 names through edge cases.
             </p>
             <p>
                 Here are the one's I know & am trying to resolve.
             </p>
             <ul>
-                <li>Early Names hidden by an alert <i style="color:gray">Not resolvable</i></li>
-                <li>Bitrate making names unreadable </li>
+                <li>Early Names hidden by an alert <i style="color:gray">[Not resolvable]</i></li>
+                <li>Bitrate making names unreadable <i style="color:gray">[Gotta guess on this]</i></li>
                 <li>Names with many underscores i.e <i>Near_________</i> are sometimes missed by OCR</li>
                 <li>Barcode names i.e <i>Il1lI1l</i> are unreadable to the OCR</li>
                 <li>Any overlay that obscures a name while it's on screen </li>
@@ -161,8 +166,8 @@
             <p> Improvements 0.3.1: 
                 <li>Increased check FPS from 10 to 30.</li>
                 <li>Username movement is now tracked, so server can smartly check unknown usernames 
-                    and keep track of ALL users even if only 4 are visible. (double alert + facecam block)</li>
-                <li>Added tracker for near-real time username recognition.</li>
+                    and keep track of ALL users even if only 4 are visible.</li>
+                <li>Added tracker for better feedback.</li>
                 <li>Many back-end improvments.</li>
             </p>
             <p>

@@ -331,6 +331,8 @@ export class StreamImageTracking {
 export class ServerStatus {
 
     static DEFAULT_VIEWER_INTERVAL = 1_000 * 0.2;
+    static POST_VIEWER_INTERVAL = 1_000 * 2;
+    // static DEFAULT_VIEWER_INTERVAL = 1_000 * 0.2;
     static LAG_TIME_MAX = 20;
 
     constructor () {
@@ -487,12 +489,15 @@ export class ServerStatus {
             'viewers': this.currentViewers,
             'unique_viewers': this.allViewers.size,
             'streaming_time': this.streamingTime,
-            'marbles_start_ts': this.started_race_ts,
+            'marbles_game_ts': this.started_game_ts,
+            'marbles_start_ts': this.started_read_ts,
             'marbles_end_ts': this.ended_read_ts,
             'state': this.state,
             'state_desc': SERVER_STATE_DESC[this.state],
             // also change this based on type of server and server state
-            'interval': ServerStatus.DEFAULT_VIEWER_INTERVAL // TODO: Change based on number of viewers that can be handled
+            'interval': this.notRunning
+                ? ServerStatus.POST_VIEWER_INTERVAL
+                : ServerStatus.DEFAULT_VIEWER_INTERVAL // TODO: Change based on number of viewers that can be handled
         }
     }
     

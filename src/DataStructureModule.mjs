@@ -1,17 +1,42 @@
 // Data structure class
 
+/**
+ * This is a list that only permits a max of N elements.
+ * The elements are sorted as per LinkedList.
+ * @template {any} T
+ */
 export class LimitedList {
-    constructor (limit=Infinity, values=null, sortMethod=this.defaultASCSort) {
+    /** Default sort */
+    static defaultASCSort (val1, val2) {
+        return val1 < val2
+    }
+    static defaultDSCSort (val1, val2) {
+        return val1 > val2
+    }
+
+    /**
+     * @param {number} [limit=Infinity] Max size of list
+     * @param {Array<T>} [values=null] initial list
+     * @param {(val1: any, val2: any) => boolean} [sortMethod=LimitedList.defaultASCSort] sort function
+     */
+    constructor (limit=Infinity, values=null, sortMethod=LimitedList.defaultASCSort) {
+        /**
+         * @type {Array<T>} list of sorted objects 
+         */
         this.list = []
+        /** @type {number} max number of elements */
         this.maxLength = limit
         this.sortMethod = sortMethod ?? this.defaultASCSort
 
         if (values) {
-            for (let value in values)
+            for (let value of values)
                 this.push(value)
         }
     }
 
+    /**
+     * @param {T} value 
+     */
     push(value) {
         this.list.push(value)
         this.sort()
@@ -19,10 +44,9 @@ export class LimitedList {
             this.list.pop()
     }
 
-    defaultASCSort (val1, val2) {
-        return val1 < val2
-    }
-
+    /**
+     * sort function. private
+     */
     sort() {
         // insertion sort which should work well for small-sorted arrays
         for (let i=1; i<this.list.length; i++) {
@@ -36,41 +60,58 @@ export class LimitedList {
     }
 
     /**
-     * Look at last element in list without change
+     * Look at first element in list without change
+     * @returns {T} first el
      */
     peek() {
         return this.list[0]
     }
 
     /**
-     * Look at first element in list without change
+     * Look at last element in list without change
+     * @returns {T} last element
      */
     sneak() {
         return this.list.at(-1)
     }
 
+    /** @returns {boolean} is this list full */
     isFull() {
         return this.list.length == this.maxLength
     }
 }
 
+/**
+ * @template {any} T
+ * Single node of a LinkedList, intended to be used with LinkedList only
+ */
 export class LinkedListNode {
+    /**
+     * @param {T} value 
+     * @param {LinkedListNode} prev
+     */
     constructor(value, prev) {
         this.value = value
         this.next = null
-        if (prev)   prev.next = this
-        // prev?.next = this
+        if (prev) prev.next = this
     }
 
+    /**
+     * @param {T} value 
+     */
     static Create(value) {
         return new LinkedListNode(value)
     }
 }
 
+/**
+ * @template {any} T
+ * A sorted linked list
+ */
 export class LinkedList {
 
-    DSC = 'LinkedList_Descending'
-    ASC = 'LinkedList_Ascending'
+    static DSC = 'LinkedList_Descending'
+    static ASC = 'LinkedList_Ascending'
 
     constructor(values, sortMethod, maxLen=Infinity) {
         this.root = null

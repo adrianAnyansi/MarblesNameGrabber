@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { ColorSpace } from "../UserNameBinarization.mjs";
 import { delay, iterateN, iterateRN, Statistic, Stopwatch } from "../UtilityModule.mjs";
 import { randInt, rotPoint } from '../Mathy.mjs';
-import { Heap } from '../DataStructureModule.mjs';
+import { Heap, LimitedList } from '../DataStructureModule.mjs';
 import { UsernameAllTracker } from '../UsernameTrackerClass.mjs';
 
 test("Confirms mathy iterator works", 
@@ -132,4 +132,35 @@ test ("Test Stopwatch class", async () => {
     assert.equal(Math.round(sw.read(fromNow)), Math.round(performance.now()-(sw.start_ts - fromNow)))
     // console.log("waitTime", randWaitTime, "fromNow", fromNow, "start_time", sw.start_ts, "perf", performance.now())
 
+})
+
+test ("Limited List testing", async () => {
+
+    // Test max length & initial list
+    const ll = new LimitedList(5)
+    assert.equal(ll.maxLength, 5)
+    assert.equal(ll.list.length, 0)
+    
+    // Test intial list ASC order
+    const ll2 = new LimitedList(5,[4,1,2,3])
+    assert.equal(ll2.list.length, 4)
+    assert.equal(ll2.peek(), 1)
+    assert.equal(ll2.sneak(), 4)
+    ll2.push(2.5)
+    assert.equal(ll2.list[2], 2.5)
+    assert.equal(ll2.sneak(), 4)
+
+    ll2.push(11) // this will not get added as max length has been reached
+    assert.equal(ll2.sneak(), 4)
+
+    ll2.push(0) // this will get added and push 4 out
+    assert.equal(ll2.sneak(), 3)
+
+    // Test initial list but DSC order
+    const ll3 = new LimitedList(5, [1,2,3], LimitedList.defaultDSCSort)
+    assert.equal(ll3.peek(), 3)
+    assert.equal(ll3.sneak(), 1)
+    ll3.push(0.5)
+    assert.equal(ll3.sneak(), 0.5)
+    assert.equal(ll3.peek(), 3)
 })

@@ -680,7 +680,7 @@ export class MarblesAppServer {
                 // Save image anyways
                 const saveImg = await (await mng.cropTrackedUserName(visibleIdx, user.length, false))
                     .toSharp({toJPG:true}).toBuffer();
-                user.addImage(saveImg, text, line.confidence);
+                user.addImage(saveImg, null, 11.1);
                 return
             }
             for (const line of data.lines) {

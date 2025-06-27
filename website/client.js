@@ -27,6 +27,8 @@ const ServerStatusEl = document.getElementById('server_status')
 const ServerUsersEl = document.getElementById('user_tracked')
 const ServerStatusIcon = document.getElementById('serverStatusIcon')
 const ServerStatusDetails = document.getElementById('ServerStatusDetails')
+const ServerStartTime = document.getElementById('ServerStartTime')
+const ServerEndTime = document.getElementById('ServerEndTime')
 const WebsiteUsersEl = document.getElementById('viewers_visiting')
 const LagTimeEl = document.getElementById('lag_time')
 
@@ -178,26 +180,24 @@ function handleInput (inputEvent) {
             
             clearInterval(userCheckingStatusInterval)
             userCheckingStatusInterval = null
-            const [matchMark, userObj] = userFindJSON[0]
-            UsernameOutputEl.textContent = `Found: [${userObj['name']}]`
+            const srchList = userFindJSON['srchList']['list']
+            const {dist, userObj} = srchList[0]
+            UsernameOutputEl.textContent = `Best match: [${userObj['name']}]`
             
             if (userObj) {
-                
-                // if (UserImgEl.src == EMPTY_IMG) {
-                // UserImgEl.src = `${serverURL}/img/${userObj['name']}`
-                UserImgEl.src = `${serverURL}/idx_img/${userObj['index']}/-1`
+                UserImgEl.src = `${serverURL}/idx_img/${userObj['index']}`
                 UserImgEl.classList.remove('hidden')
                 UserImgSimUsers.classList.remove('hidden')
                 UserImgDivEl.classList.add('visible')
                 console.log(userFindJSON)
-                UserImgSimUsers.textContent = `Similar names: ${userFindJSON.slice(1).map(u => u[1]['name']).join('|')}`
+                UserImgSimUsers.textContent = `Similar names: 
+                    ${srchList.slice(1).map(({dist, userObj}) => userObj['name']).join('|')}`
                 FoundUsername = userObj['name']
-                // }
             }
         })
 
 
-        
+        // TODO: Fix this
         if ( !(['STOPPED', 'COMPLETE'].includes(ServerStatusEl.textContent) || // server status is stopped or complete
                 FoundUsername == UsernameInputEl.value )) {      // OR returned name == username
         // if (true) {
@@ -240,6 +240,14 @@ function handleServerStatus(serverJSON) {
         handleScreenState(serverJSON['screen_state'], 
             serverJSON['appear_state'],
             serverJSON['visible_lens'])
+    
+    let dateStrings = []
+    if (serverJSON['status']['marbles_start_ts']) {
+        ServerStartTime.textContent = `Started: ${new Date(serverJSON['status']['marbles_start_ts']).toLocaleString()}`
+    }
+    if (serverJSON['status']['marbles_end_ts']) {
+        ServerEndTime.textContent = `Ended: ${new Date(serverJSON['status']['marbles_end_ts']).toLocaleString()}`
+    }
     
     let dialingTracked = trackedUserNums[0] != trackedUserNums[1] // tracked is being moved already
     trackedUserNums[1] = serverJSON['users']['namedCount']

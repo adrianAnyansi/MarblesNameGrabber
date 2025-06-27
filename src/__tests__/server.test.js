@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import {MarblesAppServer} from "../MarblesAppServer.mjs"
 
 import { Stopwatch, iterateN } from '../UtilityModule.mjs';
-import { UsernameAllTracker } from '../UsernameTrackerClass.mjs';
+import { UsernameAllTracker, UsernameSearcher } from '../UsernameTrackerClass.mjs';
 import { TrackedUsername, VisualUsername } from '../UserModule.mjs';
 import { randChance, randInt } from '../Mathy.mjs';
 import { SharpImg } from '../ImageModule.mjs';
@@ -262,6 +262,48 @@ test ("Test user color detection", async () => {
     console.log(`Visual \t${pad.join('')}${vUser.map(vu => vu.color?.padStart(5, ' ') ?? 'empty').join('|')}`)
 
     // console.log("done")
+})
+
+test ("test username search", async () => {
+    // create users
+
+    const userL = [
+        new TrackedUsername(),
+        new TrackedUsername(),
+        new TrackedUsername(),
+        new TrackedUsername(),
+        new TrackedUsername(),
+    ]
+    userL[0].aliases = new Set(['Malice', 'Chalice', 'Alice'])
+    userL[1].aliases = new Set(['Barou'])
+    userL[2].aliases = new Set(['Candice'])
+    userL[3].aliases = new Set(['Dodger', 'Dodger1', 'Dodger2', 'Dodger3', 'Dodger4', 'Dodger5'])
+    userL[4].aliases = new Set(['Eureka'])
+
+
+    const result = UsernameSearcher.find(
+        'Alone',
+        userL,
+    )
+    assert.equal(result.list[0].dist, 4) // With Alice being the best match, the dist == 4
+    // TODO: The properly check the order of the list here
+
+    // Despite multiple similar aliases with same dist, userObj #3 should only exist once
+    const result2 = UsernameSearcher.find('Dodger2', userL)
+    assert.equal(result2.list.filter(uso => uso.userObj === userL[3]).length, 1)
+    assert.equal(result2.list[0].dist, 0)
+    assert.equal(result2.list[0].userObj, userL[3])
+
+    const result3 = UsernameSearcher.find('Eurega', userL)
+    assert.equal(result3.list[0].dist, 2) // this will match #4
+    assert.equal(result3.list[0].userObj, userL[4])
+    // Cache testing
+    userL[1].aliases.add('Eurega')
+    const result4 = UsernameSearcher.find('Eurega', userL)
+    assert.equal(result3, result4) // due to cache, this will be the same UsernameSearchResult object
+    assert.equal(result4.list[0].dist, 2) // due to index skip, this will ignore the new alias with match 0
+
+    // console.log(result)
 })
 
 // -------- full server tests ------------------

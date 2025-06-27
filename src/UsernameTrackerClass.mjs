@@ -6,9 +6,39 @@ import { Heap, LimitedList } from "./DataStructureModule.mjs"
 import { ImageBuffer, PixelMeasure } from "./ImageModule.mjs"
 import { inRange } from "./Mathy.mjs"
 // import { UserNameBinarization, VisualUsername } from "./UsernameBinarization.mjs"
-import { iterateN, iterateRN } from "./UtilityModule.mjs"
+import { iterateN, iterateRN, Stopwatch } from "./UtilityModule.mjs"
 import { TrackedUsername, VisualUsername } from "./UserModule.mjs"
 
+
+/**
+ * @typedef UsernameSearchObj
+ * @property {number} dist
+ * @property {TrackedUsername} userObj
+ */
+
+/**
+ * Class containing the result of a username search
+ */
+class UsernameSearchResult {
+    /**
+     * @param {String} searchTerm text that was searched
+     * @param {LimitedList<UsernameSearchObj>} [searchList=null] search list
+     */
+    constructor (searchTerm, searchList = null) {
+        /** @type {String} searched term */
+        this.searchTerm = searchTerm
+        /** @type {number} worst score in a full list */
+        this.currMaxScore = Infinity
+        /** @type {LimitedList<UsernameSearchObj>} ranked list of best matches */
+        this.srchList = searchList
+        /** @type {number} Last user index searched */
+        this.lastIndexSearched = -1
+    }
+
+    get list() {
+        return this.srchList.list
+    }
+}
 
 /**
  * Moving username searcher to separate class
@@ -43,7 +73,7 @@ export class UsernameSearcher {
     ]
     static ADJC_LETTER_MAP = null
     static PERFORMANCE_MARK_FIND = "find_username"
-    static USER_RANK_LIST = 5
+    static USER_RANK_LIST_COUNT = 5
 
     static PreProcess() {
         if (UsernameSearcher.ADJC_LETTER_MAP) return;
@@ -66,34 +96,57 @@ export class UsernameSearcher {
         console.debug(`[UsernameSearcher] Generated ${UsernameSearcher.ADJC_LETTER_MAP.size} adjacent entries!`)
     }
 
+    /** @type {Map<String, UsernameSearchResult>} Save result of searched result */
+    static USER_SEARCH_CACHE = new Map()
+
+    static PERF_DEBUG = false
+
+    static USER_RANK_SORT_FUNC = (a,b) => a.dist < b.dist
     /**
      * 
      * @param {String} searchUsername username to search for
      * @param {TrackedUsername[]} userNameList List of username objects (must have .aliases property)
      * @param {Number} lowestRank Lowest rank to consider, otherwise match is ignored
-     * @returns {Array<number, string>} 
+     * @returns {UsernameSearchResult} 
      */
     static find (searchUsername, userNameList, lowestRank=Infinity, lowerCasePenalty=true) {
         // Attempt to find the 5 closest usernames to this text
-        const sortFunc = (a,b) => a[0] < b[0]
-        const usernameRanking = new LimitedList(UsernameSearcher.USER_RANK_LIST, null, sortFunc)
-        let currentMax = lowestRank
-        // performance.mark(this.PERFORMANCE_MARK_FIND)
 
-        for (const userObj of userNameList) {
+        const userSearchResult = this.USER_SEARCH_CACHE.get(searchUsername) 
+            ??  new UsernameSearchResult(searchUsername,
+                    new LimitedList(UsernameSearcher.USER_RANK_LIST_COUNT, 
+                        null, UsernameSearcher.USER_RANK_SORT_FUNC)
+                )
+        userSearchResult.currMaxScore = lowestRank
+        if (this.PERF_DEBUG)
+            this.sw = new Stopwatch()
+
+        const postCheck = 30
+        for (const [uidx, userObj] of userNameList.entries()) {
             if (!userObj) continue
+            if (userSearchResult.lastIndexSearched - postCheck>= uidx) continue
+
+            let queuedUserObj = {dist:Infinity, userObj:null}
             for (const userAlias of userObj.aliases) {
                 if (userAlias == null) continue;
-                const dist = UsernameSearcher.calcLevenDistance(searchUsername, userAlias, currentMax, lowerCasePenalty)
-                const userRankObj = [dist, userObj]
+                const dist = UsernameSearcher.calcLevenDistance(searchUsername, userAlias, 
+                    userSearchResult.currMaxScore, lowerCasePenalty)
+                const userRankObj = {dist, userObj}
 
-                if (usernameRanking.isFull()) currentMax = usernameRanking.sneak()[0]
-                if (dist < currentMax) usernameRanking.push(userRankObj)
+                if (userSearchResult.srchList.isFull()) 
+                    userSearchResult.currMaxScore = userSearchResult.srchList.sneak().dist
+                if (dist < Math.min(userSearchResult.currMaxScore, queuedUserObj.dist)) 
+                    queuedUserObj = userRankObj
             }
+            if (queuedUserObj.userObj) userSearchResult.srchList.push(queuedUserObj)
+            userSearchResult.lastIndexSearched = uidx
         }
 
-        // console.debug(`Find username ranking took ${performance.measure('username_mark', this.PERFORMANCE_MARK_FIND).duration.toFixed(2)}ms`)
-        return usernameRanking.list
+        if (this.PERF_DEBUG)
+            console.debug(`Find username ranking took ${this.sw.htime}`)
+        // save to CACHE
+        this.USER_SEARCH_CACHE.set(userSearchResult.searchTerm, userSearchResult)
+        return userSearchResult
     }
 
     /**
@@ -610,7 +663,7 @@ export class UsernameAllTracker {
     /** Clears the usernames and hash */
     clear() {
         this.usersInOrder = [];
-
+        UsernameSearcher.USER_SEARCH_CACHE.clear()
         this.hash.clear()
     }
 
@@ -628,7 +681,7 @@ export class UsernameAllTracker {
 
     get knownCount() {
         const namedUsers = this.usersInOrder.filter(user => user.name != null)
-        return namedUsers
+        return namedUsers.length
     }
 
     get unverifiedIndexes() {

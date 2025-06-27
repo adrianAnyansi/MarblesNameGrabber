@@ -122,19 +122,23 @@ Ok bed bed bye.
 # Focus today
 - Finishing up website
 
-- sketch out the way user looks, and feedback
-- think about user ret object
-- there's no image since most accurate user_name is the img_key
+- Need quick box for OCR cause Barb hair is blocking 90%
+
 - debug to show all user names for an index?
+    - admin page can do this
 
 - figure out a userAlias data structure
 - verify code
     - yes/no for username search
     - create a mode that allows verifying + adding new names
 
-- show date for when username started
-- change interval based on server status
-
 - for user find, save the last searched userObj and results to cache
-    - also remove aliases otherwise it fills up the thingy
-- Need a box for OCR cause Barb hair is blocking 90%
+    - For this cache, I need to override if aliases have been updated which means 
+    that the those names need to be done.
+    I'm not sure how to do this well, probably a retro-active dirty flag that forces a check?
+    since this happens with multiple checks, there's not a really a good way to rule this out.
+    Ok best to just flag post-name updates and then always check them
+
+- user feedback needs match percentage
+- gotta fix the found/tracked username backend
+- sometimes length can be wrong, after 3+ checks it should retry?
