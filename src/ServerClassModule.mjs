@@ -1,4 +1,4 @@
-import { Stopwatch, iterateN } from "./UtilityModule.mjs"
+import { Statistic, Stopwatch, iterateN } from "./UtilityModule.mjs"
 import { VisualUsername } from "./UserModule.mjs"
 import * as Mathy from './Mathy.mjs'
 
@@ -467,6 +467,21 @@ export class ServerStatus {
     }
 
     /**
+     * Apparent FPS based on download frequency
+     * @returns {number}
+     */
+    downloadFPS () {
+        // determine average difference between all 
+        const dl_avg_arr = this.frame_dl_time.slice(-20)
+        const stat = new Statistic()
+        for (const [idx, el] of dl_avg_arr.entries()) {
+            if (idx == 0) continue
+            stat.add(el-dl_avg_arr[idx-1])
+        }
+        return (1000/stat.mean)
+    }
+
+    /**
      * Time taken to process frame from download
      */
     frameDLtoProcess (frame_idx) {
@@ -486,20 +501,21 @@ export class ServerStatus {
      */
     frameAvg (frameIdx) {
         const sampleFrames = []
-        for (const idx of iterateN(-5, 0)) {
+        for (const idx of iterateN(-10, 0)) {
             sampleFrames.push(this.frameTiming(idx + frameIdx))
         }
         const filterSampleFrames = sampleFrames.filter(val => !isNaN(val))
 
-        const avg = Mathy.average(filterSampleFrames);
-        const stdDev = Mathy.stdDev(filterSampleFrames, avg)
+        const stat = new Statistic(true, filterSampleFrames)
+        const avg = stat.mean
+        const stdDev = stat.stdDev
 
-        const dl_avg = Mathy.average(
+        const dl_avg = Statistic.CalcMean(
             Array.from(iterateN(-5, 0)).map(idx => this.frameDLtoProcess(idx + frameIdx)
                 ).filter(val => !isNaN(val))
         )
 
-        return `Frame Avg:${avg.toFixed(2)}ms, SD:${stdDev.toFixed(2)}ms; DL_avg:${dl_avg.toFixed(2)}ms`
+        return `Process Avg:${avg.toFixed(2)}ms, SD:${stdDev.toFixed(2)}ms; E2E avg:${dl_avg.toFixed(2)}ms`
     }
 
     /**

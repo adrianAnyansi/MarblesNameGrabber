@@ -114,14 +114,23 @@ export function steppedFunction (value, steps) {
     return lastStepName
 }
 
+/**
+ * Keep track and generate statistics 
+ */
 export class Statistic {
 
-    constructor (storeNums=false) {
+    /**
+     * @param {boolean} [storeNums=false] keep numbers for median/mode calcs
+     */
+    constructor (storeNums=false, numArr=[]) {
         this.storeNums = storeNums;
         this.numArr = this.storeNums ? [] : null;
 
         this.count = 0;
         this.amount = 0;
+        if (numArr) {
+            for (const val of numArr) this.add(val)
+        }
     }
 
     add(num) {
@@ -134,6 +143,31 @@ export class Statistic {
     get mean() {
         if (this.count == 0) return NaN
         return this.amount / this.count;
+    }
+
+    /**
+     * @param {Array<Number>} array 
+     */
+    static CalcMean (array) {
+        if (array.length == 0) return NaN;
+        let mean = 0;
+        for (const val of array)
+            mean += val;
+        return mean / array.length;
+    }
+
+    /**
+     * Calculate the standard deviation of object
+     * @returns {number}
+     */
+    get stdDev() {
+        if (!this.numArr || this.numArr.length == 0) return null
+        // this.mean;
+        let dev_calc = 0;
+        for (const val of this.numArr) {
+            dev_calc += (val - this.mean) ** 2;
+        }
+        return Math.sqrt(dev_calc / (this.numArr.length-1));
     }
 
     // TODO: Medians and etc

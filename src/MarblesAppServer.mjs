@@ -358,7 +358,7 @@ export class MarblesAppServer {
 
         const EMPTY_IMAGE_NUM = MarblesAppServer.EMPTY_PAGE_COMPLETE * MarblesAppServer.FFMPEG_FPS
         if (this.ScreenState.frames_without_names > EMPTY_IMAGE_NUM) {
-            console.log(`Found ${EMPTY_IMAGE_NUM} empty frames @ ${imgId};
+            console.log(`Found ${MarblesAppServer.EMPTY_PAGE_COMPLETE} seconds @ ${imgId};
                 Dumping remaining images and changing to COMPLETE state.`)
             this.ServerStatus.enterCompleteState()
             this.spinDown()
@@ -636,7 +636,7 @@ export class MarblesAppServer {
 
         this.ServerStatus.frame_end_time[imgId] = performance.now()
         if (this.debug_obj.frame_pacing) {
-            console.log(`${this.ServerStatus.frameAvg(imgId)} Curr Frame:${this.ServerStatus.frameTiming(imgId).toFixed(2)}ms`)
+            console.log(`${this.ServerStatus.frameAvg(imgId)} Curr Frame:${this.ServerStatus.frameTiming(imgId).toFixed(2)}ms DL FPS:${this.ServerStatus.downloadFPS().toFixed(1)}`)
         }
         // TODO: Put frame timing down here
         console.log(`-- End Frame_num ${imgId.toString().padStart(5, ' ')} -- Total Users: ${this.usernameTracker.count} `)

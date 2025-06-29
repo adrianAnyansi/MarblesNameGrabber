@@ -102,6 +102,15 @@ test ("Statistic class", async () => {
     assert.equal(stat.count, test.length)
     assert.equal(stat.amount, test.reduce( (a,b) => a+b))
     assert.equal(stat.mean, test.reduce( (a,b) => a+b) / test.length)
+
+})
+
+test ("Statistics std dev", async () => {
+    const test = [1,2,3,4,5,6,7,8,9]
+    const stat = new Statistic(true, test)
+
+    // std deviation calc
+    assert.equal(stat.stdDev.toFixed(7), 2.7386128.toFixed(7))
 })
 
 test ("Test Stopwatch class", async () => {
