@@ -92,6 +92,28 @@ export class Stopwatch {
     }
 }
 
+
+// TODO: Write a different function for binary-search version of this
+
+/**
+ * Return where this value is step
+ * @template {any} C any comparable value
+ * @template {any} M mapped value from stepped function
+ * @param {C} value 
+ * @param {Map<C, M>} steps
+ * @returns {M} mapped value
+ */
+export function steppedFunction (value, steps) {
+    let lastStepName = null
+    for (const [currStep, stepName] of steps) {
+        lastStepName = stepName
+        if (value <= currStep) {
+            return stepName
+        }
+    }
+    return lastStepName
+}
+
 export class Statistic {
 
     constructor (storeNums=false) {

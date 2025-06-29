@@ -19,21 +19,27 @@
             <h2 class="big-title" id="streamerName">BarbarousKing's</h2>
             <div id="last_title">
                 <h2 class="big-title">Marbles?</h2>
+                <div style="display:flex; flex-direction: column; align-items: end;">
                     <span id="viewers_visiting">viewers</span>
+                    <span id="total_viewer">total visitors</span>
+                    <span class="subtitle">version 0.3.2</span>
+                </div>
             </div>
 
             <br/>
             
-            <div id="userImgDiv">
-                <p style="font-size: 1em;" class="subtitle userImgBG">
-                    Username Image will be displayed here</p>
-                <img id="userImg" class="hidden" src="">
-                <span id="simUsers" class="subtitle hidden">Similar names: </span>
+            <div id="userImgDiv" >
+                <p style="font-size: 1em;" class="subtitle userImgBG">Username Image will be displayed here</p>
+                <img id="userImg"  src="">
+                <div id="currImgDetails">
+                    <div><b>Text: </b> <span id="match_text"></span></div>
+                    <div><b>Match: </b><span id="match_quality" class="LIKELY match_result"></span></div>
+                </div>
+                <span id="simUsers" class="subtitle">Similar names: </span>
             </div>
             <div id="username_input_box">
                 <input id="username_input" placeholder=" ">
                 <p id="username_placeholder">Enter username</p>
-                <!-- <p id="username_placeholder2">Enter username</p> -->
             </div>
 
             <div id="username_output_box">
@@ -43,8 +49,7 @@
             </div>
             <br/>
             <p style="font-size: 0.9em;">
-                This website is maintained by @MiloticMaster. Please don't ask BarbarousKing or Marbles On Stream for details/troubleshooting.
-                <span class="subtitle">Version 0.3.1</span>
+                This website is maintained by @<span style="color:#fdb2b2;">Milotic</span><span style="color:#a0e5ff;">Master</span>. Please don't ask BarbarousKing or Marbles On Stream for details/troubleshooting.
             </p>
         </div>
 
@@ -85,10 +90,10 @@
                     <div style="margin-bottom: 0.2em;">
                         <p style="margin-bottom: 0.2em; font-weight: bold;">Server Status: <span id="serverStatusIcon" class="circle_icon unknown"></span> <span id="server_status">Unknown</span></p>
                         <p id="ServerStatusDetails" class="subtitle">Getting server status</p>
-                        <p><span id="lag_time"></span></p>
                         <p>
-                            <div id="ServerStartTime"></div>
-                            <div id="ServerEndTime"></div>
+                            <div class="hidden"><b>Name recognition:</b> <span id="lag_time"></span> from LIVE</div>
+                            <div class="hidden"><b>Started:</b> <span id="ServerStartTime"></span></div>
+                            <div class="hidden"><b>Ended:</b> <span id="ServerEndTime"></span></div>
                         </p>
                     </div>
                     <div id="screen_legend">
@@ -108,7 +113,7 @@
             <p class="aboutQuestion"><span>Q: </span>What is this site?</p>
 
             <p>
-                This is a fan site made to track entrants at <a style="color:red" href="http://twitch.tv/barbarousking">BarbarousKing</a> Marbles-On-Stream event.
+                This is a fan site made to track entrants at <a style="color:#ff2c2c;" href="http://twitch.tv/barbarousking">BarbarousKing</a> Marbles-On-Stream event.
             </p>
 
             <p class="aboutQuestion"><span>Q: </span> Hmm.. how does it work?</p>

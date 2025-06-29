@@ -2,9 +2,11 @@
 I think this is the 3rd month of working on this project. 
 I'm going to cut my losses and switch projects.
 
-So lets make a 2.0.a version that contains the new tracking code.
+This is actually 0.3.2 version, I gotta get used to this
+Idea is no more text recognition improvements, just production release.
 
-# 2.0 Goal - Track Every Username
+
+# 0.3 Goal - Track Every Username
 ---
 By checking every frame, every name should be tracked individually.
 This means I can track each user on screen without OCR and with near perfect accuracy.
@@ -59,7 +61,7 @@ I'm going to eat the other problems to launch.
 - Stopping mechanism without OCR? Oh I can just match the 1000/1000 check + old check
     - Just use old check, time-based after first name read
 
-# Steps to 2.0
+## Steps to 0.3
 [x] Update FPS and reduce processing for string
 [x] Server & Code refactoring
     [x] Tracking length/offset code
@@ -82,47 +84,47 @@ I'm going to eat the other problems to launch.
 
 
 # Current Thoughts
+The only issues now are 
+1. usernames get cut off by Barb's head
+2. I want % match or smth, I don't want people complaining
 
+The colour tests are annoying. Ignoring that
+All the improved debugging has been implemented
+I'm ignoring the debug page since it's likely I won't have time 
+    Both to use it and implement it
+Verify I'm also leaving as its annoying
+
+Once the UI is done I'll launch and leave this 
+
+# Vod testing results
 Im not going to hit 100% on the vod bitrate test, so I'll talk about the current issues in vod 2436099273.
 - match mean = 0.57
 - non-zero mean = 50.55
 - 7-25 names lost to bitrate; considered unreadable without knowing chat names
 - 2-3 names lost to OCR (think lIs or multiple underscores)
 
-The end of names issue I'm ignoring. Too annoying to debug.
-The color thing I don't quite understand- it might be bug, might be color offset-
-    - honestly I wont care, I'm just gonna check it.
-
-- Updating vod_dump syntax to show both process & dump ID for easier debug
-- Dump the usernames so I can view the collected images as well
-- Need to update log syntax so I can clearly view color/len checks
 - Need index to show 
     - Names that have position but are unreadable
     - User list needs to flag names considered unreadable for my peace-of-mind
-    - Remove fail alias list, aliases are too unreliable for this to be a useful metric.
 
 - Color detection
     - This still appears to have some issues. This can be debugged with more time and logging, but a bad match should never occur so I'm worried about that logic
 - Reduce color detection passes by using the edge detection code
-- Need to do timing on live still
-
-Ok this has killed my sleep schedule too many times, I'm going to bed.
-
 
 Will leave this problem for later
 2. On low bitrate, the color gradient means a low confidence on the pixels.
     so likely multiple overlays might not help.
     I should increase the colorspace instead.
-3. During startup & end, there are frames that get intrepreted as names which bloat the name list. Should remove these false positives
 
 check 6521, 6612, 6613, 6625, 6644, 6645
 I can put new logic that ignores 1 random length match.
-Ok bed bed bye.
 
 # Focus today
+
 - Finishing up website
 
 - Need quick box for OCR cause Barb hair is blocking 90%
+- Show the
 
 - debug to show all user names for an index?
     - admin page can do this
@@ -142,3 +144,5 @@ Ok bed bed bye.
 - user feedback needs match percentage
 - gotta fix the found/tracked username backend
 - sometimes length can be wrong, after 3+ checks it should retry?
+
+- test a clear -> restart

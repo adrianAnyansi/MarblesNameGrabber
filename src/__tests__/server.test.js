@@ -298,15 +298,28 @@ test ("test username search", async () => {
     assert.equal(result3.list[0].dist, 2) // this will match #4
     assert.equal(result3.list[0].userObj, userL[4])
     // Cache testing
+    UsernameSearcher.POST_CHECK = 0
     userL[1].aliases.add('Eurega')
     const result4 = UsernameSearcher.find('Eurega', userL)
+    assert.notEqual(result3, result)
     assert.equal(result3, result4) // due to cache, this will be the same UsernameSearchResult object
     assert.equal(result4.list[0].dist, 2) // due to index skip, this will ignore the new alias with match 0
 
+    // Check matchStatus details
+    assert.equal(result4.list[0].matchStatus, 'LIKELY')
+    assert.equal(result4.list[1].matchStatus, 'UNKNOWN')
+    assert.equal(result4.list[4].matchStatus, 'UNKNOWN')
     // console.log(result)
 })
 
 // -------- full server tests ------------------
+
+test("Appserver clear test", async () => {
+    const appserver = new MarblesAppServer();
+
+    // TODO: Add a bunch of checks
+    // appserver.parseAdvImg()
+})
 
 test ("Appserver remote test", async () => {
     const appserver = new MarblesAppServer();

@@ -6,13 +6,14 @@ import { Heap, LimitedList } from "./DataStructureModule.mjs"
 import { ImageBuffer, PixelMeasure } from "./ImageModule.mjs"
 import { inRange } from "./Mathy.mjs"
 // import { UserNameBinarization, VisualUsername } from "./UsernameBinarization.mjs"
-import { iterateN, iterateRN, Stopwatch } from "./UtilityModule.mjs"
+import { iterateN, iterateRN, steppedFunction, Stopwatch } from "./UtilityModule.mjs"
 import { TrackedUsername, VisualUsername } from "./UserModule.mjs"
 
 
 /**
  * @typedef UsernameSearchObj
  * @property {number} dist
+ * @property {String} matchStatus
  * @property {TrackedUsername} userObj
  */
 
@@ -49,10 +50,12 @@ export class UsernameSearcher {
     static SCORING = {
         PERFECT: 0,
         LIKELY: 2,
-        UNLIKELY: 4,
-        BAD: 7,
-        UNKNOWN: 10,
+        UNLIKELY: 5,
+        BAD: 9,
+        UNKNOWN: 12,
     }
+    static SCORING_MAP = new Map(Object.entries(UsernameSearcher.SCORING)
+        .map( ([name, score]) => [score, name]))
 
     static DEFINED_ADJC_SETS = [
         ['o', 'O', '0', 'n'],               // o & rounded set
@@ -100,6 +103,7 @@ export class UsernameSearcher {
     static USER_SEARCH_CACHE = new Map()
 
     static PERF_DEBUG = false
+    static POST_CHECK = 30;
 
     static USER_RANK_SORT_FUNC = (a,b) => a.dist < b.dist
     /**
@@ -121,12 +125,11 @@ export class UsernameSearcher {
         if (this.PERF_DEBUG)
             this.sw = new Stopwatch()
 
-        const postCheck = 30
         for (const [uidx, userObj] of userNameList.entries()) {
             if (!userObj) continue
-            if (userSearchResult.lastIndexSearched - postCheck>= uidx) continue
+            if (userSearchResult.lastIndexSearched - UsernameSearcher.POST_CHECK>= uidx) continue
 
-            let queuedUserObj = {dist:Infinity, userObj:null}
+            let queuedUserObj = {dist:Infinity, userObj:null, matchStatus:null}
             for (const userAlias of userObj.aliases) {
                 if (userAlias == null) continue;
                 const dist = UsernameSearcher.calcLevenDistance(searchUsername, userAlias, 
@@ -141,6 +144,8 @@ export class UsernameSearcher {
             if (queuedUserObj.userObj) userSearchResult.srchList.push(queuedUserObj)
             userSearchResult.lastIndexSearched = uidx
         }
+        userSearchResult.srchList.list
+            .map(u => u.matchStatus = steppedFunction(u.dist, UsernameSearcher.SCORING_MAP))
 
         if (this.PERF_DEBUG)
             console.debug(`Find username ranking took ${this.sw.htime}`)
@@ -231,11 +236,11 @@ export class UsernameAllTracker {
         /** @type {Array<TrackedUsername>} */
         this.usersInOrder = []  // List of UserObj in order
 
-        this.pageIdx = 0           // Currently injested page
+        // this.pageIdx = 0           // Currently injested page
         /** @type {UserImage[]} images of the user */
         // this.fullImageList = []     // All images in order
 
-        this.currentScreen = [] // should be max of 24
+        // this.currentScreen = [] // should be max of 24
         this.currentScreenFirstIndex = 0; // first user index on screen
         this.currFrameTime = 0;
     }
@@ -665,6 +670,9 @@ export class UsernameAllTracker {
         this.usersInOrder = [];
         UsernameSearcher.USER_SEARCH_CACHE.clear()
         this.hash.clear()
+        
+        this.currentScreenFirstIndex = 0; // first user index on screen
+        this.currFrameTime = 0;
     }
 
     /**

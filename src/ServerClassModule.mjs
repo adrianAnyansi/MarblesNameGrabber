@@ -273,6 +273,9 @@ export class StreamImageTracking {
      * @param {Array[]} img_format 
      */
     constructor(img_format) {
+
+        this.img_format = img_format
+
         /** @type {number} current image being processed*/
         this.imgs_processed = 0
 
@@ -297,6 +300,7 @@ export class StreamImageTracking {
         this.imgs_processed = 0
         // this.imageProcessQueueLoc = 0
         // this.imageProcessQueue = []
+        this.streamingBuffer = new StreamingImageBuffer(...this.img_format)
 
         this.imgs_downloaded = 0
         this.imgs_read = 0
@@ -341,25 +345,20 @@ export class ServerStatus {
 
         /** @type {Date} game start/open time */
         this.started_game_ts = null 
-
         /** @type {Date} name start read time */
         this.started_read_ts = null
-
         /** @type {Date} name end read time */
         this.ended_read_ts = null
-
         /** @type {Date} race start time */
         this.started_race_ts = null
 
         /** @type {number[]} how long on average to identify a user from first appearance */
         this.lagTimeArray = []
 
-        /** @type {number} number of viewers on the site */
-        this.site_viewers = 0
-        // /** @type {number} total number of viewers on the site */
-        // this.total_viewers = 0
-        /** @type {Date[]} just track user date */
+        /** @type {Date[]} [dt, ip] track viewer status by status */
         this.monitoredViewers = []
+        /** @type {Map<string, number>} current viewers & number of logs */
+        this.viewerMap = new Map()
         /** @type {Set<string>} list of all viewer ips */
         this.allViewers = new Set()
 
@@ -374,11 +373,51 @@ export class ServerStatus {
         this.localListSource = null;
     }
 
+    /**
+     * log viewer as active
+     * @param {String} viewer_ip 
+     * @param {Date} remove_dt 
+     */
+    logViewer (viewer_ip, remove_dt) {
+        this.trimViewerCount(Date.now())
+        // add num of logs to this viewerMap
+        const val = this.viewerMap.get(viewer_ip) ?? 0
+        this.viewerMap.set(viewer_ip, val+1)
+        // add to viewer status link
+        this.monitoredViewers.push([remove_dt, viewer_ip])
+        // add to every visitor
+        this.allViewers.add(viewer_ip)
+    }
+
+    /**
+     * Trim the current viewer list
+     * @param {Date} curr_dt 
+     */
+    trimViewerCount (curr_dt) {
+        while (this.monitoredViewers.at(0)?.at(0) < curr_dt) {
+            const [_del_dt, del_ip] = this.monitoredViewers.shift()
+            const val = this.viewerMap.get(del_ip)
+            if (val <= 1)
+                this.viewerMap.delete(del_ip)
+            else
+                this.viewerMap.set(del_ip, val-1)
+        }
+    }
+
     /** Clear all tracked values */
     clear () {
         this.started_read_ts = null
         this.ended_read_ts = null
         this.started_race_ts = null
+
+        this.monitoredViewers = []
+        this.viewerMap.clear()
+        this.allViewers.clear()
+
+        this.lagTimeArray = []
+        this.frame_dl_time = []
+        this.frame_st_time = []
+        this.frame_end_time = []
     }
 
     enterWaitState () {
@@ -423,7 +462,8 @@ export class ServerStatus {
     }
 
     get currentViewers () {
-        return this.monitoredViewers.length
+        // return this.monitoredViewers.length
+        return this.viewerMap.size
     }
 
     /**
@@ -533,7 +573,6 @@ export class ScreenState {
         /** @type {boolean} bool if previous screen was visible, trust timing for this screen */
         this.knownScreen = false
 
-
         this.chat_overlap = null
         this.barb_overlap = null
         this.unknown_overlap = null
@@ -554,6 +593,17 @@ export class ScreenState {
         /** @type {FrameObject[]} keep track of all objects relevant for this frame */
         this.frameObj = []
 
+        this.ignoredFrames = []
+    }
+
+    clear () {
+        this.frames_without_names = 0
+
+        this.knownScreen = false
+
+        this.visibleScreenFrame = []
+        this.predictedFrame = []
+        this.frameObj = []
         this.ignoredFrames = []
     }
 

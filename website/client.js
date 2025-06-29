@@ -22,6 +22,8 @@ const UsernamePlaceholder = document.getElementById('username_placeholder')
 const UserImgEl = document.getElementById('userImg')
 const UserImgDivEl = document.getElementById('userImgDiv')
 const UserImgSimUsers = document.getElementById('simUsers')
+const UserMatchQuality = document.getElementById('match_quality')
+const UserMatchText = document.getElementById('match_text')
 
 const ServerStatusEl = document.getElementById('server_status')
 const ServerUsersEl = document.getElementById('user_tracked')
@@ -29,8 +31,10 @@ const ServerStatusIcon = document.getElementById('serverStatusIcon')
 const ServerStatusDetails = document.getElementById('ServerStatusDetails')
 const ServerStartTime = document.getElementById('ServerStartTime')
 const ServerEndTime = document.getElementById('ServerEndTime')
-const WebsiteUsersEl = document.getElementById('viewers_visiting')
 const LagTimeEl = document.getElementById('lag_time')
+
+const WebsiteUsersEl = document.getElementById('viewers_visiting')
+const totalViewerEl = document.getElementById('total_viewer')
 
 const Screen_Feedback = document.getElementById('screen_demo')
 
@@ -40,7 +44,7 @@ const visitingUserNums = [0, 0]
 // page and admin setup
 const adminEl = document.getElementById('Admin_header')
 const queryParams = new URLSearchParams(window.location.search)
-document.getElementById('force_btn').addEventListener('click', sendForceCmd)
+document.getElementById('force_btn').addEventListener('click', () => fetch(`${serverURL}/force`))
 document.getElementById('stop_btn').addEventListener('click', () => {
     fetch(`${serverURL}/stop`, {method: 'POST'})
 })
@@ -103,6 +107,9 @@ const USER_FIRST_INPUT_DELAY = 1_000 * 1.5; // delay to search after letter
 let handleInputTimeout = null;
 let delayTimeout = null;
 
+/**
+ * Add a dot to the end on interval to show processing
+ */
 function userInfoInterval(default_text, default_elem=UsernameOutputEl) {
     default_elem.textContent = `${default_text}`+''.padEnd(3, '.')
     let dotNum = 0
@@ -112,10 +119,6 @@ function userInfoInterval(default_text, default_elem=UsernameOutputEl) {
             default_elem.textContent = `${default_text}`+''.padEnd(dotNum, '.')
         }, 1_000)
     }
-}
-
-function sendForceCmd() {
-    fetch(`${serverURL}/force`)
 }
 
 /** Queue input after 2 seconds of no input */
@@ -129,10 +132,7 @@ function queueInput(inputEvent) {
         clearInterval(delayTimeout) // clear feedback delay timeout
         UsernameRecheck.textContent = "" // TODO: Move clearing username output into function?
         handleInputTimeout = null
-        // UsernamePlaceholder.classList.remove('hidden') // hide placeholder
         return
-    } else {
-        // UsernamePlaceholder.classList.add('hidden') // show placeholder
     }
     UsernameOutputEl.className = ``
     userInfoInterval('Checking input')
@@ -176,28 +176,11 @@ function handleInput (inputEvent) {
         
         fetch(`${serverURL}/find/${username}`)
         .then( res => res.json() )
-        .then( userFindJSON => {
-            
-            clearInterval(userCheckingStatusInterval)
-            userCheckingStatusInterval = null
-            const srchList = userFindJSON['srchList']['list']
-            const {dist, userObj} = srchList[0]
-            UsernameOutputEl.textContent = `Best match: [${userObj['name']}]`
-            
-            if (userObj) {
-                UserImgEl.src = `${serverURL}/idx_img/${userObj['index']}`
-                UserImgEl.classList.remove('hidden')
-                UserImgSimUsers.classList.remove('hidden')
-                UserImgDivEl.classList.add('visible')
-                console.log(userFindJSON)
-                UserImgSimUsers.textContent = `Similar names: 
-                    ${srchList.slice(1).map(({dist, userObj}) => userObj['name']).join('|')}`
-                FoundUsername = userObj['name']
-            }
-        })
+        .then( userFindJSON => handleUserJSON(userFindJSON)
+    )
 
 
-        // TODO: Fix this
+        // TODO: Fix this - save the server state correctly
         if ( !(['STOPPED', 'COMPLETE'].includes(ServerStatusEl.textContent) || // server status is stopped or complete
                 FoundUsername == UsernameInputEl.value )) {      // OR returned name == username
         // if (true) {
@@ -222,6 +205,33 @@ function handleInput (inputEvent) {
     }
 }
 
+function handleUserJSON(userFindJSON) {
+    clearInterval(userCheckingStatusInterval)
+    userCheckingStatusInterval = null
+    const srchList = userFindJSON['srchList']['list']
+
+    UserImgDivEl.classList.toggle('visible', srchList.length > 0)
+    if (!srchList || srchList.length == 0) {
+        UserImgSimUsers.textContent = ''
+        UsernameOutputEl.textContent = 'No results'
+    } else {
+    
+        const {_dist, userObj, matchStatus} = srchList[0]
+        const {name, index} = userObj
+        UsernameOutputEl.textContent = `Found [${srchList.length}] matches`
+    // if (userObj) {
+        UserImgEl.src = `${serverURL}/idx_img/${index}`
+        UserMatchQuality.textContent = `${matchStatus}`
+        UserMatchQuality.classList.value = ''
+        UserMatchQuality.classList.add(matchStatus)
+        UserMatchText.textContent = `${name}`
+        console.log(userFindJSON)
+        UserImgSimUsers.textContent = `Similar names: 
+            ${srchList.slice(1).map(({userObj, matchStatus}) => `[${userObj['name']}: ${matchStatus}]`).join(',')}`
+        FoundUsername = name
+    }
+}
+
 /**
  * Handle server JSON by displaying/editing certain elements after retrieval
  * @param {object} serverJSON - JSON from server status
@@ -230,24 +240,29 @@ function handleServerStatus(serverJSON) {
     // Assume serverJSON is valid
     ServerStatusEl.textContent = `${serverJSON['status']['state']}`
     ServerStatusIcon.classList = [serverJSON['status']['state'].toLowerCase(), 'circle_icon'].join(' ')
-    WebsiteUsersEl.textContent = `${serverJSON['status']['viewers']} viewer(s)` // TODO: Finish
+    const viewerCount = parseInt(serverJSON['status']['viewers'])
     ServerStatusDetails.textContent = `${serverJSON['status']['state_desc']}`
+    
+    WebsiteUsersEl.textContent = `${viewerCount} viewer${viewerCount > 1 ? 's':' (thats you!)'}`
+    totalViewerEl.textContent = `${serverJSON['status']['unique_viewers']} total visitor${viewerCount > 1 ? 's':''}`
 
     if (serverJSON['lag_time'])
         LagTimeEl.textContent = `Name recognition: +${(serverJSON['lag_time'] / 1000).toFixed(2)}s from LIVE`
 
-    if (serverJSON['screen_state'])
+    if (serverJSON['screen_state']) {
         handleScreenState(serverJSON['screen_state'], 
             serverJSON['appear_state'],
             serverJSON['visible_lens'])
+    }
     
-    let dateStrings = []
     if (serverJSON['status']['marbles_start_ts']) {
-        ServerStartTime.textContent = `Started: ${new Date(serverJSON['status']['marbles_start_ts']).toLocaleString()}`
+        ServerStartTime.textContent = `${new Date(serverJSON['status']['marbles_start_ts']).toLocaleString()}`
     }
+    ServerStartTime.parentElement.classList.toggle("hidden", !serverJSON['status']['marbles_start_ts'])
     if (serverJSON['status']['marbles_end_ts']) {
-        ServerEndTime.textContent = `Ended: ${new Date(serverJSON['status']['marbles_end_ts']).toLocaleString()}`
+        ServerEndTime.textContent = `${new Date(serverJSON['status']['marbles_end_ts']).toLocaleString()}`
     }
+    ServerEndTime.parentElement.classList.toggle("hidden", !serverJSON['status']['marbles_end_ts'])
     
     let dialingTracked = trackedUserNums[0] != trackedUserNums[1] // tracked is being moved already
     trackedUserNums[1] = serverJSON['users']['namedCount']

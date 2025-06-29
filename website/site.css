@@ -160,6 +160,28 @@ body {
     display:flex; 
     flex-direction: row;
     align-content: center;
+    flex-wrap: wrap;
+}
+
+#currImgDetails {
+    display: flex;
+    flex-direction: column;
+    padding: 0 1em;
+}
+
+#userImgDiv.visible .userImgBG,
+#userImgDiv * {
+    display: none
+}
+#userImgDiv.visible *,
+#userImgDiv .userImgBG {
+    display: inherit
+}
+
+.userImgBG {
+    border: 1px white dashed;
+    padding: 0.5em 1em;
+    user-select: none;
 }
 
 #simUsers {
@@ -170,11 +192,30 @@ body {
     display: none
 }
 
-/* #userImg {
-    width: 30%;
-} */
+#userImg {
+    height: fit-content;
+    width: fit-content;
+}
 
-#username_simple_out {
+#match_quality {
+    font-weight: bold;
+    color: snow;
+    padding: 0 0.2em;
+}
+#match_quality.LIKELY {
+    background: green
+}
+#match_quality.UNLIKELY {
+    background: orange
+}
+#match_quality.BAD {
+    background: red
+}
+#match_quality.UNKNOWN {
+    background: brown
+}
+
+/* #username_simple_out {
     font-weight: bold;
     padding: 0 2vb;
     transition: background-color 0.4s
@@ -193,7 +234,7 @@ body {
 }
 #username_simple_out._4 {    
     background-color: #953232;
-}
+} */
 
 /* ======================================================== */
 
@@ -302,7 +343,7 @@ body {
 #screen_demo {
     flex-grow: 3;
     border: 2px snow solid;
-    border-left: 2px snow dashed;
+    border-left: 2px snow dotted;
     width: auto;
     padding: 1em 0.5em 0 2em;
     margin: 1em 1em 1em 0;
@@ -360,7 +401,10 @@ body {
 #Admin_header.show {
     display: inherit
 }
-
+#Admin_header button {
+    width: 5em;
+    height: 2em;
+}
 
 .subtitle {
     color: #c2bdd5;

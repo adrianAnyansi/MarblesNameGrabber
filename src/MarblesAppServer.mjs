@@ -860,6 +860,7 @@ export class MarblesAppServer {
         console.log("Clearing server state")
         this.StreamImage.reset()
         this.ServerStatus.clear()
+        this.ScreenState.clear()
         this.usernameTracker.clear()
 
         return "Cleared server state."
@@ -871,21 +872,16 @@ export class MarblesAppServer {
      * @returns {Object} user-status object
      */
     status (req) {
-
-        const curr_dt = Date.now()
-        this.ServerStatus.allViewers.add(req.ip)
-        
-        while (this.ServerStatus.monitoredViewers.at(0) < curr_dt + 300)
-            this.ServerStatus.monitoredViewers.shift()
-
         const ret_status = this.cached_status ?? this.save_status_to_cache()
         ret_status.status = this.ServerStatus.status() // change this based on 
 
         if (req.query?.admin != undefined) {
-            // TODO: Use a different page + endpoint
+            // Ignore, admin is not counted as a viewer
         } else {
-            // Track viewers
-            this.ServerStatus.monitoredViewers.push(Date.now() + ret_status.status?.interval) // TODO: Link client to this value
+            // Track current viewers
+            this.ServerStatus.logViewer(req.ip, Date.now() + ret_status.status?.interval)
+            // Since the numbers of viewers is changed, need to update this again
+            ret_status.status.viewers = this.ServerStatus.currentViewers
         }
 
         return ret_status
@@ -910,7 +906,7 @@ export class MarblesAppServer {
     }
 
     find (reqUsername) {
-        return this.usernameTracker.find(reqUsername)
+        return this.usernameTracker.find(reqUsername, UsernameSearcher.SCORING.UNKNOWN)
     }
 
     getImage (reqUsername) {
