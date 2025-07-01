@@ -292,6 +292,12 @@ export class StreamImageTracking {
 
         /** @type {Stopwatch} time when 1st image was retrieved */
         this.start_sw = null
+
+        
+        /** @type {Statistic} keep track of frame fps */
+        this.frame_stat = new Statistic()
+        /** @type {Date} time of last buffer */
+        this.lastBufferDL_ts = null
     }
 
     /** Reset all objects to default  */
@@ -306,6 +312,9 @@ export class StreamImageTracking {
         this.imgs_read = 0
 
         this.start_sw = null
+
+        this.lastBufferDL_ts = null
+        this.frame_stat.clear()
     }
 
     /**
@@ -317,8 +326,13 @@ export class StreamImageTracking {
         if (newFrameBuffer) {
             this.imgs_downloaded += 1
             
-            if (this.imgs_downloaded == 1)
+            if (this.imgs_downloaded == 1) {
                 this.start_sw = new Stopwatch()
+                this.lastBufferDL_ts = this.start_sw.start_ts
+            } else if (this.lastBufferDL_ts) {
+                const currTs = performance.now()
+                this.frame_stat.add(currTs)
+            }
         }
         return newFrameBuffer
     }
@@ -354,6 +368,8 @@ export class ServerStatus {
 
         /** @type {number[]} how long on average to identify a user from first appearance */
         this.lagTimeArray = []
+        /** @type {Statistic} keep track of averages  */
+        this.lagTimeStat = new Statistic()
 
         /** @type {Date[]} [dt, ip] track viewer status by status */
         this.monitoredViewers = []
@@ -414,6 +430,7 @@ export class ServerStatus {
         this.viewerMap.clear()
         this.allViewers.clear()
 
+        this.lagTimeStat.clear()
         this.lagTimeArray = []
         this.frame_dl_time = []
         this.frame_st_time = []
@@ -481,6 +498,16 @@ export class ServerStatus {
         return (1000/stat.mean)
     }
 
+    /** Calc the lagging time based on apparent FPS 
+     * @returns {number} ms behind live
+    */
+    lagToLive (fps = 30) {
+        if (this.frame_dl_time.length < 2) return 0
+        const ts_diff = this.frame_dl_time.at(-1) - this.frame_dl_time[1] // NOTE: downloaded img idx starts at 1
+        const expectedTime = 1000 / fps * (this.frame_dl_time.length - 1)
+        return ts_diff - expectedTime
+    }
+
     /**
      * Time taken to process frame from download
      */
@@ -534,6 +561,7 @@ export class ServerStatus {
 
     addUserReconLagTime (time) {
         this.lagTimeArray.push(time)
+        this.lagTimeStat.add(time)
 
         while (this.lagTimeArray.length > ServerStatus.LAG_TIME_MAX) {
             this.lagTimeArray.shift()

@@ -636,9 +636,8 @@ export class MarblesAppServer {
 
         this.ServerStatus.frame_end_time[imgId] = performance.now()
         if (this.debug_obj.frame_pacing) {
-            console.log(`${this.ServerStatus.frameAvg(imgId)} Curr Frame:${this.ServerStatus.frameTiming(imgId).toFixed(2)}ms DL FPS:${this.ServerStatus.downloadFPS().toFixed(1)}`)
+            console.log(`${this.ServerStatus.frameAvg(imgId)} Curr Frame:${this.ServerStatus.frameTiming(imgId).toFixed(2)}ms dl_lag:${this.ServerStatus.lagToLive(MarblesAppServer.FFMPEG_FPS).toFixed(0)}ms`)
         }
-        // TODO: Put frame timing down here
         console.log(`-- End Frame_num ${imgId.toString().padStart(5, ' ')} -- Total Users: ${this.usernameTracker.count} `)
 
         this.save_status_to_cache();
@@ -891,7 +890,8 @@ export class MarblesAppServer {
         this.cache_status = {
             // status is going to be dynamic
             // 'status': this.ServerStatus.status(), 
-            'lag_time': average(this.ServerStatus.lagTimeArray),
+            // average(this.ServerStatus.lagTimeArray)
+            'lag_time': average(this.ServerStatus.lagTimeArray) + this.ServerStatus.lagToLive(MarblesAppServer.FFMPEG_FPS),
             'screen_state': this.ScreenState.predictedFrame.at(-1),
             'appear_state': this.ScreenState.visibleScreenFrame.at(-1),
             'visible_lens': this.usernameTracker.usersInOrder.slice(-24).map(user => user.length),

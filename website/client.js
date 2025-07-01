@@ -246,8 +246,9 @@ function handleServerStatus(serverJSON) {
     WebsiteUsersEl.textContent = `${viewerCount} viewer${viewerCount > 1 ? 's':' (thats you!)'}`
     totalViewerEl.textContent = `${serverJSON['status']['unique_viewers']} total visitor${viewerCount > 1 ? 's':''}`
 
+    LagTimeEl.parentElement.classList.toggle("hidden", !serverJSON['lag_time'])
     if (serverJSON['lag_time'])
-        LagTimeEl.textContent = `Name recognition: +${(serverJSON['lag_time'] / 1000).toFixed(2)}s from LIVE`
+        LagTimeEl.textContent = `${(serverJSON['lag_time'] / 1000).toFixed(2)}s`
 
     if (serverJSON['screen_state']) {
         handleScreenState(serverJSON['screen_state'], 

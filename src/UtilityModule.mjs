@@ -2,12 +2,19 @@
 /**
  * Performance timing helper function cause JS one has baggage
  * TODO: Allow for banked time (pausing while retaining times)
+ * TODO: Add lap time (keep extra intermittent timestamps)
  */
 export class Stopwatch {
 
     constructor(name=null) {
+        /** @type {string} stopwatch name */
         this.name = name
-        this._start()
+        /** @type {DOMHighResTimeStamp} performance counter */
+        this.start_ts = null
+        /** @type {DOMHighResTimeStamp} time stopwatch was ended */
+        this.stop_ts = null
+
+        this.start()
     }
 
     /**
@@ -31,7 +38,7 @@ export class Stopwatch {
     /**
      * Start stopwatch. This will overwrite any previous values
      */
-    _start () {
+    start () {
         this.start_ts = performance.now()
         this.stop_ts = null
     }
@@ -40,7 +47,7 @@ export class Stopwatch {
      * Starts stopwatch by resetting the start time
      */
     restart () {
-        this._start()
+        this.start()
     }
 
     /**
@@ -123,28 +130,17 @@ export class Statistic {
      * @param {boolean} [storeNums=false] keep numbers for median/mode calcs
      */
     constructor (storeNums=false, numArr=[]) {
+        this.count = 0;
+        this.runningMean = 0;
+        this.M2 = 0;
+
         this.storeNums = storeNums;
         this.numArr = this.storeNums ? [] : null;
-
-        this.count = 0;
-        this.amount = 0;
         if (numArr) {
             for (const val of numArr) this.add(val)
         }
     }
-
-    add(num) {
-        if (this.storeNums)
-            this.numArr.push(num)
-        this.amount += num;
-        this.count += 1;
-    }
-
-    get mean() {
-        if (this.count == 0) return NaN
-        return this.amount / this.count;
-    }
-
+    
     /**
      * @param {Array<Number>} array 
      */
@@ -156,21 +152,56 @@ export class Statistic {
         return mean / array.length;
     }
 
+    add(num) {
+        if (this.storeNums)
+            this.numArr.push(num)
+
+        // Impl of Welford online algorithm
+        this.count += 1
+        const delta = num - this.runningMean
+        this.runningMean += delta / this.count
+        const delta2 = num - this.runningMean
+        this.M2 += delta * delta2
+    }
+
+    get sum() {
+        return this.count * this.runningMean
+    }
+
+    get mean() {
+        if (this.count == 0) return NaN
+        // if (this.storeNums) return Statistic.CalcMean(this.numArr)
+        return this.runningMean 
+    }
+
+    /** Get sample standard deviation */
+    get stdDev() {
+        if (this.count < 2) return NaN
+        // if (this.storeNums) return Statistic.CalcStdDev(this.numArr, this.runningMean)
+        return Math.sqrt(this.M2 / (this.count-1))
+    }
+
     /**
      * Calculate the standard deviation of object
      * @returns {number}
      */
-    get stdDev() {
-        if (!this.numArr || this.numArr.length == 0) return null
-        // this.mean;
+    static CalcStdDev(numArr) {
+        const mean = Statistic.CalcMean(numArr)
+        if (!numArr || numArr.length == 0) return null
         let dev_calc = 0;
-        for (const val of this.numArr) {
-            dev_calc += (val - this.mean) ** 2;
+        for (const val of numArr) {
+            dev_calc += (val - mean) ** 2;
         }
-        return Math.sqrt(dev_calc / (this.numArr.length-1));
+        return Math.sqrt(dev_calc / (numArr.length-1));
     }
 
-    // TODO: Medians and etc
+    clear () {
+        if (this.numArr)
+            this.numArr = []
+        this.count = 0
+        this.runningMean = 0
+        this.M2 = 0
+    }
 }
 
 /** Helper function to get an iterator of N length
