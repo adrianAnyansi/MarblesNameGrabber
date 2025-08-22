@@ -50,9 +50,9 @@ export class UsernameSearcher {
     static SCORING = {
         PERFECT: 0,
         LIKELY: 2,
-        UNLIKELY: 5,
-        BAD: 9,
-        UNKNOWN: 12,
+        UNLIKELY: 4,
+        BAD: 7,
+        UNKNOWN: 9,
     }
     static SCORING_MAP = new Map(Object.entries(UsernameSearcher.SCORING)
         .map( ([name, score]) => [score, name]))
@@ -155,6 +155,16 @@ export class UsernameSearcher {
     }
 
     /**
+     * Create percentage score from username 
+     * Score
+     * @param {string} username 
+     * @param {Number} score
+     */
+    static scoreUserName(username, score) {
+        return score / (username.length * 2)
+    }
+
+    /**
      * Returns the Leven Distance between two strings
      * @param {string} testUsername Username to test by
      * @param {string} matchUsername Username to match with
@@ -203,8 +213,8 @@ export class UsernameSearcher {
     static compareLetters(ltA, ltB, lowerCasePenalty=true) {
         
         if (ltA == ltB) return 0
-        if (ltA.toLowerCase() == ltB.toLowerCase()) 
-            return lowerCasePenalty ? 1 : 0
+        if (lowerCasePenalty && ltA.toLowerCase() == ltB.toLowerCase()) 
+            return 0.75
         
         if ( UsernameSearcher.ADJC_LETTER_MAP.has(ltA) ) {
             if (UsernameSearcher.ADJC_LETTER_MAP.get(ltA).has(ltB)) return 1
@@ -438,6 +448,8 @@ export class UsernameAllTracker {
         }
 
         const lastIdx = predictedUsers.findLastIndex(pu => pu.color != null)
+        if (lastIdx == -1) return new Map()
+            
         const lastColor = predictedUsers[lastIdx].color
         const checkStack = new Set() // no match
         const rVisualUsers = Array.from(visualUsers.entries()).reverse()
@@ -661,8 +673,8 @@ export class UsernameAllTracker {
     /**
      * Find approx username
      */
-    find (username, lowestRank=Infinity) {
-        return UsernameSearcher.find(username, this.usersInOrder, lowestRank, true)
+    find (username, lowestRank=Infinity, lowerCasePenalty=true) {
+        return UsernameSearcher.find(username, this.usersInOrder, lowestRank, lowerCasePenalty)
     }
 
     /** Clears the usernames and hash */

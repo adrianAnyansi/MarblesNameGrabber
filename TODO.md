@@ -121,6 +121,46 @@ I can put new logic that ignores 1 random length match.
 
 # Focus today
 
+- Some name tests
+    cant ignore letters assume user didnt put full name
+    but also cant keep all letters as words can be cut off
+    Scoring needs to be percentage based as short user names get higher match %
+
+    miets = rienrel7 should be unknown/bad
+            insectjess unknown
+            MhiTQfZZU unknown
+    paco = Goonseteeth (unlikely)
+        Goo (unlikely)
+        E_E (BAD)
+        doblerist (BAD)
+        Ward (BAD)
+
+    Hellblazer = Duelgemini (BAD)
+        zeelatani (BAD)
+        Grulbasaur UNKNOWN
+        Reiker
+        Deibisu
+
+    PiemanIowa
+        pinkshoes_ (UNKNOWN)
+        pigmanny
+        Pemalis
+        Pemalis
+
+    TWCBlank
+        TheKink (BAD)
+        Kurojudge
+        Tazzani (UNKNOWN)
+        haibane0
+        TGCid53
+
+    skkwiz
+        k01z: UNLIKELY
+        justFelinn: BAD
+        crkone: BAD
+        Chicken87: BAD
+
+
 - Finishing up website
 
 - Need quick box for OCR cause Barb hair is blocking 90%

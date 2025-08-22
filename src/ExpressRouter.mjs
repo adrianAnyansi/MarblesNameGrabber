@@ -29,6 +29,7 @@ const app_server = new MarblesAppServer()
 // });
 
 server.use(helmet())
+server.set('trust proxy', true) // required so nginx ip can be read
 
 server.get(['/', '/website/{*route}'], (req, res) => {
     let rootPath = null

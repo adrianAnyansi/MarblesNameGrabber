@@ -906,7 +906,7 @@ export class MarblesAppServer {
     }
 
     find (reqUsername) {
-        return this.usernameTracker.find(reqUsername, UsernameSearcher.SCORING.UNKNOWN)
+        return this.usernameTracker.find(reqUsername, UsernameSearcher.SCORING.UNKNOWN, false)
     }
 
     getImage (reqUsername) {

@@ -312,13 +312,35 @@ test ("test username search", async () => {
     // console.log(result)
 })
 
+test("Username pct match", async() => {
+    
+    const userList = []
+
+    const addUserAliases = (aliasList) => {
+        const user = new TrackedUsername()
+        user.aliases = new Set(aliasList)
+        user.name = aliasList[0]
+        return user
+    }
+
+    const MAX_SCORE = 20
+
+    // test username 
+    let testUser = 'TWCBlank'
+    let testFind = UsernameSearcher.find(testUser, [addUserAliases(['TheKink'])], MAX_SCORE, true)
+
+    assert.equal(testFind.list[0].dist > 8, true)
+})
+
 // -------- full server tests ------------------
 
 test("Appserver clear test", async () => {
     const appserver = new MarblesAppServer();
 
-    // TODO: Add a bunch of checks
+    // TODO: Add a bunch of images
     // appserver.parseAdvImg()
+
+    // then clear the images to init state
 })
 
 test ("Appserver remote test", async () => {
