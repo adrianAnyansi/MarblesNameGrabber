@@ -350,7 +350,6 @@ export class ServerStatus {
 
     static DEFAULT_VIEWER_INTERVAL = 1_000 * 0.2;
     static POST_VIEWER_INTERVAL = 1_000 * 2;
-    // static DEFAULT_VIEWER_INTERVAL = 1_000 * 0.2;
     static LAG_TIME_MAX = 20;
 
     constructor () {

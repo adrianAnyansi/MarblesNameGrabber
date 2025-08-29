@@ -37,6 +37,8 @@ export class MarblesAppServer {
     /** streamlink location */
     static STREAMLINK_LOC = 'streamlink' // on PATH
 
+    static TWITCH_API_KEY = null
+
     /** FPS to view stream */
     static FFMPEG_FPS = 30
     /** number of seconds without any valid names on them */
@@ -111,6 +113,8 @@ export class MarblesAppServer {
         MarblesAppServer.FFMPEG_LOC = config_json.commands?.ffmpeg ?? MarblesAppServer.FFMPEG_LOC
         MarblesAppServer.STREAMLINK_LOC = config_json.commands?.streamlink ?? MarblesAppServer.STREAMLINK_LOC
 
+        MarblesAppServer.TWITCH_API_KEY = config_json.twitch.api_token ?? null;
+
         // Set core attributes
         // Need a better way to reset these attributes instead of coding here
         MarblesAppServer.FFMPEG_FPS = config_json.core?.fps ?? MarblesAppServer.FFMPEG_FPS
@@ -157,12 +161,20 @@ export class MarblesAppServer {
 
         this.ServerStatus.enterWaitState()
 
+        const streamURL = twitch_channel ? TWITCH_URL + twitch_channel : MarblesAppServer.DEFAULT_STREAM_URL;
         const streamlinkARGS = [
-            twitch_channel ? TWITCH_URL + twitch_channel : MarblesAppServer.DEFAULT_STREAM_URL, 
-            'best', '--stdout'];
+            '--stdout',
+            '--twitch-low-latency',
+            streamURL, 
+            '1080p60'];
+
+        if (MarblesAppServer.TWITCH_API_KEY) {
+            streamlinkARGS.unshift(...[`--twitch-api-header`, `Authorization=OAuth ${MarblesAppServer.TWITCH_API_KEY}`])
+            console.log("Using a twitch api token")
+        }
 
         console.debug(`Starting monitor in directory: ${process.cwd()}\n`+
-                        `Watching stream url: ${streamlinkARGS[0]}`)
+                        `Watching stream url: ${streamURL}`)
         if (this.debug_obj.vod_dump) {
             console.debug(`Stream is dumped to location ${VOD_DUMP_LOC}`)
             fs.mkdir(`${VOD_DUMP_LOC}`, {recursive: true})
@@ -863,6 +875,19 @@ export class MarblesAppServer {
         this.usernameTracker.clear()
 
         return "Cleared server state."
+    }
+
+    /**
+     * Continue by re-opening the stream and not clearing lists.
+     * Still working on this
+     */
+    continue () {
+        console.log("Clearing stream state")
+        this.StreamImage.reset() // image buffer
+        this.ScreenState.clear() // has all the run and stats
+        // obviously usernames arent cleared
+        // ServerStatus isnt cleared since I want to keep the stats, viewers and etc.
+        // Actually I have to separate the pausable things and not
     }
 
     /** 
