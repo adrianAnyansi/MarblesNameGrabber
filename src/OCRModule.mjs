@@ -4,6 +4,7 @@ import { XMLParser } from 'fast-xml-parser'
 import { ChildProcess, spawn } from 'node:child_process'
 import { createWorker, createScheduler } from 'tesseract.js'
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda'
+import { TextractClient, DetectDocumentTextCommand } from '@aws-sdk/client-textract'
 import { Stopwatch } from './UtilityModule.mjs'
 
 /**
@@ -16,7 +17,8 @@ import { Stopwatch } from './UtilityModule.mjs'
 export const OCRTypeEnum = {
     NATIVE: "NATIVE",
     LAMBDA: "LAMBDA",
-    NODE_WORKER: "NODE_WORKER"
+    NODE_WORKER: "NODE_WORKER",
+    TEXTREACT: "TEXTREACT"
 }
 
 /**
@@ -29,6 +31,8 @@ export function getOCRModule (ocr_enum, {concurrency, hocr, debug}) {
             return new LambdaOCRManager(concurrency, debug, hocr)
         case OCRTypeEnum.NODE_WORKER:
             return new NodeOCRManager(concurrency, debug)
+        case OCRTypeEnum.TEXTREACT:
+            return new TextractOCRManager(debug)
         default:
             console.warn("incorrect enum, defaulting to NATIVE")
         case OCRTypeEnum.NATIVE:
@@ -314,7 +318,8 @@ export class NativeTesseractOCRManager extends OCRManager {
             // I don't know what's actually here so just say you got it
             // console.warn(`Tesseract process complete; ${tesseractData}`)
             resolve({
-                data: tesseractData, 
+                data: tesseractData,
+                lines: tesseractData.lines,
                 info: NativeTesseractOCRManager.NAME,
                 time: tesseractStart_sw.read(),
                 jobId: null
@@ -432,6 +437,7 @@ export class LambdaOCRManager extends OCRManager {
         this.lambdaQueueNum++
         const jobId = options.jobId
         // const prom = this.sendImgToLambda(input_buffer)
+        // TODO: The height is hard-coded
         const prom = this.sendImgToLambda(input_buffer, {w:1920, h:1080}, null, jobId, true)
         prom.finally(_ => this.lambdaQueueNum--)
         return prom
@@ -478,6 +484,7 @@ export class LambdaOCRManager extends OCRManager {
             let resPayload = JSON.parse(Buffer.from(result["Payload"]).toString())
             // let {data, info, jobId} = resPayload
             // manually setting these
+            resPayload["lines"] = resPayload["data"].lines
             resPayload["info"] = LambdaOCRManager.NAME
             resPayload["time"] = lambda_sw.read()
             resPayload["jobId"] = jobId
@@ -570,5 +577,73 @@ export class NodeOCRManager extends OCRManager {
         this.OCRScheduler.addWorker(tesseractWorker)
         return tesseractWorker
 
+    }
+}
+
+export class TextractOCRManager extends OCRManager {
+    static NAME = "AWS Textract OCR"
+    static AWS_TEXTRACT_CONFIG = { region: 'us-east-1'}
+
+    constructor (debug=false) {
+        super(null, debug)
+
+        if (this.debug)
+            TextractOCRManager.AWS_TEXTRACT_CONFIG["logger"] = console
+
+        this.textractClient = new TextractClient(TextractOCRManager.AWS_TEXTRACT_CONFIG)
+        this.processedJobs = 0
+    }
+
+    get queueSize () {
+        return -1 // no queue limit here
+    }
+
+    warmUp() {
+        // no warmup needed
+    }
+
+    queueOCR (input_buffer, options={}) {
+        this.processedJobs++
+        const jobId = options.jobId
+        const prom = this.sendImgToTextract(input_buffer, jobId)
+        return prom
+    }
+
+    async sendImgToTextract(input_buffer, jobId='test') {
+        const textract_sw = new Stopwatch()
+        const payload = {
+            Document: {
+                // Bytes: input_buffer.toString('base64'),
+                Bytes: input_buffer
+            }
+        }
+
+        const command = new DetectDocumentTextCommand(payload)
+        if (this.debug)
+            console.debug(`Sending Textract request ${jobId}`)
+
+        const resp = await this.textractClient.send(command)
+        textract_sw.stop()
+
+        return {
+            data: resp,
+            lines: this.linesFromResponse(resp),
+            info: TextractOCRManager.NAME,
+            time: textract_sw.read(),
+            jobId: jobId
+        }
+    }
+
+    linesFromResponse(textractResponse) {
+        const lines = []
+        for (const block of textractResponse.Blocks) {
+            if (block.BlockType === 'LINE') {
+                lines.push({
+                    text: block.Text,
+                    confidence: block.Confidence,
+                })
+            }
+        }
+        return lines
     }
 }

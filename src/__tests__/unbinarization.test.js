@@ -9,7 +9,7 @@ import { ColorSpace, UserNameBinarization } from "../UserNameBinarization.mjs";
 import sharp from 'sharp'
 import { Color, Direction2D, SharpImg } from '../ImageModule.mjs';
 import { Stopwatch, iterateN } from '../UtilityModule.mjs';
-import { LambdaOCRManager, NativeTesseractOCRManager, TestTesseractOCRManager } from '../OCRModule.mjs';
+import { LambdaOCRManager, NativeTesseractOCRManager, TextractOCRManager } from '../OCRModule.mjs';
 import { UsernameAllTracker } from '../UsernameTrackerClass.mjs';
 import { TrackedUsername, VisualUsername } from '../UserModule.mjs';
 import { randChance, randInt } from '../Mathy.mjs';
@@ -377,6 +377,29 @@ test ("Test Send image for OCR Lambda", async () => {
     const lambdaRet = await lambdaOCRM.sendImgToLambda(jpgBuffer, imgMetadata, null, "unittest-job", true)
     console.log(JSON.stringify(lambdaRet))
     assert.equal(lambdaRet.data.lines[0].text, 'Tomnookster\n')
+    console.log(`Time: ${lambdaRet.time}, text: ${lambdaRet.lines[0].text}`)
+})
+
+test ("Test Send image for OCR Textract", async () => {
+    
+    // const filename = "testing/ocr_test/singleLineText.png"
+    const filename = "testing/name_bin.png"
+
+    const textractOCRM = new TextractOCRManager(false)
+    const sharpImg = new SharpImg(filename)
+
+    // expects buffer of 400x400 minimum
+    const promWait = [
+        sharpImg.toSharp({toJPG:true, scaleForOCR:true}).toBuffer(),
+        // sharpImg.buildBuffer() // dont need buffer but metadata
+    ]
+    await Promise.all(promWait)
+    const jpgBuffer = (await promWait[0])
+    
+    const textractRet = await textractOCRM.sendImgToTextract(jpgBuffer, "unittest-job-aws")
+    console.log(JSON.stringify(textractRet))
+    assert.equal(textractRet.lines[0].text.trim(), 'Tomnookster')
+    console.log(`Time: ${textractRet.time}, text: ${textractRet.lines[0].text}`)
 })
 
 test ("Binarization OCR quality", async () => {

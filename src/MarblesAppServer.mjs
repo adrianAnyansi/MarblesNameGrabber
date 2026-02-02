@@ -682,10 +682,10 @@ export class MarblesAppServer {
         const binBuffer = await binSharp.toBuffer()
 
         await this.OCRManager.queueOCR(binBuffer, {jobId:`VI:${visibleIdx}-PI:${processImgId}`})
-        .then( async ({data, info, jobId, time}) => {
+        .then( async ({lines, info, jobId, time}) => {
 
             this.ServerStatus.addUserReconLagTime(time)
-            if (data.lines.length == 0) {
+            if (lines.length == 0) {
                 if (this.debug_obj.user_bin)
                     console.warn(`Got nothing for #${processImgId} @ ${user.index}`)
                 // Save image anyways
@@ -694,7 +694,7 @@ export class MarblesAppServer {
                 user.addImage(saveImg, null, 11.1);
                 return
             }
-            for (const line of data.lines) {
+            for (const line of lines) {
                 if (line.text.length < 4) continue; // Twitch limits
                 const text = line.text.trim()
                 // const saveImg = await sharpBuffer.toSharp({toJPG:true}).toBuffer()
@@ -971,7 +971,9 @@ export class MarblesAppServer {
             console.log(`Running test on ${source}`)
             this.ServerStatus.enterWaitState()
             const localTest_sw = new Stopwatch();
-            // TODO: Change based on OCR type
+            // setup OCR
+            if (ocrType !== null)
+                this.OCRManager = getOCRModule(ocrType, this.debug_obj.ocr_debug_flag);
             this.OCRManager.warmUp();
 
             const filePromiseList = []

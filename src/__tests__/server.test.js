@@ -12,6 +12,7 @@ import { UsernameAllTracker, UsernameSearcher } from '../UsernameTrackerClass.mj
 import { TrackedUsername, VisualUsername } from '../UserModule.mjs';
 import { randChance, randInt } from '../Mathy.mjs';
 import { SharpImg } from '../ImageModule.mjs';
+import { OCRManager, OCRTypeEnum } from '../OCRModule.mjs';
 
 test("Username comparisons", async () => {
     const app_server = new MarblesAppServer()
@@ -363,7 +364,7 @@ test ("Appserver local test", async () => {
     appserver.localTest(
         // "testing/video_clips/vod_2436099273.ts",
         "testing/vod_dump/",
-        null,
+        OCRTypeEnum.TEXTREACT,
         null,
         400 // actually starts around 541
     )
@@ -372,8 +373,6 @@ test ("Appserver local test", async () => {
     // setTimeout( () => {
     //     appserver.stop()
     // }, waitTime)
-
-    // appserver.testAgainstList(null, marble_list_fn)
 })
 
 test ("Appserver username compare test", async () => {
