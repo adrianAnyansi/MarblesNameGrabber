@@ -13,6 +13,17 @@ const server = express()
 const PORT = 4000;
 const HOST = 'localhost'
 
+const normalizeStreamChannel = (channel) => {
+    if (!channel || typeof channel !== 'string') return channel
+
+    const [pathPart, queryString] = channel.split('?', 2)
+    if (!queryString) return pathPart
+
+    const params = new URLSearchParams(queryString)
+    const tValue = params.get('t')
+    return tValue ? `${pathPart}?t=${encodeURIComponent(tValue)}` : pathPart
+}
+
 const env = process.env.NODE_ENV || 'development';
 const SERVER_CONFIG_FILE = 'server_config.json'
 
@@ -48,8 +59,10 @@ server.post(['/start', '/start/{*route}'], (req, res) => {
     
     console.log(`Recieved START command ${req.originalUrl}.`)
     let streamName = null
-    if (req.originalUrl != '/start')
+    if (req.originalUrl != '/start') {
         streamName = req.originalUrl.replace('/start/', '')
+        streamName = normalizeStreamChannel(streamName)
+    }
     
     let vodDumpFlag = req.query?.vodDump ? true : false;
     res.json(app_server.start(streamName, vodDumpFlag))

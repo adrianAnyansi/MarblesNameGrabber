@@ -354,6 +354,12 @@ test ("Appserver remote test", async () => {
     appserver.start(url)
 })
 
+test("normalizeStreamChannel keeps only t parameter", () => {
+    const raw = 'videos/2483071413?t=5h0m30s&foo=bar&baz=1'
+    const normalized = MarblesAppServer.normalizeStreamChannel(raw)
+    assert.equal(normalized, 'videos/2483071413?t=5h0m30s')
+})
+
 test ("Appserver local test", async () => {
     const appserver = new MarblesAppServer();
     const vod_num = 2436099273

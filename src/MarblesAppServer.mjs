@@ -154,6 +154,17 @@ export class MarblesAppServer {
      * Note this also setups variables assuming a state changing going to START
      * @param {String} twitch_channel 
      */
+    static normalizeStreamChannel(channel) {
+        if (!channel || typeof channel !== 'string') return channel
+
+        const [pathPart, queryString] = channel.split('?', 2)
+        if (!queryString) return pathPart
+
+        const params = new URLSearchParams(queryString)
+        const tValue = params.get('t')
+        return tValue ? `${pathPart}?t=${encodeURIComponent(tValue)}` : pathPart
+    }
+
     startStreamMonitor(twitch_channel=null) {
         // Start process for stream url
 
@@ -784,6 +795,7 @@ export class MarblesAppServer {
      */
     async setupTwitchMonitor () {
         const MARBLES_ON_STREAM_GAME_ID = 509511
+        const SPECIAL_EVENTS = 509663
 
         if (!this.twitch_monitor.monitor_interval) {
             await this.getTwitchToken()
@@ -802,7 +814,7 @@ export class MarblesAppServer {
                     // check game name
                     const new_game_name = resp.data.data[0]['game_name']
                     const new_game_id = parseInt(resp.data.data[0]['game_id'])
-                    if ((new_game_id == MARBLES_ON_STREAM_GAME_ID || new_game_name.toLowerCase() == 'marbles on stream') &&
+                    if ((new_game_id in [MARBLES_ON_STREAM_GAME_ID, SPECIAL_EVENTS] || new_game_name.toLowerCase() == 'marbles on stream') &&
                         this.twitch_monitor.last_game_name != new_game_name) {
                             // Start up the streamMonitor
                             console.log(`Switched Game to ${new_game_name}; clearing & starting streamMonitor`)
