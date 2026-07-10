@@ -39,8 +39,8 @@ const app_server = new MarblesAppServer()
 //     next();
 // });
 
-server.use(helmet())
 server.set('trust proxy', true) // required so nginx ip can be read
+server.use(helmet())
 
 server.get(['/', '/website/{*route}'], (req, res) => {
     let rootPath = null
@@ -55,7 +55,7 @@ server.get(['/', '/website/{*route}'], (req, res) => {
  * Start running the image parser 
  * returns a JSON indicating the result of startup
  */
-server.post(['/start', '/start/{*route}'], (req, res) => {
+server.all(['/start', '/start/{*route}'], (req, res) => {
     
     console.log(`Recieved START command ${req.originalUrl}.`)
     let streamName = null
