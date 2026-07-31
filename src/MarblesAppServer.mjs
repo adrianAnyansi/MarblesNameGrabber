@@ -814,7 +814,7 @@ export class MarblesAppServer {
                     // check game name
                     const new_game_name = resp.data.data[0]['game_name']
                     const new_game_id = parseInt(resp.data.data[0]['game_id'])
-                    if ((new_game_id in [MARBLES_ON_STREAM_GAME_ID, SPECIAL_EVENTS] || new_game_name.toLowerCase() == 'marbles on stream') &&
+                    if (([MARBLES_ON_STREAM_GAME_ID, SPECIAL_EVENTS].includes(new_game_id) || new_game_name.toLowerCase() == 'marbles on stream') &&
                         this.twitch_monitor.last_game_name != new_game_name) {
                             // Start up the streamMonitor
                             console.log(`Switched Game to ${new_game_name}; clearing & starting streamMonitor`)
